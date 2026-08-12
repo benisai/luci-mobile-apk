@@ -235,16 +235,16 @@ require_file "$FILES_DIR/openwalla-device-quarantine.sh"
 require_file "$FILES_DIR/openwalla-device-bandwidth-collector.sh"
 require_file "$FILES_DIR/openwalla-device-traffic-summary.sh"
 require_file "$FILES_DIR/openwalla-paternal-pause.sh"
-require_file "$FILES_DIR/connection-flows-collector.init"
-require_file "$FILES_DIR/device-bandwidth-collector.init"
-require_file "$FILES_DIR/ping-monitor.init"
-require_file "$FILES_DIR/dns-monitor.init"
+require_file "$FILES_DIR/openwalla-connection-flows-collector.init"
+require_file "$FILES_DIR/openwalla-device-bandwidth-collector.init"
+require_file "$FILES_DIR/openwalla-ping-monitor.init"
+require_file "$FILES_DIR/openwalla-dns-monitor.init"
 require_file "$FILES_DIR/openwalla-state-sync.init"
-require_file "$FILES_DIR/device-quarantine.init"
+require_file "$FILES_DIR/openwalla-device-quarantine.init"
 require_file "$FILES_DIR/openwalla.config"
 if [ "$INSTALL_NETIFY" = "1" ]; then
 	require_file "$FILES_DIR/openwalla-netify-collector.sh"
-	require_file "$FILES_DIR/netify-collector.init"
+	require_file "$FILES_DIR/openwalla-netify-collector.init"
 fi
 
 log "Updating package feeds"
@@ -320,15 +320,15 @@ install_file "$FILES_DIR/openwalla-device-quarantine.sh" /usr/bin/openwalla-devi
 install_file "$FILES_DIR/openwalla-device-bandwidth-collector.sh" /usr/bin/openwalla-device-bandwidth-collector 0755
 install_file "$FILES_DIR/openwalla-device-traffic-summary.sh" /usr/bin/openwalla-device-traffic-summary 0755
 install_file "$FILES_DIR/openwalla-paternal-pause.sh" /usr/bin/openwalla-paternal-pause 0755
-install_file "$FILES_DIR/connection-flows-collector.init" /etc/init.d/connection-flows-collector 0755
-install_file "$FILES_DIR/device-bandwidth-collector.init" /etc/init.d/openwalla-device-bandwidth-collector 0755
-install_file "$FILES_DIR/ping-monitor.init" /etc/init.d/ping-monitor 0755
-install_file "$FILES_DIR/dns-monitor.init" /etc/init.d/dns-monitor 0755
+install_file "$FILES_DIR/openwalla-connection-flows-collector.init" /etc/init.d/openwalla-connection-flows-collector 0755
+install_file "$FILES_DIR/openwalla-device-bandwidth-collector.init" /etc/init.d/openwalla-device-bandwidth-collector 0755
+install_file "$FILES_DIR/openwalla-ping-monitor.init" /etc/init.d/openwalla-ping-monitor 0755
+install_file "$FILES_DIR/openwalla-dns-monitor.init" /etc/init.d/openwalla-dns-monitor 0755
 install_file "$FILES_DIR/openwalla-state-sync.init" /etc/init.d/openwalla-state-sync 0755
-install_file "$FILES_DIR/device-quarantine.init" /etc/init.d/openwalla-device-quarantine 0755
+install_file "$FILES_DIR/openwalla-device-quarantine.init" /etc/init.d/openwalla-device-quarantine 0755
 if [ "$INSTALL_NETIFY" = "1" ]; then
 	install_file "$FILES_DIR/openwalla-netify-collector.sh" /usr/bin/openwalla-netify-collector 0755
-	install_file "$FILES_DIR/netify-collector.init" /etc/init.d/netify-collector 0755
+	install_file "$FILES_DIR/openwalla-netify-collector.init" /etc/init.d/openwalla-netify-collector 0755
 fi
 
 if [ -f /etc/config/openwalla ]; then
@@ -413,9 +413,9 @@ if [ "$INSTALL_NETIFY" = "1" ]; then
 		fi
 		log "Updated netifyd listen_address[0] to 127.0.0.1"
 	fi
-elif [ -x /etc/init.d/netify-collector ]; then
-	/etc/init.d/netify-collector stop || true
-	/etc/init.d/netify-collector disable || true
+elif [ -x /etc/init.d/openwalla-netify-collector ]; then
+	/etc/init.d/openwalla-netify-collector stop || true
+	/etc/init.d/openwalla-netify-collector disable || true
 fi
 
 NLBW_CONF="/etc/config/nlbwmon"
@@ -449,6 +449,14 @@ fi
 log "Enabling and restarting services"
 /etc/init.d/rpcd restart || true
 /etc/init.d/uhttpd restart || true
+
+for legacy_svc in connection-flows-collector ping-monitor dns-monitor netify-collector; do
+	if [ -x "/etc/init.d/$legacy_svc" ]; then
+		/etc/init.d/"$legacy_svc" stop || true
+		/etc/init.d/"$legacy_svc" disable || true
+		log "Legacy service disabled: $legacy_svc"
+	fi
+done
 
 log "Applying daily speedtest cron schedule"
 SPEEDTEST_MARKER="# OPENWALLA_SPEEDTEST_MONITOR"
@@ -508,9 +516,9 @@ uci commit firewall 2>/dev/null || true
 uci commit openwalla 2>/dev/null || true
 /bin/sh -c '/etc/init.d/cron reload 2>/dev/null || /etc/init.d/cron restart 2>/dev/null || /etc/init.d/crond reload 2>/dev/null || /etc/init.d/crond restart 2>/dev/null || killall -HUP crond 2>/dev/null || true'
 
-SERVICES="vnstat nlbwmon connection-flows-collector openwalla-device-bandwidth-collector ping-monitor dns-monitor openwalla-state-sync openwalla-device-quarantine"
+SERVICES="vnstat nlbwmon openwalla-connection-flows-collector openwalla-device-bandwidth-collector openwalla-ping-monitor openwalla-dns-monitor openwalla-state-sync openwalla-device-quarantine"
 if [ "$INSTALL_NETIFY" = "1" ]; then
-	SERVICES="vnstat nlbwmon netifyd netify-collector connection-flows-collector openwalla-device-bandwidth-collector ping-monitor dns-monitor openwalla-state-sync openwalla-device-quarantine"
+	SERVICES="vnstat nlbwmon netifyd openwalla-netify-collector openwalla-connection-flows-collector openwalla-device-bandwidth-collector openwalla-ping-monitor openwalla-dns-monitor openwalla-state-sync openwalla-device-quarantine"
 fi
 if [ "$INSTALL_ADBLOCK" = "1" ]; then
 	SERVICES="$SERVICES adblock"
