@@ -57,7 +57,7 @@ read_connection_flows_db() {
 	local path
 	path="$(uci_get openwalla.connection_flows.db_path)"
 	if [ -z "$path" ]; then
-		path="/tmp/connection-flows.sqlite"
+		path="/tmp/openwalla-connection-flows.sqlite"
 	fi
 	echo "$path"
 }
@@ -229,7 +229,7 @@ save_state() {
 
 	mkdir -p "$state_dir"
 	save_sqlite "$netify_db" "$state_dir/openwalla-netify.sqlite"
-	save_sqlite "$flows_db" "$state_dir/connection-flows.sqlite"
+	save_sqlite "$flows_db" "$state_dir/openwalla-connection-flows.sqlite"
 	save_sqlite "$device_bandwidth_db" "$state_dir/openwalla-device-bandwidth.sqlite"
 	save_sqlite "$notifications_db" "$state_dir/openwalla-notifications.sqlite"
 	save_netify_archives "$netify_db" "$state_dir"
@@ -257,7 +257,7 @@ restore_state() {
 
 	[ -d "$state_dir" ] || return 0
 	restore_copy "$state_dir/openwalla-netify.sqlite" "$netify_db"
-	restore_copy "$state_dir/connection-flows.sqlite" "$flows_db"
+	restore_copy "$state_dir/openwalla-connection-flows.sqlite" "$flows_db"
 	restore_copy "$state_dir/openwalla-device-bandwidth.sqlite" "$device_bandwidth_db"
 	restore_copy "$state_dir/openwalla-notifications.sqlite" "$notifications_db"
 	restore_netify_archives "$netify_db" "$state_dir"

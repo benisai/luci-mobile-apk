@@ -6,7 +6,7 @@
 PATH="/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
 
-DEFAULT_DB="/tmp/connection-flows.sqlite"
+DEFAULT_DB="/tmp/openwalla-connection-flows.sqlite"
 DEFAULT_POLL_SECONDS="5"
 DEFAULT_RETENTION_ROWS="50000"
 DEFAULT_EXCLUDE_ENDPOINTS="127.0.0.1"
