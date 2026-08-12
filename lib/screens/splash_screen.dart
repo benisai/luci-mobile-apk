@@ -65,9 +65,9 @@ class _SplashScreenState extends State<SplashScreen>
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              colorScheme.primary.withValues(alpha: 0.8),
-              colorScheme.primaryContainer.withValues(alpha: 0.7),
+              colorScheme.surfaceContainerLowest,
               colorScheme.surface,
+              colorScheme.surfaceContainer,
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -82,23 +82,22 @@ class _SplashScreenState extends State<SplashScreen>
                 child: Icon(
                   Icons.router,
                   size: 100,
-                  color: colorScheme.onSurface,
+                  color: colorScheme.primary,
                 ),
               ),
               const SizedBox(height: 32),
               Text(
-                'LuCI Mobile',
+                'Openwalla',
                 style: theme.textTheme.headlineLarge?.copyWith(
-                  color: colorScheme.onPrimaryContainer,
+                  color: colorScheme.onSurface,
                   fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
-                'OpenWrt Router Control',
+                'OpenWrt router control',
                 style: theme.textTheme.titleMedium?.copyWith(
-                  color: colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
+                  color: colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w500,
                 ),
               ),

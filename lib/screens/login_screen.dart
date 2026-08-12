@@ -230,14 +230,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     return Scaffold(
       body: Stack(
         children: [
-          // Modern gradient background
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  colorScheme.primary.withValues(alpha: 0.18),
-                  colorScheme.primaryContainer.withValues(alpha: 0.22),
+                  colorScheme.surfaceContainerLowest,
                   colorScheme.surface,
+                  colorScheme.surfaceContainer,
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
@@ -271,7 +270,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               Column(
                                 children: [
                                   Text(
-                                    'LuCI Mobile',
+                                    'Openwalla',
                                     style: textTheme.headlineLarge?.copyWith(
                                       fontWeight: FontWeight.bold,
                                     ),
@@ -287,7 +286,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    'Fast. Secure. Open Source.',
+                                    'Fast. Secure. Open source.',
                                     style: textTheme.bodySmall?.copyWith(
                                       color: colorScheme.primary,
                                     ),
@@ -374,24 +373,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                           ),
                         ),
                         const SizedBox(height: 24),
-                        // Glassmorphism card
                         ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
+                          borderRadius: BorderRadius.circular(8),
                           child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                             child: Card(
-                              elevation: 8,
+                              elevation: 0,
                               color: colorScheme.surface.withValues(
-                                alpha: 0.85,
-                              ),
-                              shadowColor: colorScheme.primary.withValues(
-                                alpha: 0.10,
+                                alpha: 0.94,
                               ),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
+                                borderRadius: BorderRadius.circular(8),
                                 side: BorderSide(
                                   color: colorScheme.outline.withValues(
-                                    alpha: 0.10,
+                                    alpha: 0.14,
                                   ),
                                 ),
                               ),

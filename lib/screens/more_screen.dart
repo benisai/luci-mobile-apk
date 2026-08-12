@@ -229,7 +229,7 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
               children: [
                 const Icon(Icons.router, size: 32),
                 const SizedBox(width: 12),
-                const Text('LuCI Mobile'),
+                const Text('Openwalla'),
               ],
             ),
             content: Column(

@@ -15,6 +15,11 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  static const Color _openwallaCyan = Color(0xFF18AEEA);
+  static const Color _openwallaOrange = Color(0xFFF27C24);
+  static const Color _openwallaGreen = Color(0xFF20CF70);
+  static const double _openwallaRadius = 8;
+
   final ScrollController _wirelessScrollController = ScrollController();
   bool _showWirelessLeftArrow = false;
   bool _showWirelessRightArrow = false;
@@ -150,8 +155,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         );
       case 'beta':
         return (
-          background: Colors.blue.withValues(alpha: 0.15),
-          foreground: Colors.blue.shade800,
+          background: _openwallaCyan.withValues(alpha: 0.15),
+          foreground: _openwallaCyan,
         );
       case 'rc':
         return (
@@ -165,8 +170,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         );
       default:
         return (
-          background: Colors.green.withValues(alpha: 0.15),
-          foreground: Colors.green.shade800,
+          background: _openwallaGreen.withValues(alpha: 0.15),
+          foreground: _openwallaGreen,
         );
     }
   }
@@ -189,8 +194,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold);
 
     return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(_openwallaRadius),
+      ),
       margin: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8.0),
@@ -313,8 +320,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         appState.isLoading && appState.dashboardData == null;
 
     final card = Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(_openwallaRadius),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -344,13 +353,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               children: [
                 _buildSpeedIndicator(
                   Icons.arrow_downward,
-                  Colors.green,
+                  _openwallaCyan,
                   '',
                   isSwitchingRouter ? 0.0 : currentRxRate,
                 ),
                 _buildSpeedIndicator(
                   Icons.arrow_upward,
-                  Colors.blue,
+                  _openwallaOrange,
                   '',
                   isSwitchingRouter ? 0.0 : currentTxRate,
                 ),
@@ -426,12 +435,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           ),
                           lineBarsData: [
                             _buildLineChartBarData(rxHistory, [
-                              Colors.green.shade700,
-                              Colors.green.shade400,
+                              _openwallaCyan,
+                              _openwallaCyan.withValues(alpha: 0.7),
                             ]),
                             _buildLineChartBarData(txHistory, [
-                              Colors.blue.shade700,
-                              Colors.blue.shade400,
+                              _openwallaOrange,
+                              _openwallaOrange.withValues(alpha: 0.72),
                             ]),
                           ],
                         ),
@@ -666,8 +675,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         : 'N/A';
 
     return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(_openwallaRadius),
+      ),
       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 0),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8.0),
@@ -836,13 +847,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             networkCardWidgets.add(
               Card(
                 margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                elevation: 2,
+                elevation: 0,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(_openwallaRadius),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(_openwallaRadius),
                   onLongPress: () {
                     // Navigate to interfaces tab with the specific interface name
                     final appState = ref.read(appStateProvider);
@@ -903,13 +914,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             networkCardWidgets.add(
               Card(
                 margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                elevation: 2,
+                elevation: 0,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(_openwallaRadius),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(_openwallaRadius),
                   onLongPress: () {
                     // Navigate to interfaces tab with the specific interface name
                     final appState = ref.read(appStateProvider);
@@ -1118,13 +1129,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       interfaceCardWidgets.add(
         Card(
           margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          elevation: 2,
+          elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(_openwallaRadius),
           ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(_openwallaRadius),
             onLongPress: () {
               // Navigate to interfaces tab with the specific interface name
               final appState = ref.read(appStateProvider);
@@ -1160,9 +1171,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     ),
                     decoration: BoxDecoration(
                       color: isUp
-                          ? Colors.green.withValues(alpha: 0.15)
-                          : Colors.red.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(16),
+                          ? _openwallaGreen.withValues(alpha: 0.15)
+                          : Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: SizedBox(
                       width: 63,
@@ -1175,8 +1188,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                               isUp ? Icons.check_circle : Icons.cancel,
                               size: 11,
                               color: isUp
-                                  ? Colors.green.shade800
-                                  : Colors.red.shade800,
+                                  ? _openwallaGreen
+                                  : Theme.of(context).colorScheme.primary,
                             ),
                             const SizedBox(width: 1),
                             Text(
@@ -1184,8 +1197,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: isUp
-                                    ? Colors.green.shade900
-                                    : Colors.red.shade900,
+                                    ? _openwallaGreen
+                                    : Theme.of(context).colorScheme.primary,
                                 fontSize: 10,
                               ),
                             ),
@@ -1351,7 +1364,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           ).colorScheme.surface,
                           shape: const RoundedRectangleBorder(
                             borderRadius: BorderRadius.vertical(
-                              top: Radius.circular(18),
+                              top: Radius.circular(_openwallaRadius),
                             ),
                           ),
                           builder: (context) {

@@ -18,7 +18,7 @@ class LuciAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.showBack = false,
     this.actions,
     this.backgroundColor,
-    this.elevation = 2.0,
+    this.elevation = 0.0,
   });
 
   @override
@@ -26,7 +26,7 @@ class LuciAppBar extends StatelessWidget implements PreferredSizeWidget {
     final theme = Theme.of(context);
     return AppBar(
       automaticallyImplyLeading: false,
-      backgroundColor: backgroundColor ?? theme.colorScheme.surface,
+      backgroundColor: backgroundColor ?? Colors.transparent,
       elevation: elevation,
       scrolledUnderElevation: elevation,
       centerTitle: centerTitle,
@@ -54,7 +54,7 @@ class LuciAppBar extends StatelessWidget implements PreferredSizeWidget {
               : null),
       actions: actions,
       shadowColor: theme.shadowColor,
-      surfaceTintColor: backgroundColor ?? theme.colorScheme.surface,
+      surfaceTintColor: backgroundColor ?? Colors.transparent,
       systemOverlayStyle: Theme.of(context).brightness == Brightness.dark
           ? Theme.of(context).appBarTheme.systemOverlayStyle?.copyWith(
               statusBarBrightness: Brightness.dark,

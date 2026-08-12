@@ -78,8 +78,8 @@ class LuciAnimations {
 
 /// Standardized card design system
 class LuciCardStyles {
-  static BorderRadius standardRadius = BorderRadius.circular(16.0);
-  static BorderRadius largeRadius = BorderRadius.circular(20.0);
+  static BorderRadius standardRadius = BorderRadius.circular(8.0);
+  static BorderRadius largeRadius = BorderRadius.circular(8.0);
 
   static BoxDecoration standardCard(
     BuildContext context, {
@@ -92,9 +92,9 @@ class LuciCardStyles {
       borderRadius: standardRadius,
       border: Border.all(
         color: isSelected
-            ? colorScheme.primary.withValues(alpha: 0.3)
-            : colorScheme.outlineVariant.withValues(alpha: 0.2),
-        width: isSelected ? 2 : 1,
+            ? colorScheme.primary.withValues(alpha: 0.45)
+            : colorScheme.outlineVariant.withValues(alpha: 0.12),
+        width: isSelected ? 1.5 : 1,
       ),
       boxShadow: isElevated
           ? [

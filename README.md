@@ -1,4 +1,4 @@
-# LuCI Mobile
+# Openwalla
 
 <div align="center">
   <a href="https://play.google.com/store/apps/details?id=com.cogwheel.LuCIMobile">
@@ -20,7 +20,7 @@
 
 <br>
 
-**LuCI Mobile** is a modern Flutter app for managing and monitoring multiple OpenWrt/LuCI routers. It features a beautiful Material 3 UI, secure authentication, real-time stats, and seamless multi-router support.
+**Openwalla** is a modern Flutter app for managing and monitoring multiple OpenWrt/LuCI routers. It features an Openwalla-inspired dashboard UI, secure authentication, real-time stats, and seamless multi-router support.
 
 ---
 
