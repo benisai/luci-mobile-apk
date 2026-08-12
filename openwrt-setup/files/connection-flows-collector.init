@@ -4,11 +4,11 @@ START=96
 STOP=10
 USE_PROCD=1
 
-PROG="/usr/bin/moci-connection-flow-collector"
+PROG="/usr/bin/openwalla-connection-flow-collector"
 
 start_service() {
 	local enabled
-	enabled="$(uci -q get moci.connection_flows.enabled 2>/dev/null || echo 1)"
+	enabled="$(uci -q get openwalla.connection_flows.enabled 2>/dev/null || echo 1)"
 	[ "$enabled" = "0" ] && return 0
 	[ -x "$PROG" ] || return 1
 
@@ -23,5 +23,5 @@ start_service() {
 }
 
 service_triggers() {
-	procd_add_reload_trigger "moci"
+	procd_add_reload_trigger "openwalla"
 }

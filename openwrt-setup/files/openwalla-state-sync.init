@@ -4,7 +4,7 @@ START=15
 STOP=89
 USE_PROCD=0
 
-PROG="/usr/bin/moci-state-sync"
+PROG="/usr/bin/openwalla-state-sync"
 
 start() {
 	[ -x "$PROG" ] || return 0
@@ -23,5 +23,5 @@ reload_service() {
 }
 
 service_triggers() {
-	procd_add_reload_trigger "moci"
+	procd_add_reload_trigger "openwalla"
 }

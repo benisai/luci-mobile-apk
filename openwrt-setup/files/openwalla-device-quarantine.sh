@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# MoCI Device Quarantine service
+# Openwalla Device Quarantine service
 # Detects newly seen DHCP lease MACs and creates firewall reject rules.
 
 set -u
@@ -9,17 +9,17 @@ PATH="/usr/sbin:/usr/bin:/sbin:/bin"
 
 DEFAULT_INTERVAL=15
 DEFAULT_LEASES_FILE="/tmp/dhcp.leases"
-DEFAULT_STATE_FILE="/tmp/moci-quarantine-known.txt"
-DEFAULT_RULE_PREFIX="moci_quarantine_"
+DEFAULT_STATE_FILE="/tmp/openwalla-quarantine-known.txt"
+DEFAULT_RULE_PREFIX="openwalla_quarantine_"
 DEFAULT_LAN_NETWORK="lan"
 DEFAULT_LAN_DEVICE="br-lan"
-DEFAULT_NOTIFICATIONS_DB="/tmp/moci-notifications.sqlite"
-LOG_FILE="/tmp/moci-device-quarantine.log"
+DEFAULT_NOTIFICATIONS_DB="/tmp/openwalla-notifications.sqlite"
+LOG_FILE="/tmp/openwalla-device-quarantine.log"
 
 log() {
 	local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
 	echo "$msg" >>"$LOG_FILE" 2>/dev/null || true
-	logger -t moci-device-quarantine "$*" 2>/dev/null || true
+	logger -t openwalla-device-quarantine "$*" 2>/dev/null || true
 }
 
 uci_get() {
@@ -39,39 +39,39 @@ sanitize_name() {
 
 load_config() {
 	local v
-	v="$(uci_get moci.quarantine.enabled)"
+	v="$(uci_get openwalla.quarantine.enabled)"
 	if [ -z "$v" ]; then v="0"; fi
 	QUARANTINE_ENABLED="$v"
 
-	v="$(uci_get moci.quarantine.interval)"
+	v="$(uci_get openwalla.quarantine.interval)"
 	case "$v" in ''|*[!0-9]*) v="$DEFAULT_INTERVAL" ;; esac
 	if [ "$v" -lt 10 ]; then v=10; fi
 	if [ "$v" -gt 3600 ]; then v=3600; fi
 	INTERVAL="$v"
 
-	v="$(uci_get moci.quarantine.leases_file)"
+	v="$(uci_get openwalla.quarantine.leases_file)"
 	if [ -z "$v" ]; then v="$DEFAULT_LEASES_FILE"; fi
 	LEASES_FILE="$v"
 
-	v="$(uci_get moci.quarantine.state_file)"
+	v="$(uci_get openwalla.quarantine.state_file)"
 	if [ -z "$v" ]; then v="$DEFAULT_STATE_FILE"; fi
 	STATE_FILE="$v"
 
-	v="$(uci_get moci.quarantine.rule_prefix)"
+	v="$(uci_get openwalla.quarantine.rule_prefix)"
 	if [ -z "$v" ]; then v="$DEFAULT_RULE_PREFIX"; fi
 	RULE_PREFIX="$v"
 
-	v="$(uci_get moci.quarantine.lan_network)"
+	v="$(uci_get openwalla.quarantine.lan_network)"
 	if [ -z "$v" ]; then v="$DEFAULT_LAN_NETWORK"; fi
 	LAN_NETWORK="$v"
 
-	v="$(uci_get moci.quarantine.lan_device)"
+	v="$(uci_get openwalla.quarantine.lan_device)"
 	if [ -z "$v" ]; then v="$(uci_get network.lan.device)"; fi
 	if [ -z "$v" ]; then v="$(uci_get network.lan.ifname)"; fi
 	if [ -z "$v" ]; then v="$DEFAULT_LAN_DEVICE"; fi
 	LAN_DEVICE="$v"
 
-	v="$(uci_get moci.notifications.db_path)"
+	v="$(uci_get openwalla.notifications.db_path)"
 	if [ -z "$v" ]; then v="$DEFAULT_NOTIFICATIONS_DB"; fi
 	NOTIFICATIONS_DB="$v"
 }
@@ -303,7 +303,7 @@ discover_once() {
 	fi
 
 	changed=0
-	tmp="/tmp/moci-quarantine-seen.$$"
+	tmp="/tmp/openwalla-quarantine-seen.$$"
 	collect_candidates >"$tmp"
 	while IFS='|' read -r mac ip host; do
 		[ -n "$mac" ] || continue

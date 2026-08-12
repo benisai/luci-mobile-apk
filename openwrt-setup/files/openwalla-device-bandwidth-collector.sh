@@ -1,16 +1,16 @@
 #!/bin/sh
 
-# MoCI device bandwidth collector for OpenWrt.
+# Openwalla device bandwidth collector for OpenWrt.
 # Uses nlbwmon's cumulative per-MAC counters and stores rolling 15-minute buckets.
 
 PATH="/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
 
-DEFAULT_DB="/tmp/moci-device-bandwidth.sqlite"
+DEFAULT_DB="/tmp/openwalla-device-bandwidth.sqlite"
 DEFAULT_POLL_SECONDS="60"
 DEFAULT_BUCKET_SECONDS="900"
 DEFAULT_RETENTION_SECONDS="86400"
-LOG_FILE="/tmp/moci-device-bandwidth-collector.log"
+LOG_FILE="/tmp/openwalla-device-bandwidth-collector.log"
 
 DB_PATH="$DEFAULT_DB"
 POLL_SECONDS="$DEFAULT_POLL_SECONDS"
@@ -81,19 +81,19 @@ sql_escape() {
 load_config() {
 	if command -v uci >/dev/null 2>&1; then
 		local value
-		value="$(uci -q get moci.device_bandwidth.db_path 2>/dev/null || true)"
+		value="$(uci -q get openwalla.device_bandwidth.db_path 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && DB_PATH="$value"
 
-		value="$(uci -q get moci.device_bandwidth.poll_seconds 2>/dev/null || true)"
+		value="$(uci -q get openwalla.device_bandwidth.poll_seconds 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && POLL_SECONDS="$value"
 
-		value="$(uci -q get moci.device_bandwidth.bucket_seconds 2>/dev/null || true)"
+		value="$(uci -q get openwalla.device_bandwidth.bucket_seconds 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && BUCKET_SECONDS="$value"
 
-		value="$(uci -q get moci.device_bandwidth.retention_seconds 2>/dev/null || true)"
+		value="$(uci -q get openwalla.device_bandwidth.retention_seconds 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && RETENTION_SECONDS="$value"
 	fi
@@ -155,7 +155,7 @@ collect_once() {
 	local now bucket tmp rows values snapshots mac rx tx old_rx old_tx rx_delta tx_delta esc_mac
 	now="$(date +%s)"
 	bucket=$((now - (now % BUCKET_SECONDS)))
-	tmp="/tmp/.moci-device-bandwidth.$$"
+	tmp="/tmp/.openwalla-device-bandwidth.$$"
 	: >"$tmp"
 
 	parse_nlbw_csv >"$tmp"

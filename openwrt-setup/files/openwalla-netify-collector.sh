@@ -1,18 +1,18 @@
 #!/bin/sh
 
-# MoCI Netify collector for OpenWrt.
+# Openwalla Netify collector for OpenWrt.
 # Captures Netify flow JSON events and stores them in a local SQLite database.
 
 set -e
 
 DEFAULT_HOST="127.0.0.1"
 DEFAULT_PORT="7150"
-DEFAULT_DB="/tmp/moci-netify.sqlite"
+DEFAULT_DB="/tmp/openwalla-netify.sqlite"
 DEFAULT_RETENTION_ROWS="500000"
 DEFAULT_STREAM_TIMEOUT="45"
 DEFAULT_EXCLUDE_PROTOCOLS="MDNS,DNS,QUIC,DHCPv6,ICMP"
 RECONNECT_DELAY="3"
-LOG_FILE="/tmp/moci-netify-collector.log"
+LOG_FILE="/tmp/openwalla-netify-collector.log"
 
 NETIFY_HOST="$DEFAULT_HOST"
 NETIFY_PORT="$DEFAULT_PORT"
@@ -83,20 +83,20 @@ load_config() {
 	if command -v uci >/dev/null 2>&1; then
 		local value
 
-		value="$(uci -q get moci.collector.host 2>/dev/null || true)"
+		value="$(uci -q get openwalla.collector.host 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && NETIFY_HOST="$value"
 
-		value="$(uci -q get moci.collector.port 2>/dev/null || true)"
+		value="$(uci -q get openwalla.collector.port 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && NETIFY_PORT="$value"
 
-		value="$(uci -q get moci.collector.db_path 2>/dev/null || true)"
+		value="$(uci -q get openwalla.collector.db_path 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && NETIFY_DB="$value"
 
 		# Backward compatibility with older key.
-		value="$(uci -q get moci.collector.output_file 2>/dev/null || true)"
+		value="$(uci -q get openwalla.collector.output_file 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		if [ -n "$value" ] && [ "$NETIFY_DB" = "$DEFAULT_DB" ]; then
 			case "$value" in
@@ -106,22 +106,22 @@ load_config() {
 			esac
 		fi
 
-		value="$(uci -q get moci.collector.retention_rows 2>/dev/null || true)"
+		value="$(uci -q get openwalla.collector.retention_rows 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && RETENTION_ROWS="$value"
 
 		# Backward compatibility with older key.
-		value="$(uci -q get moci.collector.max_lines 2>/dev/null || true)"
+		value="$(uci -q get openwalla.collector.max_lines 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		if [ -n "$value" ] && [ "$RETENTION_ROWS" = "$DEFAULT_RETENTION_ROWS" ]; then
 			RETENTION_ROWS="$value"
 		fi
 
-		value="$(uci -q get moci.collector.stream_timeout 2>/dev/null || true)"
+		value="$(uci -q get openwalla.collector.stream_timeout 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && STREAM_TIMEOUT="$value"
 
-		value="$(uci -q get moci.collector.exclude_protocols 2>/dev/null || true)"
+		value="$(uci -q get openwalla.collector.exclude_protocols 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && EXCLUDE_PROTOCOLS="$value"
 

@@ -3,8 +3,8 @@
 set -eu
 
 PATH="/usr/sbin:/usr/bin:/sbin:/bin"
-DB_PATH_DEFAULT="/tmp/moci-notifications.sqlite"
-DB_PATH="$(uci -q get moci.notifications.db_path 2>/dev/null || true)"
+DB_PATH_DEFAULT="/tmp/openwalla-notifications.sqlite"
+DB_PATH="$(uci -q get openwalla.notifications.db_path 2>/dev/null || true)"
 [ -n "$DB_PATH" ] || DB_PATH="$DB_PATH_DEFAULT"
 
 SQLITE_BIN=""

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# MoCI lightweight connection flow collector for OpenWrt.
+# Openwalla lightweight connection flow collector for OpenWrt.
 # Samples conntrack every few seconds and stores unique snapshots in SQLite.
 
 PATH="/usr/sbin:/usr/bin:/sbin:/bin"
@@ -12,7 +12,7 @@ DEFAULT_RETENTION_ROWS="50000"
 DEFAULT_EXCLUDE_ENDPOINTS="127.0.0.1"
 DEFAULT_IGNORE_IPV6="1"
 DEFAULT_LAN_TO_WAN_ONLY="0"
-LOG_FILE="/tmp/moci-connection-flows-collector.log"
+LOG_FILE="/tmp/openwalla-connection-flows-collector.log"
 
 FLOW_DB="$DEFAULT_DB"
 POLL_SECONDS="$DEFAULT_POLL_SECONDS"
@@ -81,27 +81,27 @@ sql_exec() {
 load_config() {
 	if command -v uci >/dev/null 2>&1; then
 		local value
-		value="$(uci -q get moci.connection_flows.db_path 2>/dev/null || true)"
+		value="$(uci -q get openwalla.connection_flows.db_path 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && FLOW_DB="$value"
 
-		value="$(uci -q get moci.connection_flows.poll_seconds 2>/dev/null || true)"
+		value="$(uci -q get openwalla.connection_flows.poll_seconds 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && POLL_SECONDS="$value"
 
-		value="$(uci -q get moci.connection_flows.retention_rows 2>/dev/null || true)"
+		value="$(uci -q get openwalla.connection_flows.retention_rows 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && RETENTION_ROWS="$value"
 
-		value="$(uci -q get moci.connection_flows.exclude_endpoints 2>/dev/null || true)"
+		value="$(uci -q get openwalla.connection_flows.exclude_endpoints 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && EXCLUDE_ENDPOINTS="$value"
 
-		value="$(uci -q get moci.connection_flows.ignore_ipv6 2>/dev/null || true)"
+		value="$(uci -q get openwalla.connection_flows.ignore_ipv6 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && IGNORE_IPV6="$value"
 
-		value="$(uci -q get moci.connection_flows.lan_to_wan_only 2>/dev/null || true)"
+		value="$(uci -q get openwalla.connection_flows.lan_to_wan_only 2>/dev/null || true)"
 		value="$(sanitize_text "$value")"
 		[ -n "$value" ] && LAN_TO_WAN_ONLY="$value"
 	fi

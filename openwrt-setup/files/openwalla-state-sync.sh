@@ -1,15 +1,15 @@
 #!/bin/sh
 
-# MoCI state sync:
+# Openwalla state sync:
 # - keeps live writes in /tmp
 # - checkpoints selected runtime data to persistent storage on interval
 # - restores checkpoint back into /tmp on boot
 
 set -u
 
-MARKER="# MOCI_STATE_SYNC"
+MARKER="# OPENWALLA_STATE_SYNC"
 CRON_PATH="/etc/crontabs/root"
-STATE_TS_FILE="/tmp/moci-state-sync.last"
+STATE_TS_FILE="/tmp/openwalla-state-sync.last"
 
 uci_get() {
 	uci -q get "$1" 2>/dev/null || true
@@ -17,7 +17,7 @@ uci_get() {
 
 read_backup_time_min() {
 	local raw
-	raw="$(uci_get moci.state_backup.backup_time)"
+	raw="$(uci_get openwalla.state_backup.backup_time)"
 	case "$raw" in
 	''|*[!0-9]*)
 		echo "720"
@@ -37,25 +37,25 @@ read_backup_time_min() {
 
 read_state_dir() {
 	local dir
-	dir="$(uci_get moci.state_backup.state_dir)"
+	dir="$(uci_get openwalla.state_backup.state_dir)"
 	if [ -z "$dir" ]; then
-		dir="/overlay/moci-state"
+		dir="/overlay/openwalla-state"
 	fi
 	echo "$dir"
 }
 
 read_netify_db() {
 	local path
-	path="$(uci_get moci.collector.db_path)"
+	path="$(uci_get openwalla.collector.db_path)"
 	if [ -z "$path" ]; then
-		path="/tmp/moci-netify.sqlite"
+		path="/tmp/openwalla-netify.sqlite"
 	fi
 	echo "$path"
 }
 
 read_connection_flows_db() {
 	local path
-	path="$(uci_get moci.connection_flows.db_path)"
+	path="$(uci_get openwalla.connection_flows.db_path)"
 	if [ -z "$path" ]; then
 		path="/tmp/connection-flows.sqlite"
 	fi
@@ -64,54 +64,54 @@ read_connection_flows_db() {
 
 read_device_bandwidth_db() {
 	local path
-	path="$(uci_get moci.device_bandwidth.db_path)"
+	path="$(uci_get openwalla.device_bandwidth.db_path)"
 	if [ -z "$path" ]; then
-		path="/tmp/moci-device-bandwidth.sqlite"
+		path="/tmp/openwalla-device-bandwidth.sqlite"
 	fi
 	echo "$path"
 }
 
 read_notifications_db() {
 	local path
-	path="$(uci_get moci.notifications.db_path)"
+	path="$(uci_get openwalla.notifications.db_path)"
 	if [ -z "$path" ]; then
-		path="/tmp/moci-notifications.sqlite"
+		path="/tmp/openwalla-notifications.sqlite"
 	fi
 	echo "$path"
 }
 
 read_ping_file() {
 	local path
-	path="$(uci_get moci.ping_monitor.output_file)"
+	path="$(uci_get openwalla.ping_monitor.output_file)"
 	if [ -z "$path" ]; then
-		path="/tmp/moci-ping-monitor.txt"
+		path="/tmp/openwalla-ping-monitor.txt"
 	fi
 	echo "$path"
 }
 
 read_dns_file() {
 	local path
-	path="$(uci_get moci.dns_monitor.output_file)"
+	path="$(uci_get openwalla.dns_monitor.output_file)"
 	if [ -z "$path" ]; then
-		path="/tmp/moci-dns-monitor.txt"
+		path="/tmp/openwalla-dns-monitor.txt"
 	fi
 	echo "$path"
 }
 
 read_speedtest_file() {
 	local path
-	path="$(uci_get moci.speedtest_monitor.output_file)"
+	path="$(uci_get openwalla.speedtest_monitor.output_file)"
 	if [ -z "$path" ]; then
-		path="/tmp/moci-speedtest-monitor.txt"
+		path="/tmp/openwalla-speedtest-monitor.txt"
 	fi
 	echo "$path"
 }
 
 read_quarantine_state_file() {
 	local path
-	path="$(uci_get moci.quarantine.state_file)"
+	path="$(uci_get openwalla.quarantine.state_file)"
 	if [ -z "$path" ]; then
-		path="/tmp/moci-quarantine-known.txt"
+		path="/tmp/openwalla-quarantine-known.txt"
 	fi
 	echo "$path"
 }
@@ -162,14 +162,14 @@ save_runtime_logs() {
 	local dst="$state_dir/tmp"
 	mkdir -p "$dst"
 	for f in \
-		/tmp/moci-netify-collector.log \
-		/tmp/moci-connection-flows-collector.log \
-		/tmp/moci-device-bandwidth-collector.log \
-		/tmp/moci-device-quarantine.log \
-		/tmp/moci-dns-monitor.last.log \
-		/tmp/moci-paternal-pause.last.log \
-		/tmp/moci-ping-monitor.last.log \
-		/tmp/moci-speedtest-monitor.last.log
+		/tmp/openwalla-netify-collector.log \
+		/tmp/openwalla-connection-flows-collector.log \
+		/tmp/openwalla-device-bandwidth-collector.log \
+		/tmp/openwalla-device-quarantine.log \
+		/tmp/openwalla-dns-monitor.last.log \
+		/tmp/openwalla-paternal-pause.last.log \
+		/tmp/openwalla-ping-monitor.last.log \
+		/tmp/openwalla-speedtest-monitor.last.log
 	do
 		[ -f "$f" ] || continue
 		cp -f "$f" "$dst/" 2>/dev/null || true
@@ -187,7 +187,7 @@ restore_runtime_logs() {
 	local state_dir="$1"
 	local src="$state_dir/tmp"
 	[ -d "$src" ] || return 0
-	for f in "$src"/moci-*.log "$src"/moci-speedtest-monitor.last.log; do
+	for f in "$src"/openwalla-*.log "$src"/openwalla-speedtest-monitor.last.log; do
 		[ -f "$f" ] || continue
 		cp -f "$f" "/tmp/$(basename "$f")" 2>/dev/null || true
 	done
@@ -215,14 +215,6 @@ restore_vnstat_dir() {
 	( cd "$src" && tar -cf - . ) | ( cd "$dst" && tar -xf - ) 2>/dev/null || true
 }
 
-restore_moci_web() {
-	local src="$1/www-moci"
-	local dst="/www/moci"
-	[ -d "$src" ] || return 0
-	mkdir -p "$dst"
-	( cd "$src" && tar -cf - . ) | ( cd "$dst" && tar -xf - ) 2>/dev/null || true
-}
-
 save_state() {
 	local state_dir netify_db flows_db device_bandwidth_db notifications_db ping_file dns_file speedtest_file quarantine_state_file
 	state_dir="$(read_state_dir)"
@@ -236,16 +228,16 @@ save_state() {
 	quarantine_state_file="$(read_quarantine_state_file)"
 
 	mkdir -p "$state_dir"
-	save_sqlite "$netify_db" "$state_dir/moci-netify.sqlite"
+	save_sqlite "$netify_db" "$state_dir/openwalla-netify.sqlite"
 	save_sqlite "$flows_db" "$state_dir/connection-flows.sqlite"
-	save_sqlite "$device_bandwidth_db" "$state_dir/moci-device-bandwidth.sqlite"
-	save_sqlite "$notifications_db" "$state_dir/moci-notifications.sqlite"
+	save_sqlite "$device_bandwidth_db" "$state_dir/openwalla-device-bandwidth.sqlite"
+	save_sqlite "$notifications_db" "$state_dir/openwalla-notifications.sqlite"
 	save_netify_archives "$netify_db" "$state_dir"
-	save_copy "$ping_file" "$state_dir/moci-ping-monitor.txt"
-	save_copy "$dns_file" "$state_dir/moci-dns-monitor.txt"
-	save_copy "$speedtest_file" "$state_dir/moci-speedtest-monitor.txt"
-	save_copy "$quarantine_state_file" "$state_dir/moci-quarantine-known.txt"
-	save_copy "/etc/config/moci" "$state_dir/moci.config"
+	save_copy "$ping_file" "$state_dir/openwalla-ping-monitor.txt"
+	save_copy "$dns_file" "$state_dir/openwalla-dns-monitor.txt"
+	save_copy "$speedtest_file" "$state_dir/openwalla-speedtest-monitor.txt"
+	save_copy "$quarantine_state_file" "$state_dir/openwalla-quarantine-known.txt"
+	save_copy "/etc/config/openwalla" "$state_dir/openwalla.config"
 	save_vnstat_dir "$state_dir"
 	save_runtime_logs "$state_dir"
 	date +%s >"$STATE_TS_FILE" 2>/dev/null || true
@@ -264,18 +256,17 @@ restore_state() {
 	quarantine_state_file="$(read_quarantine_state_file)"
 
 	[ -d "$state_dir" ] || return 0
-	restore_copy "$state_dir/moci-netify.sqlite" "$netify_db"
+	restore_copy "$state_dir/openwalla-netify.sqlite" "$netify_db"
 	restore_copy "$state_dir/connection-flows.sqlite" "$flows_db"
-	restore_copy "$state_dir/moci-device-bandwidth.sqlite" "$device_bandwidth_db"
-	restore_copy "$state_dir/moci-notifications.sqlite" "$notifications_db"
+	restore_copy "$state_dir/openwalla-device-bandwidth.sqlite" "$device_bandwidth_db"
+	restore_copy "$state_dir/openwalla-notifications.sqlite" "$notifications_db"
 	restore_netify_archives "$netify_db" "$state_dir"
-	restore_copy "$state_dir/moci-ping-monitor.txt" "$ping_file"
-	restore_copy "$state_dir/moci-dns-monitor.txt" "$dns_file"
-	restore_copy "$state_dir/moci-speedtest-monitor.txt" "$speedtest_file"
-	restore_copy "$state_dir/moci-quarantine-known.txt" "$quarantine_state_file"
-	restore_copy "$state_dir/moci.config" "/etc/config/moci"
+	restore_copy "$state_dir/openwalla-ping-monitor.txt" "$ping_file"
+	restore_copy "$state_dir/openwalla-dns-monitor.txt" "$dns_file"
+	restore_copy "$state_dir/openwalla-speedtest-monitor.txt" "$speedtest_file"
+	restore_copy "$state_dir/openwalla-quarantine-known.txt" "$quarantine_state_file"
+	restore_copy "$state_dir/openwalla.config" "/etc/config/openwalla"
 	restore_vnstat_dir "$state_dir"
-	restore_moci_web "$state_dir"
 	restore_runtime_logs "$state_dir"
 }
 
@@ -296,7 +287,7 @@ save_if_due() {
 build_cron_line() {
 	local interval cmd
 	interval="$(read_backup_time_min)"
-	cmd="/usr/bin/moci-state-sync save"
+	cmd="/usr/bin/openwalla-state-sync save"
 
 	if [ "$interval" -lt 60 ]; then
 		echo "*/$interval * * * * $cmd $MARKER"
@@ -320,13 +311,13 @@ build_cron_line() {
 		return
 	fi
 
-	echo "*/10 * * * * /usr/bin/moci-state-sync save-if-due $MARKER"
+	echo "*/10 * * * * /usr/bin/openwalla-state-sync save-if-due $MARKER"
 }
 
 sync_cron() {
 	local line tmp
 	line="$(build_cron_line)"
-	tmp="/tmp/.moci_state_cron.$$"
+	tmp="/tmp/.openwalla_state_cron.$$"
 
 	if [ -f "$CRON_PATH" ]; then
 		grep -v "$MARKER" "$CRON_PATH" >"$tmp" 2>/dev/null || : >"$tmp"

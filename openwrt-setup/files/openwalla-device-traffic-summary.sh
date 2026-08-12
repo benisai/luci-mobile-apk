@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# MoCI real-time device traffic summary for OpenWrt.
+# Openwalla real-time device traffic summary for OpenWrt.
 # Reads conntrack byte counters and emits cumulative per-device byte totals.
 
 PATH="/usr/sbin:/usr/bin:/sbin:/bin"

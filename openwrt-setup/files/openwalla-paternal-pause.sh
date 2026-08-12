@@ -1,6 +1,6 @@
 #!/bin/sh
 
-PREFIX="moci_time_"
+PREFIX="openwalla_time_"
 
 now() {
 	date +%s
@@ -26,8 +26,8 @@ is_paternal_firewall_section() {
 delete_pause_for_section() {
 	target="$1"
 	while :; do
-		pause_section="$(uci show moci 2>/dev/null | awk -F'[.=]' -v target="$target" '
-			$1 == "moci" && $3 == "target_section" {
+		pause_section="$(uci show openwalla 2>/dev/null | awk -F'[.=]' -v target="$target" '
+			$1 == "openwalla" && $3 == "target_section" {
 				value = $0
 				sub(/^[^=]*=/, "", value)
 				gsub(/^'\''|'\''$/, "", value)
@@ -38,7 +38,7 @@ delete_pause_for_section() {
 			}
 		')"
 		[ -n "$pause_section" ] || break
-		uci -q delete "moci.$pause_section" 2>/dev/null || true
+		uci -q delete "openwalla.$pause_section" 2>/dev/null || true
 	done
 }
 
@@ -64,16 +64,16 @@ pause_rules() {
 		is_paternal_firewall_section "$section" || continue
 		delete_pause_for_section "$section"
 		uci set "firewall.$section.enabled=0"
-		pause_section="$(uci add moci paternal_pause)"
-		uci set "moci.$pause_section.target_section=$section"
-		uci set "moci.$pause_section.rule_name=$(uci -q get "firewall.$section.name" 2>/dev/null || echo "$section")"
-		uci set "moci.$pause_section.resume_at=$resume_at"
+		pause_section="$(uci add openwalla paternal_pause)"
+		uci set "openwalla.$pause_section.target_section=$section"
+		uci set "openwalla.$pause_section.rule_name=$(uci -q get "firewall.$section.name" 2>/dev/null || echo "$section")"
+		uci set "openwalla.$pause_section.resume_at=$resume_at"
 		changed=1
 	done
 
 	if [ "$changed" = "1" ]; then
 		uci commit firewall
-		uci commit moci
+		uci commit openwalla
 		reload_firewall
 	else
 		echo "no valid paternal firewall sections supplied" >&2
@@ -88,17 +88,17 @@ clear_pauses() {
 		changed=1
 	done
 	if [ "$changed" = "1" ]; then
-		uci commit moci
+		uci commit openwalla
 	fi
 }
 
 apply_pauses() {
 	current="$(now)"
 	firewall_changed=0
-	moci_changed=0
-	for pause_section in $(uci show moci 2>/dev/null | sed -n 's/^moci\.\([^.=]*\)=paternal_pause$/\1/p'); do
-		target="$(uci -q get "moci.$pause_section.target_section" 2>/dev/null || true)"
-		resume_at="$(uci -q get "moci.$pause_section.resume_at" 2>/dev/null || echo 0)"
+	openwalla_changed=0
+	for pause_section in $(uci show openwalla 2>/dev/null | sed -n 's/^openwalla\.\([^.=]*\)=paternal_pause$/\1/p'); do
+		target="$(uci -q get "openwalla.$pause_section.target_section" 2>/dev/null || true)"
+		resume_at="$(uci -q get "openwalla.$pause_section.resume_at" 2>/dev/null || echo 0)"
 		is_number "$resume_at" || resume_at=0
 		[ "$resume_at" -le "$current" ] || continue
 
@@ -106,16 +106,16 @@ apply_pauses() {
 			uci set "firewall.$target.enabled=1"
 			firewall_changed=1
 		fi
-		uci -q delete "moci.$pause_section" 2>/dev/null || true
-		moci_changed=1
+		uci -q delete "openwalla.$pause_section" 2>/dev/null || true
+		openwalla_changed=1
 	done
 
 	if [ "$firewall_changed" = "1" ]; then
 		uci commit firewall
 		reload_firewall
 	fi
-	if [ "$moci_changed" = "1" ]; then
-		uci commit moci
+	if [ "$openwalla_changed" = "1" ]; then
+		uci commit openwalla
 	fi
 }
 

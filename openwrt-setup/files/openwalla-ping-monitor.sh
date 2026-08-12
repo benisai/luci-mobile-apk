@@ -1,17 +1,17 @@
 #!/bin/sh
 
-# MoCI Ping Monitor
-# Runs continuously on OpenWrt and writes ping samples to /tmp/moci-ping-monitor.txt
+# Openwalla Ping Monitor
+# Runs continuously on OpenWrt and writes ping samples to /tmp/openwalla-ping-monitor.txt
 
 set -u
 
 DEFAULT_TARGET="1.1.1.1"
 DEFAULT_INTERVAL="60"
 DEFAULT_TIMEOUT="2"
-DEFAULT_OUTPUT="/tmp/moci-ping-monitor.txt"
+DEFAULT_OUTPUT="/tmp/openwalla-ping-monitor.txt"
 DEFAULT_MAX_LINES="2000"
 DEFAULT_THRESHOLD="100"
-DEFAULT_NOTIFICATIONS_DB="/tmp/moci-notifications.sqlite"
+DEFAULT_NOTIFICATIONS_DB="/tmp/openwalla-notifications.sqlite"
 
 PING_TARGET="$DEFAULT_TARGET"
 PING_INTERVAL="$DEFAULT_INTERVAL"
@@ -23,28 +23,28 @@ NOTIFICATIONS_DB="$DEFAULT_NOTIFICATIONS_DB"
 SQLITE_BIN=""
 
 log() {
-	logger -t moci-ping-monitor "$*"
+	logger -t openwalla-ping-monitor "$*"
 }
 
 load_config() {
 	if command -v uci >/dev/null 2>&1; then
 		local value
-		value="$(uci -q get moci.ping_monitor.target 2>/dev/null || true)"
+		value="$(uci -q get openwalla.ping_monitor.target 2>/dev/null || true)"
 		[ -n "$value" ] && PING_TARGET="$value"
 
-		value="$(uci -q get moci.ping_monitor.timeout 2>/dev/null || true)"
+		value="$(uci -q get openwalla.ping_monitor.timeout 2>/dev/null || true)"
 		[ -n "$value" ] && PING_TIMEOUT="$value"
 
-		value="$(uci -q get moci.ping_monitor.output_file 2>/dev/null || true)"
+		value="$(uci -q get openwalla.ping_monitor.output_file 2>/dev/null || true)"
 		[ -n "$value" ] && PING_OUTPUT="$value"
 
-		value="$(uci -q get moci.ping_monitor.max_lines 2>/dev/null || true)"
+		value="$(uci -q get openwalla.ping_monitor.max_lines 2>/dev/null || true)"
 		[ -n "$value" ] && PING_MAX_LINES="$value"
 
-		value="$(uci -q get moci.ping_monitor.threshold 2>/dev/null || true)"
+		value="$(uci -q get openwalla.ping_monitor.threshold 2>/dev/null || true)"
 		[ -n "$value" ] && PING_THRESHOLD="$value"
 
-		value="$(uci -q get moci.notifications.db_path 2>/dev/null || true)"
+		value="$(uci -q get openwalla.notifications.db_path 2>/dev/null || true)"
 		[ -n "$value" ] && NOTIFICATIONS_DB="$value"
 	fi
 }

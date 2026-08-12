@@ -1,11 +1,11 @@
 #!/bin/sh
 
-# MoCI Speedtest Monitor
-# Runs speedtestcpp on demand and writes samples to /tmp/moci-speedtest-monitor.txt
+# Openwalla Speedtest Monitor
+# Runs speedtestcpp on demand and writes samples to /tmp/openwalla-speedtest-monitor.txt
 
 set -u
 
-DEFAULT_OUTPUT="/tmp/moci-speedtest-monitor.txt"
+DEFAULT_OUTPUT="/tmp/openwalla-speedtest-monitor.txt"
 DEFAULT_MAX_LINES="365"
 DEFAULT_BIN="/usr/bin/speedtest"
 
@@ -16,13 +16,13 @@ SPEEDTEST_BIN="$DEFAULT_BIN"
 load_config() {
 	if command -v uci >/dev/null 2>&1; then
 		local value
-		value="$(uci -q get moci.speedtest_monitor.output_file 2>/dev/null || true)"
+		value="$(uci -q get openwalla.speedtest_monitor.output_file 2>/dev/null || true)"
 		[ -n "$value" ] && SPEEDTEST_OUTPUT="$value"
 
-		value="$(uci -q get moci.speedtest_monitor.max_lines 2>/dev/null || true)"
+		value="$(uci -q get openwalla.speedtest_monitor.max_lines 2>/dev/null || true)"
 		[ -n "$value" ] && SPEEDTEST_MAX_LINES="$value"
 
-		value="$(uci -q get moci.speedtest_monitor.bin 2>/dev/null || true)"
+		value="$(uci -q get openwalla.speedtest_monitor.bin 2>/dev/null || true)"
 		[ -n "$value" ] && SPEEDTEST_BIN="$value"
 	fi
 }

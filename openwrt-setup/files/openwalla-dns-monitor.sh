@@ -1,14 +1,14 @@
 #!/bin/sh
 
-# MoCI DNS Monitor
-# Runs continuously on OpenWrt and writes DNS resolution samples to /tmp/moci-dns-monitor.txt
+# Openwalla DNS Monitor
+# Runs continuously on OpenWrt and writes DNS resolution samples to /tmp/openwalla-dns-monitor.txt
 
 set -u
 
 DEFAULT_TARGET="openwrt.org"
 DEFAULT_INTERVAL="60"
 DEFAULT_TIMEOUT="3"
-DEFAULT_OUTPUT="/tmp/moci-dns-monitor.txt"
+DEFAULT_OUTPUT="/tmp/openwalla-dns-monitor.txt"
 DEFAULT_MAX_LINES="2000"
 
 DNS_TARGET="$DEFAULT_TARGET"
@@ -20,16 +20,16 @@ DNS_MAX_LINES="$DEFAULT_MAX_LINES"
 load_config() {
 	if command -v uci >/dev/null 2>&1; then
 		local value
-		value="$(uci -q get moci.dns_monitor.target 2>/dev/null || true)"
+		value="$(uci -q get openwalla.dns_monitor.target 2>/dev/null || true)"
 		[ -n "$value" ] && DNS_TARGET="$value"
 
-		value="$(uci -q get moci.dns_monitor.timeout 2>/dev/null || true)"
+		value="$(uci -q get openwalla.dns_monitor.timeout 2>/dev/null || true)"
 		[ -n "$value" ] && DNS_TIMEOUT="$value"
 
-		value="$(uci -q get moci.dns_monitor.output_file 2>/dev/null || true)"
+		value="$(uci -q get openwalla.dns_monitor.output_file 2>/dev/null || true)"
 		[ -n "$value" ] && DNS_OUTPUT="$value"
 
-		value="$(uci -q get moci.dns_monitor.max_lines 2>/dev/null || true)"
+		value="$(uci -q get openwalla.dns_monitor.max_lines 2>/dev/null || true)"
 		[ -n "$value" ] && DNS_MAX_LINES="$value"
 
 	fi
