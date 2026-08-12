@@ -15,6 +15,25 @@ usage() {
   echo "Set OPENWALLA_RELEASE_TAG, OPENWALLA_RELEASE_TITLE, or OPENWALLA_RELEASE_NOTES to override GitHub release metadata." >&2
 }
 
+find_apksigner() {
+  if command -v apksigner >/dev/null 2>&1; then
+    command -v apksigner
+    return 0
+  fi
+
+  local sdk_dir="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+  if [[ -z "$sdk_dir" && -d "$HOME/Library/Android/sdk" ]]; then
+    sdk_dir="$HOME/Library/Android/sdk"
+  fi
+
+  if [[ -n "$sdk_dir" && -d "$sdk_dir/build-tools" ]]; then
+    find "$sdk_dir/build-tools" -name apksigner -type f | sort | tail -n 1
+    return 0
+  fi
+
+  return 1
+}
+
 for arg in "$@"; do
   case "$arg" in
     debug|profile|release)
@@ -79,6 +98,19 @@ echo "Building APK ($BUILD_MODE)"
 APK_PATH="$BUILD_DIR/build/app/outputs/flutter-apk/app-$BUILD_MODE.apk"
 if [[ ! -f "$APK_PATH" ]]; then
   echo "Expected APK was not created: $APK_PATH" >&2
+  exit 1
+fi
+
+APKSIGNER="$(find_apksigner || true)"
+if [[ -z "$APKSIGNER" ]]; then
+  echo "Could not find apksigner; unable to verify whether the APK is installable." >&2
+  exit 1
+fi
+
+if ! "$APKSIGNER" verify --verbose "$APK_PATH" >/dev/null 2>&1; then
+  echo "APK was built but is not signed, so Android will reject it during install." >&2
+  echo "For local Pixel testing, run: $0 debug" >&2
+  echo "For release builds, create android/key.properties pointing to a release keystore, then rerun: $0 release" >&2
   exit 1
 fi
 
