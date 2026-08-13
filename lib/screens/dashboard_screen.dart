@@ -5,6 +5,7 @@ import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/widgets/luci_animation_system.dart';
+import 'package:luci_mobile/screens/monthly_usage_screen.dart';
 import 'package:luci_mobile/screens/network_performance_screen.dart';
 import 'package:luci_mobile/screens/notifications_screen.dart';
 import 'package:luci_mobile/models/router.dart' as model;
@@ -1356,6 +1357,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget _buildMonthlyUsageCard(String interfaceName) {
     return _buildOpenwallaCard(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) =>
+                MonthlyUsageScreen(interfaceName: interfaceName),
+          ),
+        );
+      },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
