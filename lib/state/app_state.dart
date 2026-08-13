@@ -211,6 +211,43 @@ class NetifyFlow {
     }
   }
 
+  static NetifyFlow? fromConnectionFlowRow(String line) {
+    final parts = line.split('|');
+    if (parts.length < 7) return null;
+
+    final timestampSeconds = int.tryParse(parts[1]);
+    final timestamp = timestampSeconds == null
+        ? DateTime.now().toUtc()
+        : DateTime.fromMillisecondsSinceEpoch(
+            timestampSeconds * 1000,
+            isUtc: true,
+          );
+    final source = parts[3].trim();
+    final destination = parts[4].trim();
+    final destinationParts = _splitEndpoint(destination);
+    final transferBytes = _parseTransferBytes(parts[5]);
+
+    return NetifyFlow(
+      timestamp: timestamp,
+      deviceMac: '',
+      localIp: source.isEmpty ? '-' : source,
+      localPort: '',
+      destination: destinationParts.$1.isEmpty ? '-' : destinationParts.$1,
+      application: destinationParts.$1.isEmpty ? '-' : destinationParts.$1,
+      protocol: parts[2].trim().isEmpty ? 'N/A' : parts[2].trim(),
+      destinationIp: destinationParts.$1.isEmpty ? '-' : destinationParts.$1,
+      destinationPort: destinationParts.$2,
+      interfaceName: '-',
+      downloadedBytes: transferBytes,
+      uploadedBytes: 0,
+      totalBytes: transferBytes,
+      countryCode: '',
+      region: '',
+      direction: 'Outbound',
+      rawJson: line,
+    );
+  }
+
   static DateTime _parseNetifyTimestamp(dynamic value) {
     final numeric = value is num ? value.toDouble() : double.tryParse('$value');
     if (numeric != null && numeric > 0) {
@@ -245,6 +282,20 @@ class NetifyFlow {
       if (parsed != null && parsed >= 0) return parsed;
     }
     return 0;
+  }
+
+  static (String, String) _splitEndpoint(String endpoint) {
+    final trimmed = endpoint.trim();
+    final match = RegExp(
+      r'^((?:\d{1,3}\.){3}\d{1,3}):(\d+)$',
+    ).firstMatch(trimmed);
+    if (match == null) return (trimmed, '');
+    return (match.group(1) ?? trimmed, match.group(2) ?? '');
+  }
+
+  static int _parseTransferBytes(String transfer) {
+    final match = RegExp(r'^(\d+)').firstMatch(transfer.trim());
+    return int.tryParse(match?.group(1) ?? '') ?? 0;
   }
 
   static String _normalizeMac(dynamic value) {
@@ -1244,13 +1295,21 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  String _netifySqlCommand(String sql) {
+  String _sqliteCommand(String dbExpression, String sql) {
     final escapedSql = sql.replaceAll('"', r'\"').replaceAll(r'$', r'\$');
-    return 'db="\$(uci -q get openwalla.collector.db_path 2>/dev/null || echo /tmp/openwalla-netify.sqlite)"; '
+    return 'db="$dbExpression"; '
         'statement="PRAGMA busy_timeout=3000; $escapedSql"; '
         'if command -v sqlite3 >/dev/null 2>&1; then sqlite3 "\$db" "\$statement"; '
         'elif command -v sqlite3-cli >/dev/null 2>&1; then sqlite3-cli "\$db" "\$statement"; '
         'else echo "sqlite3 not installed" >&2; exit 127; fi';
+  }
+
+  String _connectionFlowsDbExpression() {
+    return r'$(uci -q get openwalla.connection_flows.db_path 2>/dev/null || echo /tmp/openwalla-connection-flows.sqlite)';
+  }
+
+  String _netifyDbExpression() {
+    return r'$(uci -q get openwalla.collector.db_path 2>/dev/null || echo /tmp/openwalla-netify.sqlite)';
   }
 
   Future<int> fetchNetifyFlowCount({BuildContext? context}) async {
@@ -1265,7 +1324,42 @@ class AppState extends ChangeNotifier {
         router.ipAddress,
         sysauth,
         router.useHttps,
-        command: _netifySqlCommand('SELECT COUNT(*) FROM flow_raw;'),
+        command: _sqliteCommand(
+          _connectionFlowsDbExpression(),
+          'SELECT COUNT(*) FROM connection_flows;',
+        ),
+        context: context,
+      );
+      final output = _systemExecOutput(result);
+      final countText = output
+          .split('\n')
+          .map((line) => line.trim())
+          .where((line) => RegExp(r'^\d+$').hasMatch(line))
+          .lastOrNull;
+      final connectionFlowCount = int.tryParse(countText ?? '') ?? 0;
+      if (connectionFlowCount > 0) return connectionFlowCount;
+      return await _fetchNetifyRawFlowCount();
+    } catch (e, stack) {
+      Logger.warning('Optional connection flow count fetch failed: $e');
+      Logger.debug('Optional connection flow count stack: $stack');
+      return await _fetchNetifyRawFlowCount();
+    }
+  }
+
+  Future<int> _fetchNetifyRawFlowCount({BuildContext? context}) async {
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) return 0;
+
+    try {
+      final result = await _apiService!.systemExec(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        command: _sqliteCommand(
+          _netifyDbExpression(),
+          'SELECT COUNT(*) FROM flow_raw;',
+        ),
         context: context,
       );
       final output = _systemExecOutput(result);
@@ -1276,8 +1370,8 @@ class AppState extends ChangeNotifier {
           .lastOrNull;
       return int.tryParse(countText ?? '') ?? 0;
     } catch (e, stack) {
-      Logger.warning('Optional Netify flow count fetch failed: $e');
-      Logger.debug('Optional Netify flow count stack: $stack');
+      Logger.warning('Optional Netify raw flow count fetch failed: $e');
+      Logger.debug('Optional Netify raw flow count stack: $stack');
       return 0;
     }
   }
@@ -1325,15 +1419,53 @@ class AppState extends ChangeNotifier {
       return const [];
     }
 
+    final safeLimit = limit.clamp(1, 200).toInt();
+    final safeOffset = offset < 0 ? 0 : offset;
     try {
-      final safeLimit = limit.clamp(1, 200).toInt();
-      final safeOffset = offset < 0 ? 0 : offset;
       final result = await _apiService!.systemExec(
         router.ipAddress,
         sysauth,
         router.useHttps,
-        command: _netifySqlCommand(
-          'SELECT json FROM flow_raw ORDER BY id DESC LIMIT $safeLimit OFFSET $safeOffset;',
+        command: _sqliteCommand(
+          _connectionFlowsDbExpression(),
+          "SELECT id,timeinsert,protocol,source,destination,transfer,status FROM connection_flows ORDER BY id DESC LIMIT $safeLimit OFFSET $safeOffset;",
+        ),
+        context: context,
+      );
+      final output = _systemExecOutput(result);
+      final connectionFlows = output
+          .split('\n')
+          .map((line) => NetifyFlow.fromConnectionFlowRow(line.trim()))
+          .whereType<NetifyFlow>()
+          .toList();
+      if (connectionFlows.isNotEmpty) return connectionFlows;
+      return await _fetchNetifyRawFlows(limit: safeLimit, offset: safeOffset);
+    } catch (e, stack) {
+      Logger.warning('Optional connection flows fetch failed: $e');
+      Logger.debug('Optional connection flows stack: $stack');
+      return await _fetchNetifyRawFlows(limit: safeLimit, offset: safeOffset);
+    }
+  }
+
+  Future<List<NetifyFlow>> _fetchNetifyRawFlows({
+    required int limit,
+    required int offset,
+    BuildContext? context,
+  }) async {
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    try {
+      final result = await _apiService!.systemExec(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        command: _sqliteCommand(
+          _netifyDbExpression(),
+          'SELECT json FROM flow_raw ORDER BY id DESC LIMIT $limit OFFSET $offset;',
         ),
         context: context,
       );
@@ -1344,8 +1476,8 @@ class AppState extends ChangeNotifier {
           .whereType<NetifyFlow>()
           .toList();
     } catch (e, stack) {
-      Logger.warning('Optional Netify flows fetch failed: $e');
-      Logger.debug('Optional Netify flows stack: $stack');
+      Logger.warning('Optional Netify raw flows fetch failed: $e');
+      Logger.debug('Optional Netify raw flows stack: $stack');
       return const [];
     }
   }
