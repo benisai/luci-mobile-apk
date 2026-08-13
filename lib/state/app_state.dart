@@ -67,6 +67,50 @@ class PingMonitorSample {
   }
 }
 
+class SpeedtestMonitorSample {
+  final DateTime timestamp;
+  final String status;
+  final double? downloadMbps;
+  final double? uploadMbps;
+  final String server;
+  final String message;
+
+  const SpeedtestMonitorSample({
+    required this.timestamp,
+    required this.status,
+    required this.downloadMbps,
+    required this.uploadMbps,
+    required this.server,
+    required this.message,
+  });
+
+  bool get isOk =>
+      status.toUpperCase() == 'OK' &&
+      downloadMbps != null &&
+      uploadMbps != null;
+
+  static SpeedtestMonitorSample? fromLine(String line) {
+    final parts = line.split('|');
+    if (parts.length < 6) return null;
+
+    final timestamp = DateTime.tryParse(parts[0]);
+    if (timestamp == null) return null;
+
+    final downloadText = parts[2];
+    final uploadText = parts[3];
+    return SpeedtestMonitorSample(
+      timestamp: timestamp,
+      status: parts[1],
+      downloadMbps: downloadText == 'N/A'
+          ? null
+          : double.tryParse(downloadText),
+      uploadMbps: uploadText == 'N/A' ? null : double.tryParse(uploadText),
+      server: parts[4],
+      message: parts.sublist(5).join('|'),
+    );
+  }
+}
+
 class SpeedtestMonitorSettings {
   final bool enabled;
   final DateTime? runDate;
@@ -1888,6 +1932,61 @@ class AppState extends ChangeNotifier {
     } catch (e, stack) {
       Logger.warning('Optional ping monitor samples fetch failed: $e');
       Logger.debug('Optional ping monitor samples stack: $stack');
+      return const [];
+    }
+  }
+
+  Future<List<SpeedtestMonitorSample>> fetchSpeedtestMonitorSamples({
+    int limit = 30,
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      final now = DateTime.now().toUtc();
+      return List<SpeedtestMonitorSample>.generate(3, (index) {
+        return SpeedtestMonitorSample(
+          timestamp: now.subtract(Duration(days: 2 - index)),
+          status: 'OK',
+          downloadMbps: 360 + (index * 42),
+          uploadMbps: 28 + (index * 4),
+          server: 'Reviewer',
+          message: 'speedtest completed',
+        );
+      });
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    try {
+      final safeLimit = limit.clamp(1, 365).toInt();
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'file',
+        method: 'exec',
+        params: {
+          'command': '/bin/sh',
+          'params': [
+            '-c',
+            r'file="$(uci -q get openwalla.speedtest_monitor.output_file 2>/dev/null || echo /tmp/openwalla-speedtest-monitor.txt)"; '
+                'if [ -f "\$file" ]; then tail -n $safeLimit "\$file" 2>/dev/null; fi',
+          ],
+        },
+        context: context,
+      );
+      final output = _commandOutput(result);
+      return output
+          .split('\n')
+          .map((line) => SpeedtestMonitorSample.fromLine(line.trim()))
+          .whereType<SpeedtestMonitorSample>()
+          .toList();
+    } catch (e, stack) {
+      Logger.warning('Optional speedtest monitor samples fetch failed: $e');
+      Logger.debug('Optional speedtest monitor samples stack: $stack');
       return const [];
     }
   }

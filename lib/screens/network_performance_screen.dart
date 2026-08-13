@@ -66,6 +66,7 @@ class NetworkPerformanceScreen extends ConsumerStatefulWidget {
 class _NetworkPerformanceScreenState
     extends ConsumerState<NetworkPerformanceScreen> {
   List<PingMonitorSample>? _freshSamples;
+  List<SpeedtestMonitorSample>? _speedtestSamples;
 
   @override
   void initState() {
@@ -74,11 +75,22 @@ class _NetworkPerformanceScreenState
   }
 
   Future<void> _refreshSamples() async {
-    final samples = await ref
-        .read(appStateProvider)
-        .fetchPingMonitorSamples(limit: 144, context: mounted ? context : null);
+    final appState = ref.read(appStateProvider);
+    final results = await Future.wait([
+      appState.fetchPingMonitorSamples(
+        limit: 144,
+        context: mounted ? context : null,
+      ),
+      appState.fetchSpeedtestMonitorSamples(
+        limit: 30,
+        context: mounted ? context : null,
+      ),
+    ]);
     if (!mounted) return;
-    setState(() => _freshSamples = samples);
+    setState(() {
+      _freshSamples = results[0] as List<PingMonitorSample>;
+      _speedtestSamples = results[1] as List<SpeedtestMonitorSample>;
+    });
   }
 
   @override
@@ -104,7 +116,7 @@ class _NetworkPerformanceScreenState
               const SizedBox(height: 14),
               _PingTestCard(samples: samples),
               const SizedBox(height: 14),
-              const _SpeedTestCard(),
+              _SpeedTestCard(samples: _speedtestSamples ?? const []),
             ],
           ),
         ),
@@ -400,20 +412,29 @@ class _PingTestCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final chartSamples = samples.length > 12
-        ? samples.sublist(samples.length - 12)
-        : samples;
-    final labels = chartSamples.isEmpty
-        ? List<String>.generate(12, (index) {
-            return _formatTime(
-              now.subtract(Duration(minutes: (11 - index) * 5)),
-            );
-          })
-        : chartSamples
-              .map((sample) => _formatTime(sample.timestamp.toLocal()))
-              .toList();
-    final validLatencies = chartSamples
-        .map((sample) => sample.latencyMs)
+    final currentSlot = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      now.hour,
+      (now.minute ~/ 5) * 5,
+    );
+    final slots = List<DateTime>.generate(
+      12,
+      (index) => currentSlot.subtract(Duration(minutes: (11 - index) * 5)),
+    );
+    final slotSamples = slots.map((slotStart) {
+      final slotEnd = slotStart.add(const Duration(minutes: 5));
+      final matches = samples.where((sample) {
+        final time = sample.timestamp.toLocal();
+        return !time.isBefore(slotStart) && time.isBefore(slotEnd);
+      }).toList();
+      if (matches.isEmpty) return null;
+      return matches.last;
+    }).toList();
+    final labels = slots.map(_formatTime).toList();
+    final validLatencies = slotSamples
+        .map((sample) => sample?.latencyMs)
         .whereType<double>()
         .toList();
     final maxLatency = validLatencies.isEmpty
@@ -422,33 +443,23 @@ class _PingTestCard extends StatelessWidget {
     final averageLatency = validLatencies.isEmpty
         ? null
         : validLatencies.reduce((a, b) => a + b) / validLatencies.length;
-    final bars = chartSamples.isEmpty
-        ? const [
-            0.18,
-            0.22,
-            0.2,
-            0.28,
-            0.24,
-            0.3,
-            0.26,
-            0.22,
-            0.32,
-            0.25,
-            0.2,
-            0.18,
-          ]
-        : chartSamples
-              .map(
-                (sample) =>
-                    ((sample.latencyMs ?? 0) / maxLatency).clamp(0.04, 1.0),
-              )
-              .toList();
+    final bars = slotSamples
+        .map(
+          (sample) => sample?.latencyMs == null
+              ? 0.16
+              : (sample!.latencyMs! / maxLatency).clamp(0.04, 1.0),
+        )
+        .toList();
+    final hasData = slotSamples
+        .map((sample) => sample?.latencyMs != null)
+        .toList();
 
     return _ChartPanel(
       title: 'Ping Test',
       value: NetworkPerformanceScreen.formatLatency(averageLatency),
       label: 'Average latency',
       bars: bars,
+      hasData: hasData,
       color: NetworkPerformanceScreen._green,
       secondaryColor: NetworkPerformanceScreen._yellow,
       labels: labels,
@@ -457,7 +468,9 @@ class _PingTestCard extends StatelessWidget {
 }
 
 class _SpeedTestCard extends StatelessWidget {
-  const _SpeedTestCard();
+  final List<SpeedtestMonitorSample> samples;
+
+  const _SpeedTestCard({required this.samples});
 
   String _formatDay(DateTime time) {
     const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -467,15 +480,51 @@ class _SpeedTestCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final labels = List<String>.generate(7, (index) {
-      return _formatDay(now.subtract(Duration(days: 6 - index)));
-    });
+    final today = DateTime(now.year, now.month, now.day);
+    final slots = List<DateTime>.generate(
+      7,
+      (index) => today.subtract(Duration(days: 6 - index)),
+    );
+    final slotSamples = slots.map((slotStart) {
+      final slotEnd = slotStart.add(const Duration(days: 1));
+      final matches = samples.where((sample) {
+        final time = sample.timestamp.toLocal();
+        return !time.isBefore(slotStart) && time.isBefore(slotEnd);
+      }).toList();
+      if (matches.isEmpty) return null;
+      return matches.last;
+    }).toList();
+    final labels = slots.map(_formatDay).toList();
+    final validDownloads = slotSamples
+        .map((sample) => sample?.downloadMbps)
+        .whereType<double>()
+        .toList();
+    final maxDownload = validDownloads.isEmpty
+        ? 100.0
+        : validDownloads.reduce((a, b) => a > b ? a : b).clamp(1, 10000);
+    final latestDownload = slotSamples.reversed
+        .map((sample) => sample?.downloadMbps)
+        .whereType<double>()
+        .firstOrNull;
+    final bars = slotSamples
+        .map(
+          (sample) => sample?.downloadMbps == null
+              ? 0.16
+              : (sample!.downloadMbps! / maxDownload).clamp(0.04, 1.0),
+        )
+        .toList();
+    final hasData = slotSamples
+        .map((sample) => sample?.downloadMbps != null)
+        .toList();
 
     return _ChartPanel(
       title: 'Speed Test',
-      value: '0 Mbps',
+      value: latestDownload == null
+          ? 'No data'
+          : '${latestDownload.toStringAsFixed(0)} Mbps',
       label: 'Latest result',
-      bars: const [0.2, 0.38, 0.34, 0.52, 0.44, 0.6, 0.48],
+      bars: bars,
+      hasData: hasData,
       color: NetworkPerformanceScreen._cyan,
       secondaryColor: NetworkPerformanceScreen._orange,
       labels: labels,
@@ -488,6 +537,7 @@ class _ChartPanel extends StatelessWidget {
   final String value;
   final String label;
   final List<double> bars;
+  final List<bool> hasData;
   final Color color;
   final Color secondaryColor;
   final List<String> labels;
@@ -497,6 +547,7 @@ class _ChartPanel extends StatelessWidget {
     required this.value,
     required this.label,
     required this.bars,
+    required this.hasData,
     required this.color,
     required this.secondaryColor,
     required this.labels,
@@ -545,6 +596,7 @@ class _ChartPanel extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: List.generate(bars.length, (index) {
                 final height = 112 * bars[index].clamp(0, 1).toDouble();
+                final hasSample = index < hasData.length && hasData[index];
                 return Expanded(
                   child: Align(
                     alignment: Alignment.bottomCenter,
@@ -552,7 +604,11 @@ class _ChartPanel extends StatelessWidget {
                       width: 12,
                       height: height < 3 ? 3 : height,
                       decoration: BoxDecoration(
-                        color: index == bars.length - 2
+                        color: !hasSample
+                            ? colorScheme.onSurfaceVariant.withValues(
+                                alpha: 0.28,
+                              )
+                            : index == bars.length - 2
                             ? secondaryColor
                             : color,
                         borderRadius: BorderRadius.circular(4),
