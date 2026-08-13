@@ -323,9 +323,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   List<_PingHourBucket> _pingHourBuckets(List<PingMonitorSample> samples) {
     final now = DateTime.now();
+    final currentHour = DateTime(now.year, now.month, now.day, now.hour);
     return List<_PingHourBucket>.generate(6, (index) {
-      final start = now.subtract(Duration(hours: 6 - index));
-      final end = now.subtract(Duration(hours: 5 - index));
+      final start = currentHour.subtract(Duration(hours: 5 - index));
+      final end = start.add(const Duration(hours: 1));
       final bucketSamples = samples.where((sample) {
         final time = sample.timestamp.toLocal();
         return !time.isBefore(start) && time.isBefore(end);
@@ -368,9 +369,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         ? null
         : validAverages.reduce((a, b) => a + b) / validAverages.length;
     final now = DateTime.now();
+    final currentHour = DateTime(now.year, now.month, now.day, now.hour);
     final labels = List<String>.generate(7, (index) {
       if (index == 6) return 'Now';
-      return _formatTimelineHour(now.subtract(Duration(hours: 6 - index)));
+      return _formatTimelineHour(
+        currentHour.subtract(Duration(hours: 5 - index)),
+      );
     });
 
     return _buildOpenwallaCard(

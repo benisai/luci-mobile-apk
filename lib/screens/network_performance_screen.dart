@@ -4,7 +4,7 @@ import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 
-class NetworkPerformanceScreen extends ConsumerWidget {
+class NetworkPerformanceScreen extends ConsumerStatefulWidget {
   const NetworkPerformanceScreen({super.key});
 
   static const Color _cyan = Color(0xFF18AEEA);
@@ -26,9 +26,10 @@ class NetworkPerformanceScreen extends ConsumerWidget {
 
   static List<_PingHourBucket> _hourBuckets(List<PingMonitorSample> samples) {
     final now = DateTime.now();
+    final currentHour = DateTime(now.year, now.month, now.day, now.hour);
     return List<_PingHourBucket>.generate(6, (index) {
-      final start = now.subtract(Duration(hours: 6 - index));
-      final end = now.subtract(Duration(hours: 5 - index));
+      final start = currentHour.subtract(Duration(hours: 5 - index));
+      final end = start.add(const Duration(hours: 1));
       final bucketSamples = samples.where((sample) {
         final time = sample.timestamp.toLocal();
         return !time.isBefore(start) && time.isBefore(end);
@@ -58,24 +59,54 @@ class NetworkPerformanceScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final samples = _samplesFromDashboard(ref.watch(appStateProvider));
+  ConsumerState<NetworkPerformanceScreen> createState() =>
+      _NetworkPerformanceScreenState();
+}
+
+class _NetworkPerformanceScreenState
+    extends ConsumerState<NetworkPerformanceScreen> {
+  List<PingMonitorSample>? _freshSamples;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshSamples());
+  }
+
+  Future<void> _refreshSamples() async {
+    final samples = await ref
+        .read(appStateProvider)
+        .fetchPingMonitorSamples(limit: 144, context: mounted ? context : null);
+    if (!mounted) return;
+    setState(() => _freshSamples = samples);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = ref.watch(appStateProvider);
+    final dashboardSamples = NetworkPerformanceScreen._samplesFromDashboard(
+      appState,
+    );
+    final samples = _freshSamples ?? dashboardSamples;
 
     return Scaffold(
       appBar: const LuciAppBar(title: 'Network Performance', showBack: true),
       body: SafeArea(
         top: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
-          children: [
-            _NetworkTimelineCard(samples: samples),
-            const SizedBox(height: 14),
-            _RecentEventsCard(samples: samples),
-            const SizedBox(height: 14),
-            _PingTestCard(samples: samples),
-            const SizedBox(height: 14),
-            const _SpeedTestCard(),
-          ],
+        child: RefreshIndicator(
+          onRefresh: _refreshSamples,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+            children: [
+              _NetworkTimelineCard(samples: samples),
+              const SizedBox(height: 14),
+              _RecentEventsCard(samples: samples),
+              const SizedBox(height: 14),
+              _PingTestCard(samples: samples),
+              const SizedBox(height: 14),
+              const _SpeedTestCard(),
+            ],
+          ),
         ),
       ),
     );
@@ -154,9 +185,10 @@ class _NetworkTimelineCard extends StatelessWidget {
     final averageLatency = validAverages.isEmpty
         ? null
         : validAverages.reduce((a, b) => a + b) / validAverages.length;
+    final currentHour = DateTime(now.year, now.month, now.day, now.hour);
     final labels = List<String>.generate(7, (index) {
       if (index == 6) return 'Now';
-      return _formatHour(now.subtract(Duration(hours: 6 - index)));
+      return _formatHour(currentHour.subtract(Duration(hours: 5 - index)));
     });
 
     return _OpenwallaPanel(
