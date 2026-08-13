@@ -171,6 +171,16 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                   _buildSettingsCard(
                     context: context,
+                    icon: Icons.dns_rounded,
+                    title: 'DNS Test Settings',
+                    subtitle: 'Configure DNS hostname monitoring',
+                    onTap: () => _openSettingsPage(
+                      context,
+                      const _DnsTestSettingsScreen(),
+                    ),
+                  ),
+                  _buildSettingsCard(
+                    context: context,
                     icon: Icons.speed_rounded,
                     title: 'Speedtest Settings',
                     subtitle: 'Configure scheduled speed tests',
@@ -347,6 +357,114 @@ class _PingSettingsScreenState extends ConsumerState<_PingSettingsScreen> {
                         border: OutlineInputBorder(),
                       ),
                       keyboardType: TextInputType.number,
+                      enabled: !_isSaving,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+      bottomNavigationBar: _isLoading
+          ? null
+          : _SettingsSaveBar(
+              isSaving: _isSaving,
+              onPressed: _isSaving ? null : _saveSettings,
+            ),
+    );
+  }
+}
+
+class _DnsTestSettingsScreen extends ConsumerStatefulWidget {
+  const _DnsTestSettingsScreen();
+
+  @override
+  ConsumerState<_DnsTestSettingsScreen> createState() =>
+      _DnsTestSettingsScreenState();
+}
+
+class _DnsTestSettingsScreenState
+    extends ConsumerState<_DnsTestSettingsScreen> {
+  final _hostnameController = TextEditingController(text: 'openwrt.org');
+  bool _isLoading = true;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSettings());
+  }
+
+  @override
+  void dispose() {
+    _hostnameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSettings() async {
+    setState(() => _isLoading = true);
+    final settings = await ref
+        .read(appStateProvider)
+        .fetchDnsMonitorSettings(context: context);
+    if (!mounted) return;
+
+    _hostnameController.text = settings.hostname;
+    setState(() => _isLoading = false);
+  }
+
+  Future<void> _saveSettings() async {
+    final hostname = _hostnameController.text.trim();
+
+    if (hostname.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a hostname to monitor.')),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      await ref
+          .read(appStateProvider)
+          .saveDnsMonitorSettings(
+            DnsMonitorSettings(hostname: hostname),
+            context: context,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('DNS test settings saved.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save DNS settings: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: const LuciAppBar(title: 'DNS Test Settings', showBack: true),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _SettingsFormCard(
+                  children: [
+                    TextField(
+                      controller: _hostnameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Hostname',
+                        hintText: 'openwrt.org',
+                        prefixIcon: Icon(Icons.dns_rounded),
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.url,
+                      textInputAction: TextInputAction.done,
                       enabled: !_isSaving,
                     ),
                   ],

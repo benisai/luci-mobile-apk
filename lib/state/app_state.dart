@@ -26,6 +26,12 @@ class PingMonitorSettings {
   const PingMonitorSettings({required this.target, required this.thresholdMs});
 }
 
+class DnsMonitorSettings {
+  final String hostname;
+
+  const DnsMonitorSettings({required this.hostname});
+}
+
 class PingMonitorSample {
   final DateTime timestamp;
   final String target;
@@ -1165,6 +1171,65 @@ class AppState extends ChangeNotifier {
       router.useHttps,
       command:
           '/etc/init.d/openwalla-ping-monitor restart >/dev/null 2>&1 || true',
+    );
+  }
+
+  Future<DnsMonitorSettings> fetchDnsMonitorSettings({
+    BuildContext? context,
+  }) async {
+    const defaults = DnsMonitorSettings(hostname: 'openwrt.org');
+    if (_reviewerModeEnabled) return defaults;
+
+    try {
+      final values = await _fetchOpenwallaUciValues(context: context);
+      final dns = values is Map ? values['dns_monitor'] : null;
+      if (dns is Map) {
+        final target = dns['target']?.toString();
+        return DnsMonitorSettings(
+          hostname: target?.isNotEmpty == true ? target! : defaults.hostname,
+        );
+      }
+    } catch (e, stack) {
+      Logger.warning('Failed to fetch DNS monitor settings: $e');
+      Logger.debug('DNS monitor settings stack: $stack');
+    }
+
+    return defaults;
+  }
+
+  Future<void> saveDnsMonitorSettings(
+    DnsMonitorSettings settings, {
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) return;
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw Exception('Router is not connected');
+    }
+
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'openwalla',
+      section: 'dns_monitor',
+      values: {'target': settings.hostname},
+      context: context,
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'openwalla',
+    );
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command:
+          '/etc/init.d/openwalla-dns-monitor restart >/dev/null 2>&1 || true',
     );
   }
 
