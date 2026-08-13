@@ -146,6 +146,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Widget _buildDashboardSummaryCards(AppState appState) {
     final deviceCount = appState.dashboardData?['deviceCount'];
+    final notificationCount = appState.dashboardData?['notificationCount'];
 
     return Column(
       children: [
@@ -164,7 +165,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             Expanded(
               child: _buildDashboardSummaryCard(
                 label: 'Notifications',
-                count: '0',
+                count: (notificationCount is int ? notificationCount : 0)
+                    .toString(),
                 icon: Icons.notifications_rounded,
                 color: _openwallaOrange,
                 onTap: () {

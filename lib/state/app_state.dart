@@ -32,6 +32,45 @@ class DnsMonitorSettings {
   const DnsMonitorSettings({required this.hostname});
 }
 
+class OpenwallaNotification {
+  final int id;
+  final DateTime timestamp;
+  final String app;
+  final String message;
+  final bool archived;
+  final bool deleted;
+
+  const OpenwallaNotification({
+    required this.id,
+    required this.timestamp,
+    required this.app,
+    required this.message,
+    required this.archived,
+    required this.deleted,
+  });
+
+  static OpenwallaNotification? fromSqliteRow(String line) {
+    final parts = line.split('|');
+    if (parts.length < 6) return null;
+
+    final id = int.tryParse(parts[0]);
+    final timestampSeconds = int.tryParse(parts[1]);
+    if (id == null || id <= 0 || timestampSeconds == null) return null;
+
+    return OpenwallaNotification(
+      id: id,
+      timestamp: DateTime.fromMillisecondsSinceEpoch(
+        timestampSeconds * 1000,
+        isUtc: true,
+      ),
+      app: parts[2],
+      message: parts[3],
+      archived: parts[4] == '1',
+      deleted: parts[5] == '1',
+    );
+  }
+}
+
 class PingMonitorSample {
   final DateTime timestamp;
   final String target;
@@ -905,6 +944,7 @@ class AppState extends ChangeNotifier {
           'conntrack': {'count': 142, 'max': 1000},
           'pingSamples': await fetchPingMonitorSamples(limit: 144),
           'netifyFlowCount': 315188,
+          'notificationCount': 2,
           'deviceCount': _countRouterDevices(processedDhcpData, associatedMacs),
           '_lastUpdated':
               DateTime.now().millisecondsSinceEpoch, // Force UI updates
@@ -1009,6 +1049,7 @@ class AppState extends ChangeNotifier {
       final conntrackFuture = _fetchConntrackData(ip, useHttps);
       final pingSamplesFuture = fetchPingMonitorSamples(limit: 144);
       final netifyFlowCountFuture = fetchNetifyFlowCount();
+      final notificationCountFuture = fetchNotificationCount();
       final associatedMacsFuture = _apiService!
           .fetchAllAssociatedWirelessMacsWithContext(
             ipAddress: ip,
@@ -1103,6 +1144,7 @@ class AppState extends ChangeNotifier {
         conntrackFuture,
         pingSamplesFuture,
         netifyFlowCountFuture,
+        notificationCountFuture,
         associatedMacsFuture,
       ]);
       final wirelessRaw = optionalResults[0];
@@ -1110,7 +1152,8 @@ class AppState extends ChangeNotifier {
       final conntrackData = optionalResults[2] as Map<String, int>;
       final pingSamples = optionalResults[3] as List<PingMonitorSample>;
       final netifyFlowCount = optionalResults[4] as int;
-      final associatedMacs = optionalResults[5] as Map<String, Set<String>>;
+      final notificationCount = optionalResults[5] as int;
+      final associatedMacs = optionalResults[6] as Map<String, Set<String>>;
 
       Map<String, dynamic>? wirelessData;
       if (wirelessRaw != null) {
@@ -1224,6 +1267,7 @@ class AppState extends ChangeNotifier {
         'conntrack': conntrackData,
         'pingSamples': pingSamples,
         'netifyFlowCount': netifyFlowCount,
+        'notificationCount': notificationCount,
         'deviceCount': _countRouterDevices(dhcpLeases, associatedMacs),
         '_lastUpdated':
             DateTime.now().millisecondsSinceEpoch, // Force UI updates
@@ -1480,6 +1524,10 @@ class AppState extends ChangeNotifier {
     return r'$(uci -q get openwalla.collector.db_path 2>/dev/null || echo /tmp/openwalla-netify.sqlite)';
   }
 
+  String _notificationsDbExpression() {
+    return r'$(uci -q get openwalla.notifications.db_path 2>/dev/null || echo /tmp/openwalla-notifications.sqlite)';
+  }
+
   Future<String> _sqliteQueryOutput({
     required String dbExpression,
     required String sql,
@@ -1583,6 +1631,118 @@ class AppState extends ChangeNotifier {
         .where((line) => RegExp(r'^\d+$').hasMatch(line))
         .lastOrNull;
     return int.tryParse(countText ?? '') ?? 0;
+  }
+
+  Future<int> fetchNotificationCount({BuildContext? context}) async {
+    if (_reviewerModeEnabled) return 2;
+
+    try {
+      final output = await _sqliteQueryOutput(
+        dbExpression: _notificationsDbExpression(),
+        sql:
+            'SELECT COUNT(*) FROM notifications WHERE "delete" = 0 AND archived = 0;',
+        context: context,
+      );
+      return _parseSqliteCount(output);
+    } catch (e, stack) {
+      Logger.warning('Optional notification count fetch failed: $e');
+      Logger.debug('Optional notification count stack: $stack');
+      return 0;
+    }
+  }
+
+  Future<int> refreshNotificationCount({BuildContext? context}) async {
+    final count = await fetchNotificationCount(context: context);
+    if (_dashboardData != null) {
+      _dashboardData = {
+        ..._dashboardData!,
+        'notificationCount': count,
+        '_lastUpdated': DateTime.now().millisecondsSinceEpoch,
+      };
+      notifyListeners();
+    }
+    return count;
+  }
+
+  Future<List<OpenwallaNotification>> fetchNotifications({
+    int limit = 200,
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      final now = DateTime.now().toUtc();
+      return [
+        OpenwallaNotification(
+          id: 1,
+          timestamp: now.subtract(const Duration(minutes: 4)),
+          app: 'ping-monitor',
+          message: 'Ping threshold exceeded: target=1.1.1.1 latency=124ms',
+          archived: false,
+          deleted: false,
+        ),
+        OpenwallaNotification(
+          id: 2,
+          timestamp: now.subtract(const Duration(minutes: 12)),
+          app: 'device-quarantine',
+          message: 'New device quarantined mac=AA:BB:CC:DD:EE:FF',
+          archived: false,
+          deleted: false,
+        ),
+      ];
+    }
+
+    try {
+      final safeLimit = limit.clamp(1, 500).toInt();
+      final output = await _sqliteQueryOutput(
+        dbExpression: _notificationsDbExpression(),
+        sql:
+            'SELECT id, timestamp, app, msg, archived, "delete" FROM notifications WHERE "delete" = 0 AND archived = 0 ORDER BY timestamp DESC LIMIT $safeLimit;',
+        context: context,
+      );
+      return output
+          .split('\n')
+          .map((line) => OpenwallaNotification.fromSqliteRow(line.trim()))
+          .whereType<OpenwallaNotification>()
+          .toList();
+    } catch (e, stack) {
+      Logger.warning('Optional notifications fetch failed: $e');
+      Logger.debug('Optional notifications stack: $stack');
+      return const [];
+    }
+  }
+
+  Future<void> archiveNotification(int id, {BuildContext? context}) async {
+    if (_reviewerModeEnabled) return;
+    if (id <= 0) return;
+
+    await _sqliteQueryOutput(
+      dbExpression: _notificationsDbExpression(),
+      sql: 'UPDATE notifications SET archived = 1 WHERE id = $id;',
+      context: context,
+    );
+    await refreshNotificationCount();
+  }
+
+  Future<void> archiveAllNotifications({BuildContext? context}) async {
+    if (_reviewerModeEnabled) return;
+
+    await _sqliteQueryOutput(
+      dbExpression: _notificationsDbExpression(),
+      sql:
+          'UPDATE notifications SET archived = 1 WHERE "delete" = 0 AND archived = 0;',
+      context: context,
+    );
+    await refreshNotificationCount();
+  }
+
+  Future<void> deleteAllNotifications({BuildContext? context}) async {
+    if (_reviewerModeEnabled) return;
+
+    await _sqliteQueryOutput(
+      dbExpression: _notificationsDbExpression(),
+      sql: 'UPDATE notifications SET "delete" = 1 WHERE "delete" = 0;',
+      context: context,
+    );
+    await refreshNotificationCount();
   }
 
   Future<List<NetifyFlow>> fetchNetifyFlows({
