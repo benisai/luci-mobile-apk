@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:luci_mobile/main.dart';
+import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 
-class FlowsScreen extends StatefulWidget {
+class FlowsScreen extends ConsumerStatefulWidget {
   const FlowsScreen({super.key});
 
   @override
-  State<FlowsScreen> createState() => _FlowsScreenState();
+  ConsumerState<FlowsScreen> createState() => _FlowsScreenState();
 }
 
 class _FlowItem {
@@ -54,131 +57,176 @@ class _FlowItem {
     required this.downloaded,
     required this.uploaded,
   });
+
+  factory _FlowItem.fromNetify(
+    NetifyFlow flow, {
+    Map<String, String> hostnameByMac = const {},
+    Map<String, String> hostnameByIp = const {},
+  }) {
+    final time = _formatClock(flow.timestamp.toLocal());
+    final timestamp = _formatDateTime(flow.timestamp.toLocal());
+    final protocol = flow.protocol == 'N/A' ? 'TCP' : flow.protocol;
+    final destinationPort = flow.destinationPort == '0'
+        ? protocol
+        : '$protocol ${flow.destinationPort}';
+    final devicePort = flow.localPort.isEmpty
+        ? protocol
+        : '$protocol ${flow.localPort}';
+    final deviceName =
+        hostnameByMac[flow.deviceMac] ??
+        hostnameByIp[flow.localIp] ??
+        (flow.localIp == '-' ? flow.deviceMac : flow.localIp);
+
+    return _FlowItem(
+      time: time,
+      destination: flow.destination,
+      country: flow.countryCode.isEmpty ? '?' : flow.countryCode,
+      blocked: false,
+      deviceName: deviceName.isEmpty ? '-' : deviceName,
+      deviceGroup: '-',
+      deviceIp: flow.localIp,
+      devicePort: devicePort,
+      macAddress: flow.deviceMac.isEmpty ? '-' : flow.deviceMac,
+      vendor: '-',
+      destinationIp: flow.destinationIp,
+      destinationPort: destinationPort,
+      destinationService: flow.protocol,
+      region: flow.region.isEmpty ? flow.countryCode : flow.region,
+      timestamp: timestamp,
+      direction: flow.direction,
+      outboundInterface: flow.interfaceName,
+      flowCount: '1',
+      duration: '-',
+      downloaded: _formatBytes(flow.downloadedBytes),
+      uploaded: _formatBytes(flow.uploadedBytes),
+    );
+  }
+
+  static String _formatClock(DateTime time) {
+    final hour = time.hour % 12 == 0 ? 12 : time.hour % 12;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final suffix = time.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $suffix';
+  }
+
+  static String _formatDateTime(DateTime time) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[time.month - 1]} ${time.day}, ${time.year} at ${_formatClock(time)}';
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    final kb = bytes / 1024;
+    if (kb < 1024) return '${kb.toStringAsFixed(kb >= 10 ? 0 : 1)} KB';
+    final mb = kb / 1024;
+    if (mb < 1024) return '${mb.toStringAsFixed(mb >= 10 ? 0 : 1)} MB';
+    final gb = mb / 1024;
+    return '${gb.toStringAsFixed(gb >= 10 ? 0 : 1)} GB';
+  }
 }
 
-class _FlowsScreenState extends State<FlowsScreen> {
+class _FlowsScreenState extends ConsumerState<FlowsScreen> {
   static const Color _cyan = Color(0xFF18AEEA);
   static const Color _red = Color(0xFFFF4D4F);
 
   int _selectedTab = 2;
+  bool _isLoading = true;
+  String? _error;
+  int _flowCount = 0;
+  List<_FlowItem> _flows = const [];
 
-  final List<_FlowItem> _flows = const [
-    _FlowItem(
-      time: '11:38 PM',
-      destination: 'unifi',
-      country: 'Unknown',
-      blocked: false,
-      deviceName: 'WYZE_Living_Room',
-      deviceGroup: 'IOT',
-      deviceIp: '10.0.200.225',
-      devicePort: 'TCP 33399',
-      macAddress: 'D0:3F:27:81:6C:17',
-      vendor: 'Wyze Labs Inc',
-      destinationIp: '10.0.0.1',
-      destinationPort: 'TCP 443',
-      destinationService: 'HTTPS',
-      region: 'Local',
-      timestamp: 'Aug 12, 2026 at 11:38 PM',
-      direction: 'Outbound',
-      outboundInterface: 'Spectrum',
-      flowCount: '1',
-      duration: '34s 950ms',
-      downloaded: '31 B',
-      uploaded: '31 B',
-    ),
-    _FlowItem(
-      time: '11:38 PM',
-      destination: 'aws-iot.wyzecam.com',
-      country: 'US',
-      blocked: false,
-      deviceName: 'WYZE_Living_Room',
-      deviceGroup: 'IOT',
-      deviceIp: '10.0.200.225',
-      devicePort: 'TCP 33399',
-      macAddress: 'D0:3F:27:81:6C:17',
-      vendor: 'Wyze Labs Inc',
-      destinationIp: '54.69.167.88',
-      destinationPort: 'TCP 8883',
-      destinationService: 'Secure MQTT',
-      region: 'United States',
-      timestamp: 'Aug 12, 2026 at 11:38 PM',
-      direction: 'Outbound',
-      outboundInterface: 'Spectrum',
-      flowCount: '1',
-      duration: '34s 950ms',
-      downloaded: '31 B',
-      uploaded: '31 B',
-    ),
-    _FlowItem(
-      time: '11:38 PM',
-      destination: 'm3-us.iotbing.com',
-      country: 'US',
-      blocked: false,
-      deviceName: 'Garage Camera',
-      deviceGroup: 'IOT',
-      deviceIp: '10.0.200.44',
-      devicePort: 'TCP 42418',
-      macAddress: '48:E1:E9:2A:1C:90',
-      vendor: 'Generic Camera',
-      destinationIp: '34.120.22.19',
-      destinationPort: 'TCP 443',
-      destinationService: 'HTTPS',
-      region: 'United States',
-      timestamp: 'Aug 12, 2026 at 11:38 PM',
-      direction: 'Outbound',
-      outboundInterface: 'Spectrum',
-      flowCount: '3',
-      duration: '1m 08s',
-      downloaded: '4.8 KB',
-      uploaded: '1.2 KB',
-    ),
-    _FlowItem(
-      time: '11:38 PM',
-      destination: 'api.eu.amplitude.com',
-      country: 'DE',
-      blocked: false,
-      deviceName: 'Pixel 9',
-      deviceGroup: 'Personal',
-      deviceIp: '10.0.0.32',
-      devicePort: 'TCP 51552',
-      macAddress: 'AA:12:44:9B:2D:10',
-      vendor: 'Google',
-      destinationIp: '18.198.12.4',
-      destinationPort: 'TCP 443',
-      destinationService: 'HTTPS',
-      region: 'Germany',
-      timestamp: 'Aug 12, 2026 at 11:38 PM',
-      direction: 'Outbound',
-      outboundInterface: 'Spectrum',
-      flowCount: '2',
-      duration: '12s 110ms',
-      downloaded: '9.2 KB',
-      uploaded: '2.7 KB',
-    ),
-    _FlowItem(
-      time: '11:38 PM',
-      destination: '20.15.200.1',
-      country: 'US',
-      blocked: true,
-      deviceName: 'Laptop',
-      deviceGroup: 'Default',
-      deviceIp: '10.0.0.18',
-      devicePort: 'TCP 49821',
-      macAddress: 'F4:D4:88:1B:8A:21',
-      vendor: 'Apple',
-      destinationIp: '20.15.200.1',
-      destinationPort: 'TCP 443',
-      destinationService: 'HTTPS',
-      region: 'United States',
-      timestamp: 'Aug 12, 2026 at 11:38 PM',
-      direction: 'Outbound',
-      outboundInterface: 'Spectrum',
-      flowCount: '1',
-      duration: '4s 012ms',
-      downloaded: '0 B',
-      uploaded: '0 B',
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadFlows());
+  }
+
+  Future<void> _loadFlows() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final appState = ref.read(appStateProvider);
+      final hostnames = _hostnameMaps(appState);
+      final results = await Future.wait([
+        appState.fetchNetifyFlowCount(context: context),
+        appState.fetchNetifyFlows(limit: 75, context: context),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _flowCount = results[0] as int;
+        _flows = (results[1] as List<NetifyFlow>)
+            .map(
+              (flow) => _FlowItem.fromNetify(
+                flow,
+                hostnameByMac: hostnames.$1,
+                hostnameByIp: hostnames.$2,
+              ),
+            )
+            .toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Unable to load Netify flows.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  (Map<String, String>, Map<String, String>) _hostnameMaps(AppState appState) {
+    final byMac = <String, String>{};
+    final byIp = <String, String>{};
+    final dhcpLeases =
+        appState.dashboardData?['dhcpLeases']?['dhcp_leases']
+            as List<dynamic>? ??
+        const [];
+
+    for (final lease in dhcpLeases) {
+      if (lease is! Map) continue;
+      final hostname = lease['hostname']?.toString().trim();
+      if (hostname == null || hostname.isEmpty || hostname == '*') continue;
+
+      final mac = lease['macaddr']?.toString().trim().toUpperCase();
+      final ip = lease['ipaddr']?.toString().trim();
+      if (mac != null && mac.isNotEmpty) {
+        byMac[mac.replaceAll('-', ':')] = hostname;
+      }
+      if (ip != null && ip.isNotEmpty) {
+        byIp[ip] = hostname;
+      }
+    }
+
+    return (byMac, byIp);
+  }
+
+  String _formatCount(int value) {
+    final text = value.toString();
+    final buffer = StringBuffer();
+    for (var i = 0; i < text.length; i++) {
+      final remaining = text.length - i;
+      buffer.write(text[i]);
+      if (remaining > 1 && remaining % 3 == 1) buffer.write(',');
+    }
+    return buffer.toString();
+  }
 
   void _showFlowDetails(_FlowItem flow) {
     showDialog<void>(
@@ -195,79 +243,136 @@ class _FlowsScreenState extends State<FlowsScreen> {
       appBar: const LuciAppBar(title: 'Network Flows', showBack: true),
       body: SafeArea(
         top: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
-          children: [
-            Row(
-              children: [
-                Text(
-                  'Last 24 Hours',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: FontWeight.w900,
+        child: RefreshIndicator(
+          onRefresh: _loadFlows,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'Last 24 Hours',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.keyboard_arrow_down_rounded,
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () {},
+                    child: const Text(
+                      'View Blocked',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'All Flows',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w800,
                 ),
-                const Spacer(),
-                TextButton(
-                  onPressed: () {},
-                  child: const Text(
-                    'View Blocked',
-                    style: TextStyle(fontWeight: FontWeight.w900),
-                  ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _formatCount(_flowCount),
+                style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w900,
+                  height: 0.95,
                 ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'All Flows',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w800,
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '0',
-              style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: FontWeight.w900,
-                height: 0.95,
+              const SizedBox(height: 22),
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('Upload')),
+                  ButtonSegment(value: 1, label: Text('Download')),
+                  ButtonSegment(value: 2, label: Text('History')),
+                ],
+                selected: {_selectedTab},
+                onSelectionChanged: (selection) {
+                  setState(() => _selectedTab = selection.first);
+                },
+                showSelectedIcon: false,
               ),
-            ),
-            const SizedBox(height: 22),
-            SegmentedButton<int>(
-              segments: const [
-                ButtonSegment(value: 0, label: Text('Upload')),
-                ButtonSegment(value: 1, label: Text('Download')),
-                ButtonSegment(value: 2, label: Text('History')),
-              ],
-              selected: {_selectedTab},
-              onSelectionChanged: (selection) {
-                setState(() => _selectedTab = selection.first);
-              },
-              showSelectedIcon: false,
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                'Exclude',
-                'Gaming',
-                'Social',
-                'Video',
-                'VPN',
-              ].map((label) => _FilterChip(label: label)).toList(),
-            ),
-            const SizedBox(height: 14),
-            _FlowListCard(flows: _flows, onTapFlow: _showFlowDetails),
-          ],
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  'Exclude',
+                  'Gaming',
+                  'Social',
+                  'Video',
+                  'VPN',
+                ].map((label) => _FilterChip(label: label)).toList(),
+              ),
+              const SizedBox(height: 14),
+              if (_isLoading)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 40),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_error != null)
+                _FlowEmptyCard(message: _error!, action: _loadFlows)
+              else if (_flows.isEmpty)
+                _FlowEmptyCard(
+                  message: 'No Netify flow data yet.',
+                  action: _loadFlows,
+                )
+              else
+                _FlowListCard(flows: _flows, onTapFlow: _showFlowDetails),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _FlowEmptyCard extends StatelessWidget {
+  final String message;
+  final VoidCallback action;
+
+  const _FlowEmptyCard({required this.message, required this.action});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 28, 18, 28),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+        ),
+      ),
+      child: Column(
+        children: [
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: action,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Refresh'),
+          ),
+        ],
       ),
     );
   }

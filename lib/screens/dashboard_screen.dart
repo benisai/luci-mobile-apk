@@ -228,9 +228,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _buildDashboardFlowsCard() {
+  Widget _buildDashboardFlowsCard(AppState appState) {
     final colorScheme = Theme.of(context).colorScheme;
     const flowColor = Color(0xFF8B5CF6);
+    final flowCount = appState.dashboardData?['netifyFlowCount'] as int? ?? 0;
 
     return _buildOpenwallaCard(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
@@ -270,7 +271,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '0',
+                  _formatCompactCount(flowCount),
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     color: colorScheme.onSurface,
                     fontWeight: FontWeight.w900,
@@ -295,6 +296,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final hour = time.hour % 12 == 0 ? 12 : time.hour % 12;
     final suffix = time.hour >= 12 ? 'PM' : 'AM';
     return '$hour $suffix';
+  }
+
+  String _formatCompactCount(int value) {
+    if (value < 1000) return value.toString();
+    if (value < 1000000) {
+      final thousands = value / 1000;
+      return '${thousands.toStringAsFixed(thousands >= 10 ? 0 : 1)}K';
+    }
+    final millions = value / 1000000;
+    return '${millions.toStringAsFixed(millions >= 10 ? 0 : 1)}M';
   }
 
   List<PingMonitorSample> _pingSamples(AppState appState) {
@@ -1562,7 +1573,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 child: _buildRealtimeThroughputCard(appState),
               ),
               const SizedBox(height: 12),
-              _buildDashboardFlowsCard(),
+              _buildDashboardFlowsCard(appState),
               const SizedBox(height: 12),
               _buildDashboardBottomCards(appState),
               const SizedBox(height: 12),
@@ -1612,7 +1623,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                 child: _buildRealtimeThroughputCard(appState),
                               ),
                               const SizedBox(height: 12),
-                              _buildDashboardFlowsCard(),
+                              _buildDashboardFlowsCard(appState),
                               const SizedBox(height: 12),
                               _buildDashboardBottomCards(appState),
                               const SizedBox(height: 24),

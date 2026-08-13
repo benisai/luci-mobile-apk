@@ -91,6 +91,176 @@ class MonthlyUsageSettings {
   });
 }
 
+class NetifyFlow {
+  final DateTime timestamp;
+  final String deviceMac;
+  final String localIp;
+  final String localPort;
+  final String destination;
+  final String application;
+  final String protocol;
+  final String destinationIp;
+  final String destinationPort;
+  final String interfaceName;
+  final int downloadedBytes;
+  final int uploadedBytes;
+  final int totalBytes;
+  final String countryCode;
+  final String region;
+  final String direction;
+  final String rawJson;
+
+  const NetifyFlow({
+    required this.timestamp,
+    required this.deviceMac,
+    required this.localIp,
+    required this.localPort,
+    required this.destination,
+    required this.application,
+    required this.protocol,
+    required this.destinationIp,
+    required this.destinationPort,
+    required this.interfaceName,
+    required this.downloadedBytes,
+    required this.uploadedBytes,
+    required this.totalBytes,
+    required this.countryCode,
+    required this.region,
+    required this.direction,
+    required this.rawJson,
+  });
+
+  static NetifyFlow? fromJsonLine(String line) {
+    try {
+      final decoded = jsonDecode(line);
+      if (decoded is! Map || decoded['type'] != 'flow') return null;
+      final flow = decoded['flow'];
+      if (flow is! Map) return null;
+
+      final timestamp = _parseNetifyTimestamp(
+        flow['last_seen_at'] ?? flow['first_seen_at'] ?? decoded['timeinsert'],
+      );
+      final sni = _firstString([
+        _nestedString(flow, ['ssl', 'client_sni']),
+        flow['client_sni'],
+        _nestedString(flow, ['tls', 'client_sni']),
+        flow['tls_client_sni'],
+      ]);
+      final destination = _firstString([
+        sni,
+        flow['host_server_name'],
+        flow['fqdn'],
+        flow['dns_host_name'],
+        flow['other_ip'],
+        'Unknown',
+      ]);
+      final application = _firstString([
+        flow['detected_application_name'],
+        flow['detected_app_name'],
+        destination,
+      ]);
+      final destinationIp = _firstString([flow['other_ip'], '-']);
+      final downloaded = _firstInt([
+        flow['other_bytes'],
+        flow['download_bytes'],
+        flow['server_bytes'],
+      ]);
+      final uploaded = _firstInt([
+        flow['local_bytes'],
+        flow['upload_bytes'],
+        flow['client_bytes'],
+      ]);
+      final total = _firstInt([flow['total_bytes'], downloaded + uploaded]);
+
+      return NetifyFlow(
+        timestamp: timestamp,
+        deviceMac: _normalizeMac(flow['local_mac']),
+        localIp: _firstString([flow['local_ip'], '-']),
+        localPort: _firstString([flow['local_port'], '']),
+        destination: destination.isNotEmpty ? destination : destinationIp,
+        application: application,
+        protocol: _firstString([flow['detected_protocol_name'], 'N/A']),
+        destinationIp: destinationIp,
+        destinationPort: _firstString([flow['other_port'], '0']),
+        interfaceName: _firstString([
+          decoded['interface'],
+          flow['interface'],
+          flow['local_interface'],
+          '-',
+        ]),
+        downloadedBytes: downloaded,
+        uploadedBytes: uploaded,
+        totalBytes: total,
+        countryCode: _firstString([
+          flow['other_country_code'],
+          flow['country_code'],
+          flow['country'],
+          '',
+        ]).toUpperCase(),
+        region: _firstString([
+          flow['other_country_name'],
+          flow['country_name'],
+          flow['region'],
+          '',
+        ]),
+        direction: _firstString([flow['direction'], 'Outbound']),
+        rawJson: line,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static DateTime _parseNetifyTimestamp(dynamic value) {
+    final numeric = value is num ? value.toDouble() : double.tryParse('$value');
+    if (numeric != null && numeric > 0) {
+      final milliseconds = numeric > 1000000000000
+          ? numeric.round()
+          : (numeric * 1000).round();
+      return DateTime.fromMillisecondsSinceEpoch(milliseconds, isUtc: true);
+    }
+    return DateTime.now().toUtc();
+  }
+
+  static dynamic _nestedString(Map flow, List<String> path) {
+    dynamic current = flow;
+    for (final key in path) {
+      if (current is! Map) return null;
+      current = current[key];
+    }
+    return current;
+  }
+
+  static String _firstString(List<dynamic> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty) return text;
+    }
+    return '';
+  }
+
+  static int _firstInt(List<dynamic> values) {
+    for (final value in values) {
+      final parsed = value is num ? value.round() : int.tryParse('$value');
+      if (parsed != null && parsed >= 0) return parsed;
+    }
+    return 0;
+  }
+
+  static String _normalizeMac(dynamic value) {
+    if (value is List) {
+      for (final entry in value) {
+        final parsed = _normalizeMac(entry);
+        if (parsed.isNotEmpty) return parsed;
+      }
+      return '';
+    }
+    final text = value?.toString().trim().toUpperCase() ?? '';
+    if (text.isEmpty) return '';
+    return text.split(RegExp(r'[\s,]+')).first.replaceAll('-', ':');
+  }
+}
+
 class AppState extends ChangeNotifier {
   static AppState? _instance;
 
@@ -618,6 +788,7 @@ class AppState extends ChangeNotifier {
           'wireguard': <String, dynamic>{}, // Empty for reviewer mode
           'conntrack': {'count': 142, 'max': 1000},
           'pingSamples': await fetchPingMonitorSamples(limit: 144),
+          'netifyFlowCount': 315188,
           'deviceCount': _countRouterDevices(processedDhcpData, associatedMacs),
           '_lastUpdated':
               DateTime.now().millisecondsSinceEpoch, // Force UI updates
@@ -721,6 +892,7 @@ class AppState extends ChangeNotifier {
 
       final conntrackFuture = _fetchConntrackData(ip, useHttps);
       final pingSamplesFuture = fetchPingMonitorSamples(limit: 144);
+      final netifyFlowCountFuture = fetchNetifyFlowCount();
       final associatedMacsFuture = _apiService!
           .fetchAllAssociatedWirelessMacsWithContext(
             ipAddress: ip,
@@ -814,13 +986,15 @@ class AppState extends ChangeNotifier {
         uciWirelessFuture,
         conntrackFuture,
         pingSamplesFuture,
+        netifyFlowCountFuture,
         associatedMacsFuture,
       ]);
       final wirelessRaw = optionalResults[0];
       final uciWirelessRaw = optionalResults[1];
       final conntrackData = optionalResults[2] as Map<String, int>;
       final pingSamples = optionalResults[3] as List<PingMonitorSample>;
-      final associatedMacs = optionalResults[4] as Map<String, Set<String>>;
+      final netifyFlowCount = optionalResults[4] as int;
+      final associatedMacs = optionalResults[5] as Map<String, Set<String>>;
 
       Map<String, dynamic>? wirelessData;
       if (wirelessRaw != null) {
@@ -933,6 +1107,7 @@ class AppState extends ChangeNotifier {
         'wireguard': wireguardData,
         'conntrack': conntrackData,
         'pingSamples': pingSamples,
+        'netifyFlowCount': netifyFlowCount,
         'deviceCount': _countRouterDevices(dhcpLeases, associatedMacs),
         '_lastUpdated':
             DateTime.now().millisecondsSinceEpoch, // Force UI updates
@@ -1066,6 +1241,112 @@ class AppState extends ChangeNotifier {
       Logger.warning('Optional system.exec conntrack failed: $e');
       Logger.debug('Optional system.exec conntrack stack: $stack');
       return {'count': 0, 'max': 1000};
+    }
+  }
+
+  String _netifySqlCommand(String sql) {
+    final escapedSql = sql.replaceAll('"', r'\"').replaceAll(r'$', r'\$');
+    return 'db="\$(uci -q get openwalla.collector.db_path 2>/dev/null || echo /tmp/openwalla-netify.sqlite)"; '
+        'statement="PRAGMA busy_timeout=3000; $escapedSql"; '
+        'if command -v sqlite3 >/dev/null 2>&1; then sqlite3 "\$db" "\$statement"; '
+        'elif command -v sqlite3-cli >/dev/null 2>&1; then sqlite3-cli "\$db" "\$statement"; '
+        'else echo "sqlite3 not installed" >&2; exit 127; fi';
+  }
+
+  Future<int> fetchNetifyFlowCount({BuildContext? context}) async {
+    if (_reviewerModeEnabled) return 315188;
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) return 0;
+
+    try {
+      final result = await _apiService!.systemExec(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        command: _netifySqlCommand('SELECT COUNT(*) FROM flow_raw;'),
+        context: context,
+      );
+      final output = _systemExecOutput(result);
+      final countText = output
+          .split('\n')
+          .map((line) => line.trim())
+          .where((line) => RegExp(r'^\d+$').hasMatch(line))
+          .lastOrNull;
+      return int.tryParse(countText ?? '') ?? 0;
+    } catch (e, stack) {
+      Logger.warning('Optional Netify flow count fetch failed: $e');
+      Logger.debug('Optional Netify flow count stack: $stack');
+      return 0;
+    }
+  }
+
+  Future<List<NetifyFlow>> fetchNetifyFlows({
+    int limit = 50,
+    int offset = 0,
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      final now = DateTime.now().toUtc();
+      return List<NetifyFlow>.generate(20, (index) {
+        final hosts = [
+          'aws-iot.wyzecam.com',
+          'm3-us.iotbing.com',
+          'api.eu.amplitude.com',
+          'connectivitycheck.gstatic.com',
+          'unifi',
+        ];
+        return NetifyFlow(
+          timestamp: now.subtract(Duration(minutes: index * 4)),
+          deviceMac: index.isEven ? 'D0:3F:27:81:6C:17' : 'AA:12:44:9B:2D:10',
+          localIp: index.isEven ? '10.0.200.225' : '10.0.0.32',
+          localPort: '${33399 + index}',
+          destination: hosts[index % hosts.length],
+          application: hosts[index % hosts.length],
+          protocol: index % 3 == 0 ? 'TLS' : 'HTTPS',
+          destinationIp: index % 3 == 0 ? '54.69.167.88' : '142.250.72.14',
+          destinationPort: index % 3 == 0 ? '8883' : '443',
+          interfaceName: 'wan',
+          downloadedBytes: 31 + (index * 420),
+          uploadedBytes: 31 + (index * 120),
+          totalBytes: 62 + (index * 540),
+          countryCode: index % 3 == 0 ? 'US' : '',
+          region: index % 3 == 0 ? 'United States' : '',
+          direction: 'Outbound',
+          rawJson: '{}',
+        );
+      });
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    try {
+      final safeLimit = limit.clamp(1, 200).toInt();
+      final safeOffset = offset < 0 ? 0 : offset;
+      final result = await _apiService!.systemExec(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        command: _netifySqlCommand(
+          'SELECT json FROM flow_raw ORDER BY id DESC LIMIT $safeLimit OFFSET $safeOffset;',
+        ),
+        context: context,
+      );
+      final output = _systemExecOutput(result);
+      return output
+          .split('\n')
+          .map((line) => NetifyFlow.fromJsonLine(line.trim()))
+          .whereType<NetifyFlow>()
+          .toList();
+    } catch (e, stack) {
+      Logger.warning('Optional Netify flows fetch failed: $e');
+      Logger.debug('Optional Netify flows stack: $stack');
+      return const [];
     }
   }
 
