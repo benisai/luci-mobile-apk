@@ -174,6 +174,18 @@ class MonthlyUsageSettings {
   });
 }
 
+class VnstatUsageSample {
+  final DateTime timestamp;
+  final int downloadBytes;
+  final int uploadBytes;
+
+  const VnstatUsageSample({
+    required this.timestamp,
+    required this.downloadBytes,
+    required this.uploadBytes,
+  });
+}
+
 class SystemStorageDetails {
   final int userTotalBytes;
   final int userFreeBytes;
@@ -2149,6 +2161,204 @@ class AppState extends ChangeNotifier {
       Logger.debug('Optional speedtest monitor samples stack: $stack');
       return const [];
     }
+  }
+
+  Future<List<VnstatUsageSample>> fetchVnstatUsageSamples({
+    required String period,
+    String? interfaceName,
+    int limit = 12,
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      final now = DateTime.now();
+      return List<VnstatUsageSample>.generate(limit, (index) {
+        final total = (index + 2) * 42 * 1024 * 1024;
+        return VnstatUsageSample(
+          timestamp: now.subtract(Duration(days: limit - 1 - index)),
+          downloadBytes: (total * 0.86).round(),
+          uploadBytes: (total * 0.14).round(),
+        );
+      });
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    final commands = ['/usr/bin/vnstat', '/usr/sbin/vnstat'];
+    for (final command in commands) {
+      try {
+        final result = await _apiService!.call(
+          router.ipAddress,
+          sysauth,
+          router.useHttps,
+          object: 'file',
+          method: 'exec',
+          params: {
+            'command': command,
+            'params': ['--json'],
+          },
+          context: context,
+        );
+        final output = _commandOutput(result);
+        if (output.trim().isEmpty) continue;
+        final samples = _parseVnstatSamples(
+          output,
+          period: period,
+          preferredInterface: interfaceName,
+          limit: limit,
+        );
+        if (samples.isNotEmpty) return samples;
+      } catch (e, stack) {
+        Logger.debug('Optional vnstat command $command failed: $e');
+        Logger.debug('Optional vnstat stack: $stack');
+      }
+    }
+    return const [];
+  }
+
+  List<VnstatUsageSample> _parseVnstatSamples(
+    String output, {
+    required String period,
+    String? preferredInterface,
+    required int limit,
+  }) {
+    try {
+      final payload = jsonDecode(output);
+      if (payload is! Map<String, dynamic>) return const [];
+      final interfaces = payload['interfaces'];
+      if (interfaces is! List) return const [];
+      final picked = _pickVnstatInterface(
+        interfaces,
+        period: period,
+        preferredInterface: preferredInterface,
+      );
+      final rows = _vnstatPeriodRows(
+        picked is Map ? picked['traffic'] : null,
+        period,
+      );
+      final samples =
+          rows
+              .map((row) => _mapVnstatRow(row, period))
+              .whereType<VnstatUsageSample>()
+              .toList()
+            ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+      return samples.length > limit
+          ? samples.sublist(samples.length - limit)
+          : samples;
+    } catch (e, stack) {
+      Logger.debug('Optional vnstat parse failed: $e');
+      Logger.debug('Optional vnstat parse stack: $stack');
+      return const [];
+    }
+  }
+
+  dynamic _pickVnstatInterface(
+    List interfaces, {
+    required String period,
+    String? preferredInterface,
+  }) {
+    final preferred = preferredInterface?.trim();
+    if (preferred != null && preferred.isNotEmpty) {
+      final exact = interfaces.whereType<Map>().where((interface) {
+        return interface['name']?.toString() == preferred &&
+            _vnstatPeriodRows(interface['traffic'], period).isNotEmpty;
+      }).firstOrNull;
+      if (exact != null) return exact;
+
+      final lower = preferred.toLowerCase();
+      final caseInsensitive = interfaces.whereType<Map>().where((interface) {
+        return interface['name']?.toString().toLowerCase() == lower &&
+            _vnstatPeriodRows(interface['traffic'], period).isNotEmpty;
+      }).firstOrNull;
+      if (caseInsensitive != null) return caseInsensitive;
+    }
+
+    return interfaces.whereType<Map>().where((interface) {
+          return _vnstatPeriodRows(interface['traffic'], period).isNotEmpty;
+        }).firstOrNull ??
+        (interfaces.isNotEmpty ? interfaces.first : null);
+  }
+
+  List _vnstatPeriodRows(dynamic traffic, String period) {
+    if (traffic is! Map) return const [];
+    final keys = switch (period) {
+      '5min' => [
+        'fiveminute',
+        'fiveminutes',
+        '5minute',
+        '5minutes',
+        'minute',
+        'minutes',
+      ],
+      'hourly' => ['hour', 'hours'],
+      'daily' => ['day', 'days'],
+      'monthly' => ['month', 'months'],
+      _ => const <String>[],
+    };
+    for (final key in keys) {
+      final rows = traffic[key];
+      if (rows is List) return rows;
+    }
+    return const [];
+  }
+
+  VnstatUsageSample? _mapVnstatRow(dynamic row, String period) {
+    if (row is! Map) return null;
+    final timestamp = _resolveVnstatTimestamp(row, period);
+    if (timestamp == null) return null;
+    return VnstatUsageSample(
+      timestamp: timestamp,
+      downloadBytes: _vnstatBytes(row['rx'] ?? row['rx_bytes']),
+      uploadBytes: _vnstatBytes(row['tx'] ?? row['tx_bytes']),
+    );
+  }
+
+  DateTime? _resolveVnstatTimestamp(Map row, String period) {
+    final rawTimestamp = row['timestamp'] ?? row['time'];
+    if (rawTimestamp is num) {
+      final milliseconds = rawTimestamp > 1000000000000
+          ? rawTimestamp.toInt()
+          : rawTimestamp.toInt() * 1000;
+      return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+    }
+
+    final date = row['date'];
+    if (date is! Map) return null;
+    final year = _asInt(date['year']);
+    final month = _asInt(date['month']);
+    final day = _asInt(date['day']);
+    if (year <= 0 || month <= 0) return null;
+
+    final time = row['time'];
+    final timeMap = time is Map ? time : const {};
+    var hour = _asInt(timeMap['hour'] ?? date['hour']);
+    final minute = _asInt(
+      timeMap['minute'] ?? timeMap['min'] ?? date['minute'],
+    );
+    if ((period == 'hourly' || period == '5min') && hour == 0) {
+      final maybeHour = _asInt(row['id']);
+      if (maybeHour >= 0 && maybeHour <= 23) hour = maybeHour;
+    }
+    if (period == 'daily') return DateTime(year, month, day <= 0 ? 1 : day);
+    if (period == 'monthly') return DateTime(year, month);
+    return DateTime(year, month, day <= 0 ? 1 : day, hour, minute);
+  }
+
+  int _vnstatBytes(dynamic value) {
+    if (value is int) return value < 0 ? 0 : value;
+    if (value is num) return value < 0 ? 0 : value.round();
+    if (value is Map) return _vnstatBytes(value['bytes']);
+    final parsed = int.tryParse(value?.toString() ?? '') ?? 0;
+    return parsed < 0 ? 0 : parsed;
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.round();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   Future<SpeedtestMonitorSettings> fetchSpeedtestMonitorSettings({

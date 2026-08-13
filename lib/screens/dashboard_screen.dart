@@ -28,6 +28,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   static const Color _openwallaCardBorder = Color(0xFF313C52);
   static const double _openwallaRadius = 8;
   _UsageRange _usageRange = _UsageRange.day;
+  final Map<String, Future<List<VnstatUsageSample>>> _usageFutures = {};
 
   @override
   void initState() {
@@ -1025,7 +1026,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildUsageCard(String interfaceName) {
-    final samples = _usageSamplesForRange(_usageRange);
+    final usageFuture = _usageFuture(_usageRange, interfaceName);
 
     return _buildOpenwallaCard(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
@@ -1048,12 +1049,52 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          _usageStackedBars(samples),
+          FutureBuilder<List<VnstatUsageSample>>(
+            future: usageFuture,
+            builder: (context, snapshot) {
+              final samples = _usageSamplesForRange(
+                _usageRange,
+                snapshot.data ?? const [],
+              );
+              return _usageStackedBars(samples);
+            },
+          ),
           const SizedBox(height: 18),
           _usageLegend(),
         ],
       ),
     );
+  }
+
+  Future<List<VnstatUsageSample>> _usageFuture(
+    _UsageRange range,
+    String interfaceName,
+  ) {
+    final period = _usageVnstatPeriod(range);
+    final limit = switch (range) {
+      _UsageRange.minute => 24,
+      _UsageRange.day => 14,
+      _UsageRange.week => 60,
+    };
+    final key = '$interfaceName:$period:$limit';
+    return _usageFutures.putIfAbsent(
+      key,
+      () => ref
+          .read(appStateProvider)
+          .fetchVnstatUsageSamples(
+            period: period,
+            interfaceName: interfaceName,
+            limit: limit,
+          ),
+    );
+  }
+
+  String _usageVnstatPeriod(_UsageRange range) {
+    return switch (range) {
+      _UsageRange.minute => '5min',
+      _UsageRange.day => 'daily',
+      _UsageRange.week => 'daily',
+    };
   }
 
   String _usageRangeLabel(_UsageRange range) {
@@ -1118,37 +1159,83 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  List<({String label, double downloadGb, double uploadGb})>
-  _usageSamplesForRange(_UsageRange range) {
+  List<({String label, int downloadBytes, int uploadBytes, bool hasData})>
+  _usageSamplesForRange(_UsageRange range, List<VnstatUsageSample> samples) {
     final now = DateTime.now();
-    final daily = <double>[77.70, 127.94, 92.19, 115.65, 90.41, 101.14, 78.03];
 
     return switch (range) {
       _UsageRange.minute => List.generate(6, (index) {
-        final minutesAgo = (5 - index) * 10;
-        final time = now.subtract(Duration(minutes: minutesAgo));
-        final total = [0.42, 0.58, 0.35, 0.72, 0.64, 0.48][index];
+        final slot = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          now.hour,
+          (now.minute ~/ 10) * 10,
+        ).subtract(Duration(minutes: (5 - index) * 10));
+        final slotEnd = slot.add(const Duration(minutes: 10));
+        final matches = samples.where((sample) {
+          final time = sample.timestamp.toLocal();
+          return !time.isBefore(slot) && time.isBefore(slotEnd);
+        }).toList();
+        final download = matches.fold<int>(
+          0,
+          (sum, sample) => sum + sample.downloadBytes,
+        );
+        final upload = matches.fold<int>(
+          0,
+          (sum, sample) => sum + sample.uploadBytes,
+        );
         return (
-          label: '${time.minute.toString().padLeft(2, '0')}m',
-          downloadGb: total * 0.86,
-          uploadGb: total * 0.14,
+          label: '${slot.hour}:${slot.minute.toString().padLeft(2, '0')}',
+          downloadBytes: download,
+          uploadBytes: upload,
+          hasData: matches.isNotEmpty,
         );
       }),
       _UsageRange.day => List.generate(7, (index) {
         final day = now.subtract(Duration(days: 6 - index));
-        final total = daily[index];
+        final slot = DateTime(day.year, day.month, day.day);
+        final slotEnd = slot.add(const Duration(days: 1));
+        final matches = samples.where((sample) {
+          final time = sample.timestamp.toLocal();
+          return !time.isBefore(slot) && time.isBefore(slotEnd);
+        }).toList();
         return (
           label: index == 6 ? 'Today' : _weekdayShort(day.weekday),
-          downloadGb: total * 0.88,
-          uploadGb: total * 0.12,
+          downloadBytes: matches.fold<int>(
+            0,
+            (sum, sample) => sum + sample.downloadBytes,
+          ),
+          uploadBytes: matches.fold<int>(
+            0,
+            (sum, sample) => sum + sample.uploadBytes,
+          ),
+          hasData: matches.isNotEmpty,
         );
       }),
       _UsageRange.week => List.generate(4, (index) {
-        final total = [416.4, 529.8, 472.1, 386.7][index];
+        final end = DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ).subtract(Duration(days: (3 - index) * 7));
+        final start = end.subtract(const Duration(days: 6));
+        final slotEnd = end.add(const Duration(days: 1));
+        final matches = samples.where((sample) {
+          final time = sample.timestamp.toLocal();
+          return !time.isBefore(start) && time.isBefore(slotEnd);
+        }).toList();
         return (
           label: index == 3 ? 'This Week' : 'W-${3 - index}',
-          downloadGb: total * 0.9,
-          uploadGb: total * 0.1,
+          downloadBytes: matches.fold<int>(
+            0,
+            (sum, sample) => sum + sample.downloadBytes,
+          ),
+          uploadBytes: matches.fold<int>(
+            0,
+            (sum, sample) => sum + sample.uploadBytes,
+          ),
+          hasData: matches.isNotEmpty,
         );
       }),
     };
@@ -1159,38 +1246,42 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return labels[(weekday - 1).clamp(0, 6)];
   }
 
-  String _formatUsageTotal(double valueGb) {
-    if (valueGb >= 100) return '${valueGb.toStringAsFixed(0)} GB';
-    if (valueGb >= 10) return '${valueGb.toStringAsFixed(1)} GB';
-    if (valueGb >= 1) return '${valueGb.toStringAsFixed(2)} GB';
-    return '${(valueGb * 1024).toStringAsFixed(0)} MB';
+  String _formatUsageTotal(int bytes) {
+    if (bytes <= 0) return '0 B';
+    final mb = bytes / (1024 * 1024);
+    if (mb < 1024) return '${mb.toStringAsFixed(mb >= 10 ? 0 : 1)} MB';
+    final gb = mb / 1024;
+    if (gb >= 100) return '${gb.toStringAsFixed(0)} GB';
+    if (gb >= 10) return '${gb.toStringAsFixed(1)} GB';
+    return '${gb.toStringAsFixed(2)} GB';
   }
 
   Widget _usageStackedBars(
-    List<({String label, double downloadGb, double uploadGb})> samples,
+    List<({String label, int downloadBytes, int uploadBytes, bool hasData})>
+    samples,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
     final maxTotal = samples
-        .map((sample) => sample.downloadGb + sample.uploadGb)
-        .fold<double>(0, (max, total) => total > max ? total : max);
+        .map((sample) => sample.downloadBytes + sample.uploadBytes)
+        .fold<int>(0, (max, total) => total > max ? total : max);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: List.generate(samples.length, (index) {
         final sample = samples[index];
-        final total = sample.downloadGb + sample.uploadGb;
+        final total = sample.downloadBytes + sample.uploadBytes;
         final totalFactor = maxTotal > 0
             ? (total / maxTotal).clamp(0.12, 1.0)
             : 0.12;
-        final downloadFactor = total > 0 ? sample.downloadGb / total : 0.0;
-        final uploadFactor = total > 0 ? sample.uploadGb / total : 0.0;
+        final downloadFactor = total > 0 ? sample.downloadBytes / total : 0.0;
+        final uploadFactor = total > 0 ? sample.uploadBytes / total : 0.0;
         final barHeight = 154 * totalFactor;
         final downloadHeight = (barHeight * downloadFactor).clamp(
           6.0,
           barHeight,
         );
         final uploadHeight = (barHeight * uploadFactor).clamp(
-          sample.uploadGb > 0 ? 6.0 : 0.0,
+          sample.uploadBytes > 0 ? 6.0 : 0.0,
           barHeight,
         );
 
@@ -1237,14 +1328,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          Container(
-                            height: uploadHeight,
-                            color: _openwallaOrange,
-                          ),
-                          Container(
-                            height: downloadHeight,
-                            color: _openwallaCyan,
-                          ),
+                          if (sample.hasData) ...[
+                            Container(
+                              height: uploadHeight,
+                              color: _openwallaOrange,
+                            ),
+                            Container(
+                              height: downloadHeight,
+                              color: _openwallaCyan,
+                            ),
+                          ],
                         ],
                       ),
                     ),
