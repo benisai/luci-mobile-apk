@@ -1312,6 +1312,30 @@ class AppState extends ChangeNotifier {
     return r'$(uci -q get openwalla.collector.db_path 2>/dev/null || echo /tmp/openwalla-netify.sqlite)';
   }
 
+  Future<String> _sqliteQueryOutput({
+    required String dbExpression,
+    required String sql,
+    BuildContext? context,
+  }) async {
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) return '';
+
+    final result = await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'file',
+      method: 'exec',
+      params: {
+        'command': '/bin/sh',
+        'params': ['-c', _sqliteCommand(dbExpression, sql)],
+      },
+      context: context,
+    );
+    return _commandOutput(result);
+  }
+
   Future<int> fetchNetifyFlowCount({BuildContext? context}) async {
     if (_reviewerModeEnabled) return 315188;
 
@@ -1320,17 +1344,11 @@ class AppState extends ChangeNotifier {
     if (router == null || sysauth == null || _apiService == null) return 0;
 
     try {
-      final result = await _apiService!.systemExec(
-        router.ipAddress,
-        sysauth,
-        router.useHttps,
-        command: _sqliteCommand(
-          _connectionFlowsDbExpression(),
-          'SELECT COUNT(*) FROM connection_flows;',
-        ),
+      final output = await _sqliteQueryOutput(
+        dbExpression: _connectionFlowsDbExpression(),
+        sql: 'SELECT COUNT(*) FROM connection_flows;',
         context: context,
       );
-      final output = _systemExecOutput(result);
       final countText = output
           .split('\n')
           .map((line) => line.trim())
@@ -1352,17 +1370,11 @@ class AppState extends ChangeNotifier {
     if (router == null || sysauth == null || _apiService == null) return 0;
 
     try {
-      final result = await _apiService!.systemExec(
-        router.ipAddress,
-        sysauth,
-        router.useHttps,
-        command: _sqliteCommand(
-          _netifyDbExpression(),
-          'SELECT COUNT(*) FROM flow_raw;',
-        ),
+      final output = await _sqliteQueryOutput(
+        dbExpression: _netifyDbExpression(),
+        sql: 'SELECT COUNT(*) FROM flow_raw;',
         context: context,
       );
-      final output = _systemExecOutput(result);
       final countText = output
           .split('\n')
           .map((line) => line.trim())
@@ -1422,17 +1434,12 @@ class AppState extends ChangeNotifier {
     final safeLimit = limit.clamp(1, 200).toInt();
     final safeOffset = offset < 0 ? 0 : offset;
     try {
-      final result = await _apiService!.systemExec(
-        router.ipAddress,
-        sysauth,
-        router.useHttps,
-        command: _sqliteCommand(
-          _connectionFlowsDbExpression(),
-          "SELECT id,timeinsert,protocol,source,destination,transfer,status FROM connection_flows ORDER BY id DESC LIMIT $safeLimit OFFSET $safeOffset;",
-        ),
+      final output = await _sqliteQueryOutput(
+        dbExpression: _connectionFlowsDbExpression(),
+        sql:
+            'SELECT id,timeinsert,protocol,source,destination,transfer,status FROM connection_flows ORDER BY id DESC LIMIT $safeLimit OFFSET $safeOffset;',
         context: context,
       );
-      final output = _systemExecOutput(result);
       final connectionFlows = output
           .split('\n')
           .map((line) => NetifyFlow.fromConnectionFlowRow(line.trim()))
@@ -1459,17 +1466,12 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      final result = await _apiService!.systemExec(
-        router.ipAddress,
-        sysauth,
-        router.useHttps,
-        command: _sqliteCommand(
-          _netifyDbExpression(),
-          'SELECT json FROM flow_raw ORDER BY id DESC LIMIT $limit OFFSET $offset;',
-        ),
+      final output = await _sqliteQueryOutput(
+        dbExpression: _netifyDbExpression(),
+        sql:
+            'SELECT json FROM flow_raw ORDER BY id DESC LIMIT $limit OFFSET $offset;',
         context: context,
       );
-      final output = _systemExecOutput(result);
       return output
           .split('\n')
           .map((line) => NetifyFlow.fromJsonLine(line.trim()))
@@ -1483,6 +1485,17 @@ class AppState extends ChangeNotifier {
   }
 
   String _systemExecOutput(dynamic result) {
+    return _commandOutput(result);
+  }
+
+  String _commandOutput(dynamic result) {
+    if (result is List && result.length > 1 && result[0] == 0) {
+      return _commandOutput(result[1]);
+    }
+    if (result is Map) {
+      final stdout = result['stdout'] ?? result['data'] ?? result['output'];
+      if (stdout != null) return stdout.toString();
+    }
     if (result is List && result.length > 1 && result[0] == 0) {
       return result[1]?.toString() ?? '';
     }
