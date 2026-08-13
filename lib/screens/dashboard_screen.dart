@@ -1190,6 +1190,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final values = _conntrackValues(appState);
     final max = values.max <= 0 ? 1000 : values.max;
     final progress = (values.count / max).clamp(0.0, 1.0);
+    final percentText = (progress * 100).toStringAsFixed(
+      progress > 0 && progress < 0.1 ? 1 : 0,
+    );
 
     return _buildOpenwallaCard(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
@@ -1202,7 +1205,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                values.count.toString(),
+                '${values.count} / $max',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurface,
                   fontWeight: FontWeight.w900,
@@ -1221,7 +1224,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           _metricProgressBar(value: progress, fillColor: _openwallaCyan),
           const SizedBox(height: 10),
           Text(
-            '${(progress * 100).toStringAsFixed(1)}% of maximum capacity',
+            '$percentText% of maximum table size',
             style: _metricMutedTextStyle(),
           ),
         ],

@@ -1243,6 +1243,10 @@ class AppState extends ChangeNotifier {
     };
   }
 
+  int? _parseProcInt(String value) {
+    return int.tryParse(value.trim().split(RegExp(r'\s+')).firstOrNull ?? '');
+  }
+
   int _countRouterDevices(
     Map<String, dynamic>? dhcpLeases,
     Map<String, Set<String>> associatedMacs,
@@ -1276,7 +1280,33 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      final result = await _apiService!.systemExec(
+      Future<int?> readCounter(String path) async {
+        final result = await _apiService!.call(
+          ip,
+          _authService!.sysauth!,
+          useHttps,
+          object: 'file',
+          method: 'read',
+          params: {'path': path},
+        );
+        return _parseProcInt(_commandOutput(result));
+      }
+
+      final count =
+          await readCounter('/proc/sys/net/netfilter/nf_conntrack_count') ??
+          await readCounter('/proc/sys/net/ipv4/netfilter/ip_conntrack_count');
+      final max =
+          await readCounter('/proc/sys/net/netfilter/nf_conntrack_max') ??
+          await readCounter('/proc/sys/net/ipv4/netfilter/ip_conntrack_max');
+
+      if (count != null || max != null) {
+        return {
+          'count': count ?? 0,
+          'max': max != null && max > 0 ? max : 1000,
+        };
+      }
+
+      final fallback = await _apiService!.systemExec(
         ip,
         _authService!.sysauth!,
         useHttps,
@@ -1284,10 +1314,10 @@ class AppState extends ChangeNotifier {
             'cat /proc/sys/net/netfilter/nf_conntrack_count /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null || cat /proc/sys/net/ipv4/netfilter/ip_conntrack_count /proc/sys/net/ipv4/netfilter/ip_conntrack_max 2>/dev/null',
       );
 
-      if (result is List && result.length > 1 && result[0] == 0) {
-        return _parseConntrackData(result[1]);
+      if (fallback is List && fallback.length > 1 && fallback[0] == 0) {
+        return _parseConntrackData(fallback[1]);
       }
-      return _parseConntrackData(result);
+      return _parseConntrackData(fallback);
     } catch (e, stack) {
       Logger.warning('Optional system.exec conntrack failed: $e');
       Logger.debug('Optional system.exec conntrack stack: $stack');
