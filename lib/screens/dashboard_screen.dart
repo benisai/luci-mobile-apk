@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -21,7 +23,8 @@ class DashboardScreen extends ConsumerStatefulWidget {
   ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+class _DashboardScreenState extends ConsumerState<DashboardScreen>
+    with WidgetsBindingObserver {
   static const Color _openwallaCyan = Color(0xFF18AEEA);
   static const Color _openwallaOrange = Color(0xFFF27C24);
   static const Color _openwallaGreen = Color(0xFF20CF70);
@@ -30,13 +33,57 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   _UsageRange _usageRange = _UsageRange.day;
   final Map<String, Future<List<VnstatUsageSample>>> _usageFutures = {};
   Future<MonthlyUsageSettings>? _monthlyUsageSettingsFuture;
+  Timer? _summaryRefreshTimer;
+  bool _summaryRefreshInFlight = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(appStateProvider).fetchDashboardData();
+      _startSummaryRefreshTimer();
     });
+  }
+
+  @override
+  void dispose() {
+    _summaryRefreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startSummaryRefreshTimer();
+      _refreshSummaryCounts();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _summaryRefreshTimer?.cancel();
+      _summaryRefreshTimer = null;
+    }
+  }
+
+  void _startSummaryRefreshTimer() {
+    _summaryRefreshTimer?.cancel();
+    _summaryRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _refreshSummaryCounts();
+    });
+  }
+
+  Future<void> _refreshSummaryCounts() async {
+    if (!mounted || _summaryRefreshInFlight) return;
+    _summaryRefreshInFlight = true;
+    try {
+      await ref
+          .read(appStateProvider)
+          .refreshDashboardSummaryCounts(context: context);
+    } finally {
+      _summaryRefreshInFlight = false;
+    }
   }
 
   double _scaledLoadPercent(List<dynamic>? load, int index) {
@@ -149,6 +196,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget _buildDashboardSummaryCards(AppState appState) {
     final deviceCount = appState.dashboardData?['deviceCount'];
     final notificationCount = appState.dashboardData?['notificationCount'];
+    final rulesCount = appState.dashboardData?['rulesCount'];
 
     return Column(
       children: [
@@ -184,7 +232,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             Expanded(
               child: _buildDashboardSummaryCard(
                 label: 'Rules',
-                count: '0',
+                count: (rulesCount is int ? rulesCount : 0).toString(),
                 icon: Icons.rule_rounded,
                 color: _openwallaGreen,
               ),

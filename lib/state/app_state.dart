@@ -958,6 +958,7 @@ class AppState extends ChangeNotifier {
           'netifyFlowCount': 315188,
           'notificationCount': 2,
           'deviceCount': _countRouterDevices(processedDhcpData, associatedMacs),
+          'rulesCount': 0,
           '_lastUpdated':
               DateTime.now().millisecondsSinceEpoch, // Force UI updates
         };
@@ -1281,6 +1282,7 @@ class AppState extends ChangeNotifier {
         'netifyFlowCount': netifyFlowCount,
         'notificationCount': notificationCount,
         'deviceCount': _countRouterDevices(dhcpLeases, associatedMacs),
+        'rulesCount': 0,
         '_lastUpdated':
             DateTime.now().millisecondsSinceEpoch, // Force UI updates
       };
@@ -1674,6 +1676,78 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     }
     return count;
+  }
+
+  Future<void> refreshDashboardSummaryCounts({BuildContext? context}) async {
+    if (_reviewerModeEnabled) {
+      if (_dashboardData != null) {
+        _dashboardData = {
+          ..._dashboardData!,
+          'notificationCount': 2,
+          'rulesCount': 0,
+          '_lastUpdated': DateTime.now().millisecondsSinceEpoch,
+        };
+        notifyListeners();
+      }
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) return;
+
+    int? deviceCount;
+    final notificationCountFuture = fetchNotificationCount(context: context);
+
+    try {
+      final dhcpResult = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'luci-rpc',
+        method: 'getDHCPLeases',
+        params: {},
+        context: context,
+      );
+      Map<String, dynamic>? dhcpLeases;
+      if (dhcpResult is List && dhcpResult.length > 1 && dhcpResult[0] == 0) {
+        final data = dhcpResult[1];
+        if (data is Map<String, dynamic>) dhcpLeases = data;
+      } else if (dhcpResult is Map<String, dynamic>) {
+        dhcpLeases = dhcpResult;
+      }
+
+      final associatedMacs = await _apiService!
+          .fetchAllAssociatedWirelessMacsWithContext(
+            ipAddress: router.ipAddress,
+            sysauth: sysauth,
+            useHttps: router.useHttps,
+          )
+          .catchError((e, stack) {
+            Logger.warning(
+              'Optional summary associated station fetch failed: $e',
+            );
+            Logger.debug('Optional summary associated station stack: $stack');
+            return <String, Set<String>>{};
+          });
+
+      deviceCount = _countRouterDevices(dhcpLeases, associatedMacs);
+    } catch (e, stack) {
+      Logger.warning('Optional dashboard device count refresh failed: $e');
+      Logger.debug('Optional dashboard device count refresh stack: $stack');
+    }
+
+    final notificationCount = await notificationCountFuture;
+    if (_dashboardData != null) {
+      _dashboardData = {
+        ..._dashboardData!,
+        if (deviceCount != null) 'deviceCount': deviceCount,
+        'notificationCount': notificationCount,
+        'rulesCount': 0,
+        '_lastUpdated': DateTime.now().millisecondsSinceEpoch,
+      };
+      notifyListeners();
+    }
   }
 
   Future<List<OpenwallaNotification>> fetchNotifications({
