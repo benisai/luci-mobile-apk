@@ -112,71 +112,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return '${percent.toStringAsFixed(0)}%';
   }
 
-  String _deriveReleaseChannel(Map<String, dynamic>? release) {
-    if (release == null || release.isEmpty) {
-      return 'stable';
-    }
-
-    final buffer = StringBuffer();
-    // Check ALL release fields, not just a hardcoded subset
-    for (final value in release.values) {
-      if (value == null) continue;
-      buffer
-        ..write(' ')
-        ..write(value.toString().toLowerCase());
-    }
-
-    final combined = buffer.toString();
-
-    if (combined.contains('snapshot')) {
-      return 'snapshot';
-    }
-    if (combined.contains('beta')) {
-      return 'beta';
-    }
-    // Use pattern matching for 'rc' to avoid false positives on words like "source"
-    if (RegExp(r'[\b\-_.]rc[\d\b\-_.]').hasMatch(combined) ||
-        combined.contains('-rc') ||
-        combined.endsWith('rc')) {
-      return 'rc';
-    }
-    if (combined.contains('testing')) {
-      return 'testing';
-    }
-
-    return 'stable';
-  }
-
-  ({Color background, Color foreground}) _channelColors(String channel) {
-    switch (channel) {
-      case 'snapshot':
-        return (
-          background: Colors.orange.withValues(alpha: 0.15),
-          foreground: Colors.orange.shade800,
-        );
-      case 'beta':
-        return (
-          background: _openwallaCyan.withValues(alpha: 0.15),
-          foreground: _openwallaCyan,
-        );
-      case 'rc':
-        return (
-          background: Colors.purple.withValues(alpha: 0.15),
-          foreground: Colors.purple.shade800,
-        );
-      case 'testing':
-        return (
-          background: Colors.amber.withValues(alpha: 0.18),
-          foreground: Colors.amber.shade900,
-        );
-      default:
-        return (
-          background: _openwallaGreen.withValues(alpha: 0.15),
-          foreground: _openwallaGreen,
-        );
-    }
-  }
-
   Widget _buildOpenwallaCard({
     required Widget child,
     EdgeInsetsGeometry? padding,
@@ -270,95 +205,73 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _buildDeviceInfoCard(AppState appState) {
-    final boardInfo =
-        appState.dashboardData?['boardInfo'] as Map<String, dynamic>?;
-    final model = boardInfo?['model'] ?? 'N/A';
-    final release = boardInfo?['release'] as Map<String, dynamic>?;
-    final version = release?['version'] ?? 'N/A';
-    final channel = _deriveReleaseChannel(release);
-    final channelLabel = channel.toUpperCase();
-    final channelColors = _channelColors(channel);
-
-    final labelStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-      color: Theme.of(context).colorScheme.onSurface,
+  Widget _buildDashboardSummaryCards() {
+    return Row(
+      children: [
+        Expanded(
+          child: _buildDashboardSummaryCard(
+            label: 'Devices',
+            count: '0',
+            icon: Icons.devices_rounded,
+            color: _openwallaCyan,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildDashboardSummaryCard(
+            label: 'Notifications',
+            count: '0',
+            icon: Icons.notifications_rounded,
+            color: _openwallaOrange,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildDashboardSummaryCard(
+            label: 'Rules',
+            count: '0',
+            icon: Icons.rule_rounded,
+            color: _openwallaGreen,
+          ),
+        ),
+      ],
     );
-    final valueStyle = Theme.of(
-      context,
-    ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold);
+  }
+
+  Widget _buildDashboardSummaryCard({
+    required String label,
+    required String count,
+    required IconData icon,
+    required Color color,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
 
     return _buildOpenwallaCard(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+      accentColor: color,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildOpenwallaCardHeader(
-            icon: Icons.router_rounded,
-            title: 'Router',
-            color: Theme.of(context).colorScheme.primary,
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 12),
+          Text(
+            count,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+            ),
           ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Model', style: labelStyle),
-                    const SizedBox(height: 4),
-                    Text(
-                      model,
-                      style: valueStyle,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Version', style: labelStyle),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            version,
-                            style: valueStyle,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: channelColors.background,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            channelLabel,
-                            style: TextStyle(
-                              color: channelColors.foreground,
-                              fontWeight: FontWeight.bold,
-                              fontSize: Theme.of(
-                                context,
-                              ).textTheme.bodySmall?.fontSize,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -1676,7 +1589,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           if (isLandscape) {
             final landscapeContent = [
               const SizedBox(height: 16),
-              _buildDeviceInfoCard(appState),
+              _buildDashboardSummaryCards(),
               const SizedBox(height: 12),
               SizedBox(
                 height: 240,
@@ -1719,7 +1632,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const SizedBox(height: 16),
-                            _buildDeviceInfoCard(appState),
+                            _buildDashboardSummaryCards(),
                             const SizedBox(height: 12),
                             Expanded(
                               child: _buildRealtimeThroughputCard(appState),
