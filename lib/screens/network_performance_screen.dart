@@ -19,7 +19,7 @@ class NetworkPerformanceScreen extends ConsumerStatefulWidget {
   }
 
   static String formatLatency(double? latencyMs) {
-    if (latencyMs == null) return '0ms';
+    if (latencyMs == null) return 'No data';
     if (latencyMs >= 100) return '${latencyMs.toStringAsFixed(0)}ms';
     return '${latencyMs.toStringAsFixed(1)}ms';
   }
@@ -51,7 +51,7 @@ class NetworkPerformanceScreen extends ConsumerStatefulWidget {
   }
 
   static Color _bucketColor(_PingHourBucket bucket, Color emptyColor) {
-    if (!bucket.hasSamples) return emptyColor;
+    if (!bucket.hasSamples) return emptyColor.withValues(alpha: 0.76);
     if (bucket.hasOnlyFailures) return const Color(0xFFFF424B);
     final latency = bucket.averageLatencyMs ?? 0;
     if (latency >= 100) return _yellow;

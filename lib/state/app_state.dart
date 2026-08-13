@@ -1666,10 +1666,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  String _systemExecOutput(dynamic result) {
-    return _commandOutput(result);
-  }
-
   String _commandOutput(dynamic result) {
     if (result is List && result.length > 1 && result[0] == 0) {
       return _commandOutput(result[1]);
@@ -1867,16 +1863,23 @@ class AppState extends ChangeNotifier {
 
     try {
       final safeLimit = limit.clamp(1, 2000).toInt();
-      final result = await _apiService!.systemExec(
+      final result = await _apiService!.call(
         router.ipAddress,
         sysauth,
         router.useHttps,
-        command:
+        object: 'file',
+        method: 'exec',
+        params: {
+          'command': '/bin/sh',
+          'params': [
+            '-c',
             r'file="$(uci -q get openwalla.ping_monitor.output_file 2>/dev/null || echo /tmp/openwalla-ping-monitor.txt)"; '
-            'tail -n $safeLimit "\$file" 2>/dev/null || true',
+                'if [ -f "\$file" ]; then tail -n $safeLimit "\$file" 2>/dev/null; fi',
+          ],
+        },
         context: context,
       );
-      final output = _systemExecOutput(result);
+      final output = _commandOutput(result);
       return output
           .split('\n')
           .map((line) => PingMonitorSample.fromLine(line.trim()))

@@ -319,7 +319,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   String _formatLatencyValue(double? latencyMs) {
-    if (latencyMs == null) return '0ms';
+    if (latencyMs == null) return 'No data';
     if (latencyMs >= 100) return '${latencyMs.toStringAsFixed(0)}ms';
     return '${latencyMs.toStringAsFixed(1)}ms';
   }
@@ -352,7 +352,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Color _pingBucketColor(_PingHourBucket bucket) {
     if (!bucket.hasSamples) {
-      return Theme.of(context).colorScheme.surfaceContainerHighest;
+      return Theme.of(
+        context,
+      ).colorScheme.onSurfaceVariant.withValues(alpha: 0.28);
     }
     if (bucket.hasOnlyFailures) return Theme.of(context).colorScheme.error;
     final latency = bucket.averageLatencyMs ?? 0;
