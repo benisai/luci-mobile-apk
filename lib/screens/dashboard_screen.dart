@@ -9,6 +9,7 @@ import 'package:luci_mobile/screens/flows_screen.dart';
 import 'package:luci_mobile/screens/monthly_usage_screen.dart';
 import 'package:luci_mobile/screens/network_performance_screen.dart';
 import 'package:luci_mobile/screens/notifications_screen.dart';
+import 'package:luci_mobile/screens/system_resources_screen.dart';
 import 'package:luci_mobile/models/router.dart' as model;
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -932,16 +933,30 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return _buildOpenwallaCard(
       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 0),
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 20),
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => const SystemResourcesScreen(),
+          ),
+        );
+      },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'System Resources',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'System Resources',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ),
+              _subtleCardArrow(),
+            ],
           ),
           const SizedBox(height: 18),
           _buildSystemGaugeRow(

@@ -91,6 +91,27 @@ class MonthlyUsageSettings {
   });
 }
 
+class SystemStorageDetails {
+  final int userTotalBytes;
+  final int userFreeBytes;
+  final int tempTotalBytes;
+  final int tempFreeBytes;
+
+  const SystemStorageDetails({
+    required this.userTotalBytes,
+    required this.userFreeBytes,
+    required this.tempTotalBytes,
+    required this.tempFreeBytes,
+  });
+
+  static const empty = SystemStorageDetails(
+    userTotalBytes: 0,
+    userFreeBytes: 0,
+    tempTotalBytes: 0,
+    tempFreeBytes: 0,
+  );
+}
+
 class NetifyFlow {
   final DateTime timestamp;
   final String deviceMac;
@@ -1323,6 +1344,79 @@ class AppState extends ChangeNotifier {
       Logger.debug('Optional system.exec conntrack stack: $stack');
       return {'count': 0, 'max': 1000};
     }
+  }
+
+  Future<SystemStorageDetails> fetchSystemStorageDetails({
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      return const SystemStorageDetails(
+        userTotalBytes: 56 * 1024 * 1024,
+        userFreeBytes: 56 * 1024 * 1024,
+        tempTotalBytes: 117 * 1024 * 1024,
+        tempFreeBytes: 116 * 1024 * 1024,
+      );
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return SystemStorageDetails.empty;
+    }
+
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'file',
+        method: 'exec',
+        params: {
+          'command': '/bin/sh',
+          'params': [
+            '-c',
+            'df -kP /overlay /tmp / 2>/dev/null || df -kP 2>/dev/null',
+          ],
+        },
+        context: context,
+      );
+      return _parseSystemStorageDetails(_commandOutput(result));
+    } catch (e, stack) {
+      Logger.warning('Optional system storage fetch failed: $e');
+      Logger.debug('Optional system storage stack: $stack');
+      return SystemStorageDetails.empty;
+    }
+  }
+
+  SystemStorageDetails _parseSystemStorageDetails(String output) {
+    ({int total, int free})? user;
+    ({int total, int free})? temp;
+
+    for (final line in output.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty || trimmed.startsWith('Filesystem')) continue;
+      final parts = trimmed.split(RegExp(r'\s+'));
+      if (parts.length < 6) continue;
+
+      final totalKb = int.tryParse(parts[1]);
+      final freeKb = int.tryParse(parts[3]);
+      if (totalKb == null || freeKb == null) continue;
+
+      final mount = parts.last;
+      final values = (total: totalKb * 1024, free: freeKb * 1024);
+      if (mount == '/tmp') {
+        temp = values;
+      } else if (mount == '/overlay' || mount == '/') {
+        user ??= values;
+      }
+    }
+
+    return SystemStorageDetails(
+      userTotalBytes: user?.total ?? 0,
+      userFreeBytes: user?.free ?? 0,
+      tempTotalBytes: temp?.total ?? 0,
+      tempFreeBytes: temp?.free ?? 0,
+    );
   }
 
   String _sqliteCommand(String dbExpression, String sql) {

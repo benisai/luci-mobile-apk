@@ -41,6 +41,7 @@
 			"file": {
 				"/bin/sh": ["exec"],
 				"/bin/cat": ["exec"],
+				"/bin/df": ["exec"],
 				"/bin/grep": ["exec"],
 				"/bin/mv": ["exec"],
 				"/bin/rm": ["exec"],
@@ -70,6 +71,7 @@
 				"/usr/bin/openwalla-state-sync": ["exec"],
 				"/usr/bin/openwalla-device-quarantine": ["exec"],
 				"/usr/bin/openwalla-device-traffic-summary": ["exec"],
+				"/usr/bin/df": ["exec"],
 				"/usr/bin/sqlite3": ["exec"],
 				"/usr/bin/sqlite3-cli": ["exec"],
 				"/etc/crontabs/root": ["write"],
