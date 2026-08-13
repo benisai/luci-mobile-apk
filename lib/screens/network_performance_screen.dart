@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:luci_mobile/main.dart';
+import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 
-class NetworkPerformanceScreen extends StatelessWidget {
+class NetworkPerformanceScreen extends ConsumerWidget {
   const NetworkPerformanceScreen({super.key});
 
   static const Color _cyan = Color(0xFF18AEEA);
@@ -9,22 +12,44 @@ class NetworkPerformanceScreen extends StatelessWidget {
   static const Color _green = Color(0xFF20CF70);
   static const Color _yellow = Color(0xFFEAB308);
 
+  static List<PingMonitorSample> _samplesFromDashboard(AppState appState) {
+    final rawSamples = appState.dashboardData?['pingSamples'];
+    if (rawSamples is List<PingMonitorSample>) return rawSamples;
+    return const [];
+  }
+
+  static String formatLatency(double? latencyMs) {
+    if (latencyMs == null) return '0ms';
+    if (latencyMs >= 100) return '${latencyMs.toStringAsFixed(0)}ms';
+    return '${latencyMs.toStringAsFixed(1)}ms';
+  }
+
+  static Color sampleColor(PingMonitorSample? sample) {
+    if (sample == null) return _green;
+    if (!sample.isOk) return const Color(0xFFFF424B);
+    final latency = sample.latencyMs ?? 0;
+    if (latency >= 100) return _yellow;
+    return _green;
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final samples = _samplesFromDashboard(ref.watch(appStateProvider));
+
     return Scaffold(
       appBar: const LuciAppBar(title: 'Network Performance', showBack: true),
       body: SafeArea(
         top: false,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
-          children: const [
-            _NetworkTimelineCard(),
-            SizedBox(height: 14),
-            _RecentEventsCard(),
-            SizedBox(height: 14),
-            _PingTestCard(),
-            SizedBox(height: 14),
-            _SpeedTestCard(),
+          children: [
+            _NetworkTimelineCard(samples: samples),
+            const SizedBox(height: 14),
+            _RecentEventsCard(samples: samples),
+            const SizedBox(height: 14),
+            _PingTestCard(samples: samples),
+            const SizedBox(height: 14),
+            const _SpeedTestCard(),
           ],
         ),
       ),
@@ -82,7 +107,9 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _NetworkTimelineCard extends StatelessWidget {
-  const _NetworkTimelineCard();
+  final List<PingMonitorSample> samples;
+
+  const _NetworkTimelineCard({required this.samples});
 
   String _formatHour(DateTime time) {
     final hour = time.hour % 12 == 0 ? 12 : time.hour % 12;
@@ -94,6 +121,10 @@ class _NetworkTimelineCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final now = DateTime.now();
+    final latestLatency = samples.isNotEmpty ? samples.last.latencyMs : null;
+    final timelineSamples = samples.length > 6
+        ? samples.sublist(samples.length - 6)
+        : samples;
     final labels = List<String>.generate(7, (index) {
       if (index == 6) return 'Now';
       return _formatHour(now.subtract(Duration(hours: 12 - (index * 2))));
@@ -109,7 +140,7 @@ class _NetworkTimelineCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '0ms',
+                NetworkPerformanceScreen.formatLatency(latestLatency),
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   color: colorScheme.onSurface,
                   fontWeight: FontWeight.w900,
@@ -135,14 +166,16 @@ class _NetworkTimelineCard extends StatelessWidget {
           Row(
             children: List.generate(6, (index) {
               final isLast = index == 5;
+              final sampleIndex = timelineSamples.length - 6 + index;
+              final sample = sampleIndex >= 0
+                  ? timelineSamples[sampleIndex]
+                  : null;
               return Expanded(
                 child: Container(
                   height: 12,
                   margin: EdgeInsets.only(right: isLast ? 0 : 2),
                   decoration: BoxDecoration(
-                    color: index == 4
-                        ? NetworkPerformanceScreen._yellow
-                        : NetworkPerformanceScreen._green,
+                    color: NetworkPerformanceScreen.sampleColor(sample),
                     borderRadius: BorderRadius.horizontal(
                       left: index == 0 ? const Radius.circular(6) : Radius.zero,
                       right: isLast ? const Radius.circular(6) : Radius.zero,
@@ -179,24 +212,39 @@ class _NetworkTimelineCard extends StatelessWidget {
 }
 
 class _RecentEventsCard extends StatelessWidget {
-  const _RecentEventsCard();
+  final List<PingMonitorSample> samples;
+
+  const _RecentEventsCard({required this.samples});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final events = [
-      ('internet_monitor', 'No recent latency events', 'Pending data source'),
-      (
-        'speedtest',
-        'Speed test history will appear here',
-        'Pending data source',
-      ),
-      (
-        'ping_monitor',
-        'Ping test history will appear here',
-        'Pending data source',
-      ),
-    ];
+    final recentProblems = samples
+        .where((sample) => !sample.isOk || (sample.latencyMs ?? 0) >= 100)
+        .toList()
+        .reversed
+        .take(2)
+        .toList();
+    final events = recentProblems.isEmpty
+        ? [
+            ('internet_monitor', 'No recent latency events', 'Ping monitor'),
+            (
+              'speedtest',
+              'Speed test history will appear here',
+              'Pending data source',
+            ),
+          ]
+        : recentProblems
+              .map(
+                (sample) => (
+                  'ping_monitor',
+                  sample.isOk
+                      ? 'High latency detected: ${NetworkPerformanceScreen.formatLatency(sample.latencyMs)}'
+                      : 'Ping outage detected: ${sample.message}',
+                  sample.timestamp.toLocal().toString(),
+                ),
+              )
+              .toList();
 
     return _OpenwallaPanel(
       child: Column(
@@ -265,7 +313,9 @@ class _RecentEventsCard extends StatelessWidget {
 }
 
 class _PingTestCard extends StatelessWidget {
-  const _PingTestCard();
+  final List<PingMonitorSample> samples;
+
+  const _PingTestCard({required this.samples});
 
   String _formatTime(DateTime time) {
     final hour = time.hour % 12 == 0 ? 12 : time.hour % 12;
@@ -277,28 +327,55 @@ class _PingTestCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final labels = List<String>.generate(12, (index) {
-      return _formatTime(now.subtract(Duration(minutes: (11 - index) * 5)));
-    });
+    final chartSamples = samples.length > 12
+        ? samples.sublist(samples.length - 12)
+        : samples;
+    final labels = chartSamples.isEmpty
+        ? List<String>.generate(12, (index) {
+            return _formatTime(
+              now.subtract(Duration(minutes: (11 - index) * 5)),
+            );
+          })
+        : chartSamples
+              .map((sample) => _formatTime(sample.timestamp.toLocal()))
+              .toList();
+    final validLatencies = chartSamples
+        .map((sample) => sample.latencyMs)
+        .whereType<double>()
+        .toList();
+    final maxLatency = validLatencies.isEmpty
+        ? 100.0
+        : validLatencies.reduce((a, b) => a > b ? a : b).clamp(1, 1000);
+    final averageLatency = validLatencies.isEmpty
+        ? null
+        : validLatencies.reduce((a, b) => a + b) / validLatencies.length;
+    final bars = chartSamples.isEmpty
+        ? const [
+            0.18,
+            0.22,
+            0.2,
+            0.28,
+            0.24,
+            0.3,
+            0.26,
+            0.22,
+            0.32,
+            0.25,
+            0.2,
+            0.18,
+          ]
+        : chartSamples
+              .map(
+                (sample) =>
+                    ((sample.latencyMs ?? 0) / maxLatency).clamp(0.04, 1.0),
+              )
+              .toList();
 
     return _ChartPanel(
       title: 'Ping Test',
-      value: '0ms',
+      value: NetworkPerformanceScreen.formatLatency(averageLatency),
       label: 'Average latency',
-      bars: const [
-        0.18,
-        0.22,
-        0.2,
-        0.28,
-        0.24,
-        0.3,
-        0.26,
-        0.22,
-        0.32,
-        0.25,
-        0.2,
-        0.18,
-      ],
+      bars: bars,
       color: NetworkPerformanceScreen._green,
       secondaryColor: NetworkPerformanceScreen._yellow,
       labels: labels,

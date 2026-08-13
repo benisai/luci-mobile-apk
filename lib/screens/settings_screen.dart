@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
+import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/screens/dashboard_settings_list_screen.dart';
 
@@ -238,16 +239,25 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-class _PingSettingsScreen extends StatefulWidget {
+class _PingSettingsScreen extends ConsumerStatefulWidget {
   const _PingSettingsScreen();
 
   @override
-  State<_PingSettingsScreen> createState() => _PingSettingsScreenState();
+  ConsumerState<_PingSettingsScreen> createState() =>
+      _PingSettingsScreenState();
 }
 
-class _PingSettingsScreenState extends State<_PingSettingsScreen> {
+class _PingSettingsScreenState extends ConsumerState<_PingSettingsScreen> {
   final _targetController = TextEditingController(text: '1.1.1.1');
   final _thresholdController = TextEditingController(text: '100');
+  bool _isLoading = true;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSettings());
+  }
 
   @override
   void dispose() {
@@ -256,41 +266,105 @@ class _PingSettingsScreenState extends State<_PingSettingsScreen> {
     super.dispose();
   }
 
+  Future<void> _loadSettings() async {
+    setState(() => _isLoading = true);
+    final appState = ref.read(appStateProvider);
+    final settings = await appState.fetchPingMonitorSettings(context: context);
+    if (!mounted) return;
+
+    _targetController.text = settings.target;
+    _thresholdController.text = settings.thresholdMs.toString();
+    setState(() => _isLoading = false);
+  }
+
+  Future<void> _saveSettings() async {
+    final target = _targetController.text.trim();
+    final threshold = int.tryParse(_thresholdController.text.trim());
+
+    if (target.isEmpty || threshold == null || threshold <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter a target and a threshold greater than 0ms.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      await ref
+          .read(appStateProvider)
+          .savePingMonitorSettings(
+            PingMonitorSettings(target: target, thresholdMs: threshold),
+            context: context,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ping monitor settings saved.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save ping settings: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const LuciAppBar(title: 'Ping Settings', showBack: true),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _SettingsFormCard(
-            children: [
-              TextField(
-                controller: _targetController,
-                decoration: const InputDecoration(
-                  labelText: 'Target',
-                  hintText: '1.1.1.1',
-                  prefixIcon: Icon(Icons.public_rounded),
-                  border: OutlineInputBorder(),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _SettingsFormCard(
+                  children: [
+                    TextField(
+                      controller: _targetController,
+                      decoration: const InputDecoration(
+                        labelText: 'Target',
+                        hintText: '1.1.1.1',
+                        prefixIcon: Icon(Icons.public_rounded),
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.url,
+                      textInputAction: TextInputAction.next,
+                      enabled: !_isSaving,
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _thresholdController,
+                      decoration: const InputDecoration(
+                        labelText: 'Alert Threshold',
+                        suffixText: 'ms',
+                        prefixIcon: Icon(Icons.notifications_active_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      enabled: !_isSaving,
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton.icon(
+                      onPressed: _isSaving ? null : _saveSettings,
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save_rounded),
+                      label: Text(_isSaving ? 'Saving' : 'Save'),
+                    ),
+                  ],
                 ),
-                keyboardType: TextInputType.url,
-                textInputAction: TextInputAction.next,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _thresholdController,
-                decoration: const InputDecoration(
-                  labelText: 'Alert Threshold',
-                  suffixText: 'ms',
-                  prefixIcon: Icon(Icons.notifications_active_outlined),
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.number,
-              ),
-            ],
-          ),
-        ],
-      ),
+              ],
+            ),
     );
   }
 }

@@ -297,10 +297,38 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return '$hour $suffix';
   }
 
-  Widget _buildNetworkPerformanceCard({required bool isCompactTimeline}) {
+  List<PingMonitorSample> _pingSamples(AppState appState) {
+    final rawSamples = appState.dashboardData?['pingSamples'];
+    if (rawSamples is List<PingMonitorSample>) return rawSamples;
+    return const [];
+  }
+
+  String _formatLatencyValue(double? latencyMs) {
+    if (latencyMs == null) return '0ms';
+    if (latencyMs >= 100) return '${latencyMs.toStringAsFixed(0)}ms';
+    return '${latencyMs.toStringAsFixed(1)}ms';
+  }
+
+  Color _pingSampleColor(PingMonitorSample? sample) {
+    if (sample == null) return _openwallaGreen;
+    if (!sample.isOk) return Theme.of(context).colorScheme.error;
+    final latency = sample.latencyMs ?? 0;
+    if (latency >= 100) return const Color(0xFFEAB308);
+    return _openwallaGreen;
+  }
+
+  Widget _buildNetworkPerformanceCard({
+    required AppState appState,
+    required bool isCompactTimeline,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
     final intervalHours = isCompactTimeline ? 2 : 1;
     final sectionCount = 12 ~/ intervalHours;
+    final samples = _pingSamples(appState);
+    final latestLatency = samples.isNotEmpty ? samples.last.latencyMs : null;
+    final timelineSamples = samples.length > sectionCount
+        ? samples.sublist(samples.length - sectionCount)
+        : samples;
     final now = DateTime.now();
     final labels = List<String>.generate(sectionCount + 1, (index) {
       if (index == sectionCount) return 'Now';
@@ -340,7 +368,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '0ms',
+                _formatLatencyValue(latestLatency),
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   color: colorScheme.onSurface,
                   fontWeight: FontWeight.w900,
@@ -366,14 +394,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           Row(
             children: List.generate(sectionCount, (index) {
               final isLast = index == sectionCount - 1;
+              final sampleIndex = timelineSamples.length - sectionCount + index;
+              final sample = sampleIndex >= 0
+                  ? timelineSamples[sampleIndex]
+                  : null;
               return Expanded(
                 child: Container(
                   height: 12,
                   margin: EdgeInsets.only(right: isLast ? 0 : 2),
                   decoration: BoxDecoration(
-                    color: index == sectionCount - 2
-                        ? const Color(0xFFEAB308)
-                        : _openwallaGreen,
+                    color: _pingSampleColor(sample),
                     borderRadius: BorderRadius.horizontal(
                       left: index == 0 ? const Radius.circular(6) : Radius.zero,
                       right: isLast ? const Radius.circular(6) : Radius.zero,
@@ -1501,7 +1531,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               const SizedBox(height: 16),
               _buildDashboardSummaryCards(appState),
               const SizedBox(height: 12),
-              _buildNetworkPerformanceCard(isCompactTimeline: false),
+              _buildNetworkPerformanceCard(
+                appState: appState,
+                isCompactTimeline: false,
+              ),
               const SizedBox(height: 12),
               _buildSystemVitalsCard(appState),
               const SizedBox(height: 12),
@@ -1552,6 +1585,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                               _buildDashboardSummaryCards(appState),
                               const SizedBox(height: 12),
                               _buildNetworkPerformanceCard(
+                                appState: appState,
                                 isCompactTimeline: constraints.maxWidth < 600,
                               ),
                               const SizedBox(height: 12),

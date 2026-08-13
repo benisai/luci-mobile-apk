@@ -19,6 +19,48 @@ import 'package:luci_mobile/config/app_config.dart';
 import 'package:luci_mobile/utils/http_client_manager.dart';
 import 'package:luci_mobile/utils/logger.dart';
 
+class PingMonitorSettings {
+  final String target;
+  final int thresholdMs;
+
+  const PingMonitorSettings({required this.target, required this.thresholdMs});
+}
+
+class PingMonitorSample {
+  final DateTime timestamp;
+  final String target;
+  final String status;
+  final double? latencyMs;
+  final String message;
+
+  const PingMonitorSample({
+    required this.timestamp,
+    required this.target,
+    required this.status,
+    required this.latencyMs,
+    required this.message,
+  });
+
+  bool get isOk => status.toUpperCase() == 'OK' && latencyMs != null;
+
+  static PingMonitorSample? fromLine(String line) {
+    final parts = line.split('|');
+    if (parts.length < 5) return null;
+
+    final timestamp = DateTime.tryParse(parts[0]);
+    if (timestamp == null) return null;
+
+    final latencyText = parts[3];
+    return PingMonitorSample(
+      timestamp: timestamp,
+      target: parts[1],
+      status: parts[2],
+      latencyMs: latencyText == 'N/A' ? null : double.tryParse(latencyText),
+      message: parts.sublist(4).join('|'),
+    );
+  }
+}
+
 class AppState extends ChangeNotifier {
   static AppState? _instance;
 
@@ -545,6 +587,7 @@ class AppState extends ChangeNotifier {
           'wan': _extractWanData(interfaceDump),
           'wireguard': <String, dynamic>{}, // Empty for reviewer mode
           'conntrack': {'count': 142, 'max': 1000},
+          'pingSamples': await fetchPingMonitorSamples(limit: 144),
           'deviceCount': _countRouterDevices(processedDhcpData, associatedMacs),
           '_lastUpdated':
               DateTime.now().millisecondsSinceEpoch, // Force UI updates
@@ -647,6 +690,7 @@ class AppState extends ChangeNotifier {
       );
 
       final conntrackFuture = _fetchConntrackData(ip, useHttps);
+      final pingSamplesFuture = fetchPingMonitorSamples(limit: 144);
       final associatedMacsFuture = _apiService!
           .fetchAllAssociatedWirelessMacsWithContext(
             ipAddress: ip,
@@ -739,12 +783,14 @@ class AppState extends ChangeNotifier {
         wirelessFuture,
         uciWirelessFuture,
         conntrackFuture,
+        pingSamplesFuture,
         associatedMacsFuture,
       ]);
       final wirelessRaw = optionalResults[0];
       final uciWirelessRaw = optionalResults[1];
       final conntrackData = optionalResults[2] as Map<String, int>;
-      final associatedMacs = optionalResults[3] as Map<String, Set<String>>;
+      final pingSamples = optionalResults[3] as List<PingMonitorSample>;
+      final associatedMacs = optionalResults[4] as Map<String, Set<String>>;
 
       Map<String, dynamic>? wirelessData;
       if (wirelessRaw != null) {
@@ -856,6 +902,7 @@ class AppState extends ChangeNotifier {
         'uciWirelessConfig': uciWirelessConfig,
         'wireguard': wireguardData,
         'conntrack': conntrackData,
+        'pingSamples': pingSamples,
         'deviceCount': _countRouterDevices(dhcpLeases, associatedMacs),
         '_lastUpdated':
             DateTime.now().millisecondsSinceEpoch, // Force UI updates
@@ -989,6 +1036,149 @@ class AppState extends ChangeNotifier {
       Logger.warning('Optional system.exec conntrack failed: $e');
       Logger.debug('Optional system.exec conntrack stack: $stack');
       return {'count': 0, 'max': 1000};
+    }
+  }
+
+  String _systemExecOutput(dynamic result) {
+    if (result is List && result.length > 1 && result[0] == 0) {
+      return result[1]?.toString() ?? '';
+    }
+    return result?.toString() ?? '';
+  }
+
+  dynamic _extractRpcData(dynamic result) {
+    if (result is List && result.length > 1) {
+      return result[0] == 0 ? result[1] : null;
+    }
+    return result;
+  }
+
+  Future<PingMonitorSettings> fetchPingMonitorSettings({
+    BuildContext? context,
+  }) async {
+    const defaults = PingMonitorSettings(target: '1.1.1.1', thresholdMs: 100);
+    if (_reviewerModeEnabled) return defaults;
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return defaults;
+    }
+
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'get',
+        params: {'config': 'openwalla'},
+        context: context,
+      );
+      final data = _extractRpcData(result);
+      final values = data is Map ? data['values'] : null;
+      final ping = values is Map ? values['ping_monitor'] : null;
+
+      if (ping is Map) {
+        final target = ping['target']?.toString();
+        final threshold = int.tryParse(ping['threshold']?.toString() ?? '');
+        return PingMonitorSettings(
+          target: target?.isNotEmpty == true ? target! : defaults.target,
+          thresholdMs: threshold ?? defaults.thresholdMs,
+        );
+      }
+    } catch (e, stack) {
+      Logger.warning('Failed to fetch ping monitor settings: $e');
+      Logger.debug('Ping monitor settings stack: $stack');
+    }
+
+    return defaults;
+  }
+
+  Future<void> savePingMonitorSettings(
+    PingMonitorSettings settings, {
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) return;
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw Exception('Router is not connected');
+    }
+
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'openwalla',
+      section: 'ping_monitor',
+      values: {
+        'target': settings.target,
+        'threshold': settings.thresholdMs.toString(),
+      },
+      context: context,
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'openwalla',
+    );
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command:
+          '/etc/init.d/openwalla-ping-monitor restart >/dev/null 2>&1 || true',
+    );
+  }
+
+  Future<List<PingMonitorSample>> fetchPingMonitorSamples({
+    int limit = 144,
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      final now = DateTime.now().toUtc();
+      return List<PingMonitorSample>.generate(12, (index) {
+        final latency = 18.0 + ((index * 7) % 12);
+        return PingMonitorSample(
+          timestamp: now.subtract(Duration(minutes: (11 - index) * 5)),
+          target: '1.1.1.1',
+          status: 'OK',
+          latencyMs: latency,
+          message: 'reply',
+        );
+      });
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    try {
+      final safeLimit = limit.clamp(1, 2000).toInt();
+      final result = await _apiService!.systemExec(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        command:
+            r'file="$(uci -q get openwalla.ping_monitor.output_file 2>/dev/null || echo /tmp/openwalla-ping-monitor.txt)"; '
+            'tail -n $safeLimit "\$file" 2>/dev/null || true',
+        context: context,
+      );
+      final output = _systemExecOutput(result);
+      return output
+          .split('\n')
+          .map((line) => PingMonitorSample.fromLine(line.trim()))
+          .whereType<PingMonitorSample>()
+          .toList();
+    } catch (e, stack) {
+      Logger.warning('Optional ping monitor samples fetch failed: $e');
+      Logger.debug('Optional ping monitor samples stack: $stack');
+      return const [];
     }
   }
 
