@@ -1336,7 +1336,29 @@ class AppState extends ChangeNotifier {
     return _commandOutput(result);
   }
 
-  Future<int> fetchNetifyFlowCount({BuildContext? context}) async {
+  String _connectionFlowWhereClause(String? protocolFilter) {
+    switch (protocolFilter?.toUpperCase()) {
+      case 'HTTP':
+        return "WHERE protocol = 'HTTP' OR destination LIKE '%:80'";
+      case 'HTTPS':
+        return "WHERE protocol = 'HTTPS' OR destination LIKE '%:443'";
+      case 'DNS':
+        return "WHERE protocol = 'DNS' OR destination LIKE '%:53'";
+      default:
+        return '';
+    }
+  }
+
+  String _netifyRawWhereClause(String? protocolFilter) {
+    final normalized = protocolFilter?.toUpperCase();
+    if (normalized == null || normalized.isEmpty) return '';
+    return "WHERE upper(json) LIKE '%$normalized%'";
+  }
+
+  Future<int> fetchNetifyFlowCount({
+    String? protocolFilter,
+    BuildContext? context,
+  }) async {
     if (_reviewerModeEnabled) return 315188;
 
     final router = _routerService?.selectedRouter;
@@ -1346,7 +1368,8 @@ class AppState extends ChangeNotifier {
     try {
       final output = await _sqliteQueryOutput(
         dbExpression: _connectionFlowsDbExpression(),
-        sql: 'SELECT COUNT(*) FROM connection_flows;',
+        sql:
+            'SELECT COUNT(*) FROM connection_flows ${_connectionFlowWhereClause(protocolFilter)};',
         context: context,
       );
       final countText = output
@@ -1356,15 +1379,18 @@ class AppState extends ChangeNotifier {
           .lastOrNull;
       final connectionFlowCount = int.tryParse(countText ?? '') ?? 0;
       if (connectionFlowCount > 0) return connectionFlowCount;
-      return await _fetchNetifyRawFlowCount();
+      return await _fetchNetifyRawFlowCount(protocolFilter: protocolFilter);
     } catch (e, stack) {
       Logger.warning('Optional connection flow count fetch failed: $e');
       Logger.debug('Optional connection flow count stack: $stack');
-      return await _fetchNetifyRawFlowCount();
+      return await _fetchNetifyRawFlowCount(protocolFilter: protocolFilter);
     }
   }
 
-  Future<int> _fetchNetifyRawFlowCount({BuildContext? context}) async {
+  Future<int> _fetchNetifyRawFlowCount({
+    String? protocolFilter,
+    BuildContext? context,
+  }) async {
     final router = _routerService?.selectedRouter;
     final sysauth = _authService?.sysauth;
     if (router == null || sysauth == null || _apiService == null) return 0;
@@ -1372,7 +1398,8 @@ class AppState extends ChangeNotifier {
     try {
       final output = await _sqliteQueryOutput(
         dbExpression: _netifyDbExpression(),
-        sql: 'SELECT COUNT(*) FROM flow_raw;',
+        sql:
+            'SELECT COUNT(*) FROM flow_raw ${_netifyRawWhereClause(protocolFilter)};',
         context: context,
       );
       final countText = output
@@ -1391,11 +1418,12 @@ class AppState extends ChangeNotifier {
   Future<List<NetifyFlow>> fetchNetifyFlows({
     int limit = 50,
     int offset = 0,
+    String? protocolFilter,
     BuildContext? context,
   }) async {
     if (_reviewerModeEnabled) {
       final now = DateTime.now().toUtc();
-      return List<NetifyFlow>.generate(20, (index) {
+      final mockFlows = List<NetifyFlow>.generate(20, (index) {
         final hosts = [
           'aws-iot.wyzecam.com',
           'm3-us.iotbing.com',
@@ -1423,6 +1451,21 @@ class AppState extends ChangeNotifier {
           rawJson: '{}',
         );
       });
+      final normalized = protocolFilter?.toUpperCase();
+      if (normalized == null || normalized.isEmpty) return mockFlows;
+      return mockFlows
+          .where(
+            (flow) =>
+                flow.protocol.toUpperCase().contains(normalized) ||
+                flow.destinationPort ==
+                    switch (normalized) {
+                      'HTTP' => '80',
+                      'HTTPS' => '443',
+                      'DNS' => '53',
+                      _ => '',
+                    },
+          )
+          .toList();
     }
 
     final router = _routerService?.selectedRouter;
@@ -1431,13 +1474,13 @@ class AppState extends ChangeNotifier {
       return const [];
     }
 
-    final safeLimit = limit.clamp(1, 200).toInt();
+    final safeLimit = limit.clamp(1, 500).toInt();
     final safeOffset = offset < 0 ? 0 : offset;
     try {
       final output = await _sqliteQueryOutput(
         dbExpression: _connectionFlowsDbExpression(),
         sql:
-            'SELECT id,timeinsert,protocol,source,destination,transfer,status FROM connection_flows ORDER BY id DESC LIMIT $safeLimit OFFSET $safeOffset;',
+            'SELECT id,timeinsert,protocol,source,destination,transfer,status FROM connection_flows ${_connectionFlowWhereClause(protocolFilter)} ORDER BY id DESC LIMIT $safeLimit OFFSET $safeOffset;',
         context: context,
       );
       final connectionFlows = output
@@ -1446,17 +1489,26 @@ class AppState extends ChangeNotifier {
           .whereType<NetifyFlow>()
           .toList();
       if (connectionFlows.isNotEmpty) return connectionFlows;
-      return await _fetchNetifyRawFlows(limit: safeLimit, offset: safeOffset);
+      return await _fetchNetifyRawFlows(
+        limit: safeLimit,
+        offset: safeOffset,
+        protocolFilter: protocolFilter,
+      );
     } catch (e, stack) {
       Logger.warning('Optional connection flows fetch failed: $e');
       Logger.debug('Optional connection flows stack: $stack');
-      return await _fetchNetifyRawFlows(limit: safeLimit, offset: safeOffset);
+      return await _fetchNetifyRawFlows(
+        limit: safeLimit,
+        offset: safeOffset,
+        protocolFilter: protocolFilter,
+      );
     }
   }
 
   Future<List<NetifyFlow>> _fetchNetifyRawFlows({
     required int limit,
     required int offset,
+    String? protocolFilter,
     BuildContext? context,
   }) async {
     final router = _routerService?.selectedRouter;
@@ -1469,7 +1521,7 @@ class AppState extends ChangeNotifier {
       final output = await _sqliteQueryOutput(
         dbExpression: _netifyDbExpression(),
         sql:
-            'SELECT json FROM flow_raw ORDER BY id DESC LIMIT $limit OFFSET $offset;',
+            'SELECT json FROM flow_raw ${_netifyRawWhereClause(protocolFilter)} ORDER BY id DESC LIMIT $limit OFFSET $offset;',
         context: context,
       );
       return output

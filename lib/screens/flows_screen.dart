@@ -143,11 +143,11 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
   static const Color _red = Color(0xFFFF4D4F);
   static const int _pageSize = 250;
 
-  int _selectedTab = 2;
   bool _isLoading = true;
   bool _isLoadingMore = false;
   bool _hasMoreFlows = true;
   String? _error;
+  String? _selectedProtocolFilter;
   int _flowCount = 0;
   List<_FlowItem> _flows = const [];
   final ScrollController _scrollController = ScrollController();
@@ -194,8 +194,15 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
       final appState = ref.read(appStateProvider);
       final hostnames = _hostnameMaps(appState);
       final results = await Future.wait([
-        appState.fetchNetifyFlowCount(context: context),
-        appState.fetchNetifyFlows(limit: _pageSize, context: context),
+        appState.fetchNetifyFlowCount(
+          protocolFilter: _selectedProtocolFilter,
+          context: context,
+        ),
+        appState.fetchNetifyFlows(
+          limit: _pageSize,
+          protocolFilter: _selectedProtocolFilter,
+          context: context,
+        ),
       ]);
       if (!mounted) return;
       final flows = results[1] as List<NetifyFlow>;
@@ -225,6 +232,7 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
       final flows = await appState.fetchNetifyFlows(
         limit: _pageSize,
         offset: _flows.length,
+        protocolFilter: _selectedProtocolFilter,
         context: context,
       );
       if (!mounted) return;
@@ -282,6 +290,15 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
     }
 
     return (byMac, byIp);
+  }
+
+  void _toggleProtocolFilter(String protocol) {
+    setState(() {
+      _selectedProtocolFilter = _selectedProtocolFilter == protocol
+          ? null
+          : protocol;
+    });
+    _loadFlows();
   }
 
   String _formatCount(int value) {
@@ -357,30 +374,19 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
                   height: 0.95,
                 ),
               ),
-              const SizedBox(height: 22),
-              SegmentedButton<int>(
-                segments: const [
-                  ButtonSegment(value: 0, label: Text('Upload')),
-                  ButtonSegment(value: 1, label: Text('Download')),
-                  ButtonSegment(value: 2, label: Text('History')),
-                ],
-                selected: {_selectedTab},
-                onSelectionChanged: (selection) {
-                  setState(() => _selectedTab = selection.first);
-                },
-                showSelectedIcon: false,
-              ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 18),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: [
-                  'Exclude',
-                  'Gaming',
-                  'Social',
-                  'Video',
-                  'VPN',
-                ].map((label) => _FilterChip(label: label)).toList(),
+                children: ['HTTP', 'HTTPS', 'DNS']
+                    .map(
+                      (label) => _FilterChip(
+                        label: label,
+                        selected: _selectedProtocolFilter == label,
+                        onPressed: () => _toggleProtocolFilter(label),
+                      ),
+                    )
+                    .toList(),
               ),
               const SizedBox(height: 14),
               if (_isLoading)
@@ -465,22 +471,34 @@ class _FlowEmptyCard extends StatelessWidget {
 
 class _FilterChip extends StatelessWidget {
   final String label;
+  final bool selected;
+  final VoidCallback onPressed;
 
-  const _FilterChip({required this.label});
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onPressed,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final foregroundColor = selected
+        ? colorScheme.onPrimary
+        : colorScheme.onSurfaceVariant;
 
     return OutlinedButton(
-      onPressed: () {},
+      onPressed: onPressed,
       style: OutlinedButton.styleFrom(
-        foregroundColor: colorScheme.onSurfaceVariant,
+        foregroundColor: foregroundColor,
+        backgroundColor: selected ? colorScheme.primary : null,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         minimumSize: Size.zero,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         side: BorderSide(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.72),
+          color: selected
+              ? colorScheme.primary
+              : colorScheme.outlineVariant.withValues(alpha: 0.72),
         ),
       ),
       child: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
