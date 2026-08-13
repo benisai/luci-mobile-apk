@@ -267,13 +267,25 @@ class _RecentEventsCard extends StatelessWidget {
 class _PingTestCard extends StatelessWidget {
   const _PingTestCard();
 
+  String _formatTime(DateTime time) {
+    final hour = time.hour % 12 == 0 ? 12 : time.hour % 12;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final suffix = time.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $suffix';
+  }
+
   @override
   Widget build(BuildContext context) {
-    return const _ChartPanel(
+    final now = DateTime.now();
+    final labels = List<String>.generate(12, (index) {
+      return _formatTime(now.subtract(Duration(minutes: (11 - index) * 5)));
+    });
+
+    return _ChartPanel(
       title: 'Ping Test',
       value: '0ms',
       label: 'Average latency',
-      bars: [
+      bars: const [
         0.18,
         0.22,
         0.2,
@@ -289,6 +301,7 @@ class _PingTestCard extends StatelessWidget {
       ],
       color: NetworkPerformanceScreen._green,
       secondaryColor: NetworkPerformanceScreen._yellow,
+      labels: labels,
     );
   }
 }
@@ -296,28 +309,26 @@ class _PingTestCard extends StatelessWidget {
 class _SpeedTestCard extends StatelessWidget {
   const _SpeedTestCard();
 
+  String _formatDay(DateTime time) {
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return weekdays[time.weekday - 1];
+  }
+
   @override
   Widget build(BuildContext context) {
-    return const _ChartPanel(
+    final now = DateTime.now();
+    final labels = List<String>.generate(7, (index) {
+      return _formatDay(now.subtract(Duration(days: 6 - index)));
+    });
+
+    return _ChartPanel(
       title: 'Speed Test',
       value: '0 Mbps',
       label: 'Latest result',
-      bars: [
-        0.2,
-        0.38,
-        0.34,
-        0.52,
-        0.44,
-        0.6,
-        0.48,
-        0.7,
-        0.56,
-        0.62,
-        0.5,
-        0.66,
-      ],
+      bars: const [0.2, 0.38, 0.34, 0.52, 0.44, 0.6, 0.48],
       color: NetworkPerformanceScreen._cyan,
       secondaryColor: NetworkPerformanceScreen._orange,
+      labels: labels,
     );
   }
 }
@@ -329,6 +340,7 @@ class _ChartPanel extends StatelessWidget {
   final List<double> bars;
   final Color color;
   final Color secondaryColor;
+  final List<String> labels;
 
   const _ChartPanel({
     required this.title,
@@ -337,6 +349,7 @@ class _ChartPanel extends StatelessWidget {
     required this.bars,
     required this.color,
     required this.secondaryColor,
+    required this.labels,
   });
 
   @override
@@ -399,6 +412,25 @@ class _ChartPanel extends StatelessWidget {
                 );
               }),
             ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: List.generate(labels.length, (index) {
+              final label = labels[index];
+              return Expanded(
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              );
+            }),
           ),
         ],
       ),
