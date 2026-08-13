@@ -41,6 +41,7 @@ class AppState extends ChangeNotifier {
   String? _dashboardError;
 
   Timer? _throughputTimer;
+  Timer? _systemInfoTimer;
   Timer? _pollingTimer;
   int _pollAttempts = 0;
   static const int _maxPollAttempts =
@@ -531,6 +532,7 @@ class AppState extends ChangeNotifier {
 
         // Start throughput timer for reviewer mode
         _startThroughputTimer();
+        _startSystemInfoTimer();
 
         // Schedule an immediate throughput update to get initial data faster
         Future.delayed(const Duration(milliseconds: 100), () {
@@ -825,6 +827,7 @@ class AppState extends ChangeNotifier {
 
       // Ensure throughput timer is running
       _startThroughputTimer();
+      _startSystemInfoTimer();
 
       // Schedule an immediate throughput update to get initial data faster
       Future.delayed(const Duration(milliseconds: 100), () {
@@ -951,6 +954,69 @@ class AppState extends ChangeNotifier {
     });
   }
 
+  void _startSystemInfoTimer() {
+    _systemInfoTimer?.cancel();
+    if (_isRebooting) {
+      return;
+    }
+    _systemInfoTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      _updateSystemInfoOnly();
+    });
+  }
+
+  Future<void> _updateSystemInfoOnly() async {
+    if (_isRebooting || _dashboardData == null) {
+      return;
+    }
+
+    if (_reviewerModeEnabled) {
+      try {
+        final result = await _apiService!.callSimple('system', 'info', {});
+        if (result is List && result.length > 1 && result[0] == 0) {
+          _dashboardData = {
+            ...?_dashboardData,
+            'sysInfo': result[1],
+            '_lastUpdated': DateTime.now().millisecondsSinceEpoch,
+          };
+          notifyListeners();
+        }
+      } catch (e) {
+        Logger.debug('Reviewer system info refresh failed: $e');
+      }
+      return;
+    }
+
+    if (_routerService?.selectedRouter == null ||
+        _authService?.sysauth == null) {
+      return;
+    }
+
+    final ip = _routerService!.selectedRouter!.ipAddress;
+    final useHttps = _routerService!.selectedRouter!.useHttps;
+
+    try {
+      final result = await _apiService!.call(
+        ip,
+        _authService!.sysauth!,
+        useHttps,
+        object: 'system',
+        method: 'info',
+        params: {},
+      );
+
+      if (result is List && result.length > 1 && result[0] == 0) {
+        _dashboardData = {
+          ...?_dashboardData,
+          'sysInfo': result[1],
+          '_lastUpdated': DateTime.now().millisecondsSinceEpoch,
+        };
+        notifyListeners();
+      }
+    } catch (e) {
+      Logger.debug('System info refresh failed: $e');
+    }
+  }
+
   /// Updates only throughput data without refetching the entire dashboard
   Future<void> _updateThroughputOnly() async {
     // Don't try to update throughput during reboot
@@ -1068,6 +1134,7 @@ class AppState extends ChangeNotifier {
 
   void _cancelThroughputTimer() {
     _throughputTimer?.cancel();
+    _systemInfoTimer?.cancel();
     _throughputService?.clear();
   }
 
@@ -1381,6 +1448,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _throughputTimer?.cancel();
+    _systemInfoTimer?.cancel();
     _pollingTimer?.cancel();
     _pollAttempts = 0;
     _isRebooting = false;
