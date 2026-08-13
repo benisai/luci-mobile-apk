@@ -309,31 +309,56 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return '${latencyMs.toStringAsFixed(1)}ms';
   }
 
-  Color _pingSampleColor(PingMonitorSample? sample) {
-    if (sample == null) return _openwallaGreen;
-    if (!sample.isOk) return Theme.of(context).colorScheme.error;
-    final latency = sample.latencyMs ?? 0;
+  List<_PingHourBucket> _pingHourBuckets(List<PingMonitorSample> samples) {
+    final now = DateTime.now();
+    return List<_PingHourBucket>.generate(6, (index) {
+      final start = now.subtract(Duration(hours: 6 - index));
+      final end = now.subtract(Duration(hours: 5 - index));
+      final bucketSamples = samples.where((sample) {
+        final time = sample.timestamp.toLocal();
+        return !time.isBefore(start) && time.isBefore(end);
+      }).toList();
+      final latencies = bucketSamples
+          .where((sample) => sample.isOk)
+          .map((sample) => sample.latencyMs)
+          .whereType<double>()
+          .toList();
+      final average = latencies.isEmpty
+          ? null
+          : latencies.reduce((a, b) => a + b) / latencies.length;
+      return _PingHourBucket(
+        averageLatencyMs: average,
+        hasSamples: bucketSamples.isNotEmpty,
+        hasOnlyFailures: bucketSamples.isNotEmpty && latencies.isEmpty,
+      );
+    });
+  }
+
+  Color _pingBucketColor(_PingHourBucket bucket) {
+    if (!bucket.hasSamples) {
+      return Theme.of(context).colorScheme.surfaceContainerHighest;
+    }
+    if (bucket.hasOnlyFailures) return Theme.of(context).colorScheme.error;
+    final latency = bucket.averageLatencyMs ?? 0;
     if (latency >= 100) return const Color(0xFFEAB308);
     return _openwallaGreen;
   }
 
-  Widget _buildNetworkPerformanceCard({
-    required AppState appState,
-    required bool isCompactTimeline,
-  }) {
+  Widget _buildNetworkPerformanceCard({required AppState appState}) {
     final colorScheme = Theme.of(context).colorScheme;
-    final intervalHours = isCompactTimeline ? 2 : 1;
-    final sectionCount = 12 ~/ intervalHours;
     final samples = _pingSamples(appState);
-    final latestLatency = samples.isNotEmpty ? samples.last.latencyMs : null;
-    final timelineSamples = samples.length > sectionCount
-        ? samples.sublist(samples.length - sectionCount)
-        : samples;
+    final buckets = _pingHourBuckets(samples);
+    final validAverages = buckets
+        .map((bucket) => bucket.averageLatencyMs)
+        .whereType<double>()
+        .toList();
+    final averageLatency = validAverages.isEmpty
+        ? null
+        : validAverages.reduce((a, b) => a + b) / validAverages.length;
     final now = DateTime.now();
-    final labels = List<String>.generate(sectionCount + 1, (index) {
-      if (index == sectionCount) return 'Now';
-      final hoursAgo = 12 - (index * intervalHours);
-      return _formatTimelineHour(now.subtract(Duration(hours: hoursAgo)));
+    final labels = List<String>.generate(7, (index) {
+      if (index == 6) return 'Now';
+      return _formatTimelineHour(now.subtract(Duration(hours: 6 - index)));
     });
 
     return _buildOpenwallaCard(
@@ -368,7 +393,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                _formatLatencyValue(latestLatency),
+                _formatLatencyValue(averageLatency),
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   color: colorScheme.onSurface,
                   fontWeight: FontWeight.w900,
@@ -392,18 +417,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
           const SizedBox(height: 22),
           Row(
-            children: List.generate(sectionCount, (index) {
-              final isLast = index == sectionCount - 1;
-              final sampleIndex = timelineSamples.length - sectionCount + index;
-              final sample = sampleIndex >= 0
-                  ? timelineSamples[sampleIndex]
-                  : null;
+            children: List.generate(buckets.length, (index) {
+              final isLast = index == buckets.length - 1;
+              final bucket = buckets[index];
               return Expanded(
                 child: Container(
                   height: 12,
                   margin: EdgeInsets.only(right: isLast ? 0 : 2),
                   decoration: BoxDecoration(
-                    color: _pingSampleColor(sample),
+                    color: _pingBucketColor(bucket),
                     borderRadius: BorderRadius.horizontal(
                       left: index == 0 ? const Radius.circular(6) : Radius.zero,
                       right: isLast ? const Radius.circular(6) : Radius.zero,
@@ -1531,10 +1553,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               const SizedBox(height: 16),
               _buildDashboardSummaryCards(appState),
               const SizedBox(height: 12),
-              _buildNetworkPerformanceCard(
-                appState: appState,
-                isCompactTimeline: false,
-              ),
+              _buildNetworkPerformanceCard(appState: appState),
               const SizedBox(height: 12),
               _buildSystemVitalsCard(appState),
               const SizedBox(height: 12),
@@ -1584,10 +1603,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                               const SizedBox(height: 16),
                               _buildDashboardSummaryCards(appState),
                               const SizedBox(height: 12),
-                              _buildNetworkPerformanceCard(
-                                appState: appState,
-                                isCompactTimeline: constraints.maxWidth < 600,
-                              ),
+                              _buildNetworkPerformanceCard(appState: appState),
                               const SizedBox(height: 12),
                               _buildSystemVitalsCard(appState),
                               const SizedBox(height: 12),
@@ -1614,4 +1630,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ),
     );
   }
+}
+
+class _PingHourBucket {
+  final double? averageLatencyMs;
+  final bool hasSamples;
+  final bool hasOnlyFailures;
+
+  const _PingHourBucket({
+    required this.averageLatencyMs,
+    required this.hasSamples,
+    required this.hasOnlyFailures,
+  });
 }

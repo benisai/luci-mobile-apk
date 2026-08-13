@@ -24,10 +24,35 @@ class NetworkPerformanceScreen extends ConsumerWidget {
     return '${latencyMs.toStringAsFixed(1)}ms';
   }
 
-  static Color sampleColor(PingMonitorSample? sample) {
-    if (sample == null) return _green;
-    if (!sample.isOk) return const Color(0xFFFF424B);
-    final latency = sample.latencyMs ?? 0;
+  static List<_PingHourBucket> _hourBuckets(List<PingMonitorSample> samples) {
+    final now = DateTime.now();
+    return List<_PingHourBucket>.generate(6, (index) {
+      final start = now.subtract(Duration(hours: 6 - index));
+      final end = now.subtract(Duration(hours: 5 - index));
+      final bucketSamples = samples.where((sample) {
+        final time = sample.timestamp.toLocal();
+        return !time.isBefore(start) && time.isBefore(end);
+      }).toList();
+      final latencies = bucketSamples
+          .where((sample) => sample.isOk)
+          .map((sample) => sample.latencyMs)
+          .whereType<double>()
+          .toList();
+      final average = latencies.isEmpty
+          ? null
+          : latencies.reduce((a, b) => a + b) / latencies.length;
+      return _PingHourBucket(
+        averageLatencyMs: average,
+        hasSamples: bucketSamples.isNotEmpty,
+        hasOnlyFailures: bucketSamples.isNotEmpty && latencies.isEmpty,
+      );
+    });
+  }
+
+  static Color _bucketColor(_PingHourBucket bucket, Color emptyColor) {
+    if (!bucket.hasSamples) return emptyColor;
+    if (bucket.hasOnlyFailures) return const Color(0xFFFF424B);
+    final latency = bucket.averageLatencyMs ?? 0;
     if (latency >= 100) return _yellow;
     return _green;
   }
@@ -121,13 +146,17 @@ class _NetworkTimelineCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final now = DateTime.now();
-    final latestLatency = samples.isNotEmpty ? samples.last.latencyMs : null;
-    final timelineSamples = samples.length > 6
-        ? samples.sublist(samples.length - 6)
-        : samples;
+    final buckets = NetworkPerformanceScreen._hourBuckets(samples);
+    final validAverages = buckets
+        .map((bucket) => bucket.averageLatencyMs)
+        .whereType<double>()
+        .toList();
+    final averageLatency = validAverages.isEmpty
+        ? null
+        : validAverages.reduce((a, b) => a + b) / validAverages.length;
     final labels = List<String>.generate(7, (index) {
       if (index == 6) return 'Now';
-      return _formatHour(now.subtract(Duration(hours: 12 - (index * 2))));
+      return _formatHour(now.subtract(Duration(hours: 6 - index)));
     });
 
     return _OpenwallaPanel(
@@ -140,7 +169,7 @@ class _NetworkTimelineCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                NetworkPerformanceScreen.formatLatency(latestLatency),
+                NetworkPerformanceScreen.formatLatency(averageLatency),
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   color: colorScheme.onSurface,
                   fontWeight: FontWeight.w900,
@@ -164,18 +193,18 @@ class _NetworkTimelineCard extends StatelessWidget {
           ),
           const SizedBox(height: 22),
           Row(
-            children: List.generate(6, (index) {
-              final isLast = index == 5;
-              final sampleIndex = timelineSamples.length - 6 + index;
-              final sample = sampleIndex >= 0
-                  ? timelineSamples[sampleIndex]
-                  : null;
+            children: List.generate(buckets.length, (index) {
+              final isLast = index == buckets.length - 1;
+              final bucket = buckets[index];
               return Expanded(
                 child: Container(
                   height: 12,
                   margin: EdgeInsets.only(right: isLast ? 0 : 2),
                   decoration: BoxDecoration(
-                    color: NetworkPerformanceScreen.sampleColor(sample),
+                    color: NetworkPerformanceScreen._bucketColor(
+                      bucket,
+                      colorScheme.surfaceContainerHighest,
+                    ),
                     borderRadius: BorderRadius.horizontal(
                       left: index == 0 ? const Radius.circular(6) : Radius.zero,
                       right: isLast ? const Radius.circular(6) : Radius.zero,
@@ -209,6 +238,18 @@ class _NetworkTimelineCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PingHourBucket {
+  final double? averageLatencyMs;
+  final bool hasSamples;
+  final bool hasOnlyFailures;
+
+  const _PingHourBucket({
+    required this.averageLatencyMs,
+    required this.hasSamples,
+    required this.hasOnlyFailures,
+  });
 }
 
 class _RecentEventsCard extends StatelessWidget {
