@@ -12,7 +12,7 @@ import 'package:luci_mobile/screens/notifications_screen.dart';
 import 'package:luci_mobile/screens/system_resources_screen.dart';
 import 'package:luci_mobile/models/router.dart' as model;
 
-enum _UsageRange { minute, day, week }
+enum _UsageRange { minute, hour, day, week }
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -1088,6 +1088,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final period = _usageVnstatPeriod(range);
     final limit = switch (range) {
       _UsageRange.minute => 24,
+      _UsageRange.hour => 24,
       _UsageRange.day => 14,
       _UsageRange.week => 60,
     };
@@ -1107,6 +1108,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   String _usageVnstatPeriod(_UsageRange range) {
     return switch (range) {
       _UsageRange.minute => '5min',
+      _UsageRange.hour => 'hourly',
       _UsageRange.day => 'daily',
       _UsageRange.week => 'daily',
     };
@@ -1115,6 +1117,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   String _usageRangeLabel(_UsageRange range) {
     return switch (range) {
       _UsageRange.minute => 'Minute',
+      _UsageRange.hour => 'Hour',
       _UsageRange.day => 'Day',
       _UsageRange.week => 'Week',
     };
@@ -1122,7 +1125,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   String _usageSubtitle(_UsageRange range) {
     return switch (range) {
-      _UsageRange.minute => 'Last 60 minutes',
+      _UsageRange.minute => 'Last 60 minutes, 5 minute intervals',
+      _UsageRange.hour => 'Last 12 hours',
       _UsageRange.day => 'Last 7 days',
       _UsageRange.week => 'Last 4 weeks',
     };
@@ -1179,15 +1183,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final now = DateTime.now();
 
     return switch (range) {
-      _UsageRange.minute => List.generate(6, (index) {
+      _UsageRange.minute => List.generate(12, (index) {
         final slot = DateTime(
           now.year,
           now.month,
           now.day,
           now.hour,
-          (now.minute ~/ 10) * 10,
-        ).subtract(Duration(minutes: (5 - index) * 10));
-        final slotEnd = slot.add(const Duration(minutes: 10));
+          (now.minute ~/ 5) * 5,
+        ).subtract(Duration(minutes: (11 - index) * 5));
+        final slotEnd = slot.add(const Duration(minutes: 5));
         final matches = samples.where((sample) {
           final time = sample.timestamp.toLocal();
           return !time.isBefore(slot) && time.isBefore(slotEnd);
@@ -1204,6 +1208,31 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           label: '${slot.hour}:${slot.minute.toString().padLeft(2, '0')}',
           downloadBytes: download,
           uploadBytes: upload,
+          hasData: matches.isNotEmpty,
+        );
+      }),
+      _UsageRange.hour => List.generate(12, (index) {
+        final slot = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          now.hour,
+        ).subtract(Duration(hours: 11 - index));
+        final slotEnd = slot.add(const Duration(hours: 1));
+        final matches = samples.where((sample) {
+          final time = sample.timestamp.toLocal();
+          return !time.isBefore(slot) && time.isBefore(slotEnd);
+        }).toList();
+        return (
+          label: index == 11 ? 'Now' : '${slot.hour}:00',
+          downloadBytes: matches.fold<int>(
+            0,
+            (sum, sample) => sum + sample.downloadBytes,
+          ),
+          uploadBytes: matches.fold<int>(
+            0,
+            (sum, sample) => sum + sample.uploadBytes,
+          ),
           hasData: matches.isNotEmpty,
         );
       }),
