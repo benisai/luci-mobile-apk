@@ -1156,6 +1156,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   String _formatUsageTotal(double valueGb) {
+    if (valueGb >= 100) return '${valueGb.toStringAsFixed(0)} GB';
+    if (valueGb >= 10) return '${valueGb.toStringAsFixed(1)} GB';
     if (valueGb >= 1) return '${valueGb.toStringAsFixed(2)} GB';
     return '${(valueGb * 1024).toStringAsFixed(0)} MB';
   }
@@ -1189,73 +1191,81 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         );
 
         return Expanded(
-          child: Column(
-            children: [
-              SizedBox(
-                height: 24,
-                child: Text(
-                  _formatUsageTotal(total),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: index == samples.length - 1
-                        ? colorScheme.onSurface
-                        : colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 156,
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Container(
-                    width: 30,
-                    height: 156,
-                    alignment: Alignment.bottomCenter,
-                    decoration: BoxDecoration(
-                      color: colorScheme.surfaceContainerHighest.withValues(
-                        alpha: 0.42,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Column(
+              children: [
+                SizedBox(
+                  height: 28,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        _formatUsageTotal(total),
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: index == samples.length - 1
+                              ? colorScheme.onSurface
+                              : colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0,
+                        ),
                       ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        Container(
-                          height: uploadHeight,
-                          color: _openwallaOrange,
-                        ),
-                        Container(
-                          height: downloadHeight,
-                          color: _openwallaCyan,
-                        ),
-                      ],
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                sample.label,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: index == samples.length - 1
-                      ? colorScheme.onSurface
-                      : colorScheme.onSurfaceVariant,
-                  fontWeight: index == samples.length - 1
-                      ? FontWeight.w900
-                      : FontWeight.w700,
-                  letterSpacing: 0,
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 156,
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Container(
+                      width: 32,
+                      height: 156,
+                      alignment: Alignment.bottomCenter,
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withValues(
+                          alpha: 0.42,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Container(
+                            height: uploadHeight,
+                            color: _openwallaOrange,
+                          ),
+                          Container(
+                            height: downloadHeight,
+                            color: _openwallaCyan,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+                const SizedBox(height: 8),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    sample.label,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: index == samples.length - 1
+                          ? colorScheme.onSurface
+                          : colorScheme.onSurfaceVariant,
+                      fontWeight: index == samples.length - 1
+                          ? FontWeight.w900
+                          : FontWeight.w700,
+                      letterSpacing: 0,
+                    ),
+                    maxLines: 1,
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       }),
