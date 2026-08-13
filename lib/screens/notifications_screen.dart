@@ -107,7 +107,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final hasNotifications = _notifications.isNotEmpty;
 
     return Scaffold(
       appBar: LuciAppBar(
@@ -117,13 +116,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: PopupMenuButton<_NotificationMenuAction>(
-              enabled: hasNotifications,
               onSelected: _handleMenuAction,
               icon: Icon(
                 Icons.more_horiz_rounded,
-                color: hasNotifications
-                    ? colorScheme.onSurface
-                    : colorScheme.onSurfaceVariant.withValues(alpha: 0.45),
+                color: colorScheme.onSurface,
               ),
               itemBuilder: (context) => const [
                 PopupMenuItem(

@@ -1510,7 +1510,7 @@ class AppState extends ChangeNotifier {
   String _sqliteCommand(String dbExpression, String sql) {
     final escapedSql = sql.replaceAll('"', r'\"').replaceAll(r'$', r'\$');
     return 'db="$dbExpression"; '
-        'statement="PRAGMA busy_timeout=3000; $escapedSql"; '
+        'statement="$escapedSql"; '
         'if command -v sqlite3 >/dev/null 2>&1; then sqlite3 -batch -noheader -separator "|" "\$db" "\$statement"; '
         'elif command -v sqlite3-cli >/dev/null 2>&1; then sqlite3-cli -batch -noheader -separator "|" "\$db" "\$statement"; '
         'else echo "sqlite3 not installed" >&2; exit 127; fi';
