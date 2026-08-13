@@ -103,6 +103,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     required Widget child,
     EdgeInsetsGeometry? padding,
     EdgeInsetsGeometry? margin,
+    VoidCallback? onTap,
     VoidCallback? onLongPress,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -129,6 +130,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
+          onTap: onTap,
           onLongPress: onLongPress,
           child: Padding(
             padding: padding ?? const EdgeInsets.all(16),
@@ -177,15 +179,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _buildDashboardSummaryCards() {
+  Widget _buildDashboardSummaryCards(AppState appState) {
+    final deviceCount = appState.dashboardData?['deviceCount'];
     return Row(
       children: [
         Expanded(
           child: _buildDashboardSummaryCard(
             label: 'Devices',
-            count: '0',
+            count: (deviceCount is int ? deviceCount : 0).toString(),
             icon: Icons.devices_rounded,
             color: _openwallaCyan,
+            onTap: () => ref.read(appStateProvider).requestTab(1),
           ),
         ),
         const SizedBox(width: 10),
@@ -215,11 +219,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     required String count,
     required IconData icon,
     required Color color,
+    VoidCallback? onTap,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return _buildOpenwallaCard(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1400,7 +1406,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           _metricProgressBar(value: progress, fillColor: _openwallaCyan),
           const SizedBox(height: 10),
           Text(
-            '${(progress * 100).toStringAsFixed(1)}% of maximum capacity ($max max)',
+            '${(progress * 100).toStringAsFixed(1)}% of maximum capacity',
             style: _metricMutedTextStyle(),
           ),
         ],
@@ -1722,7 +1728,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           if (isLandscape) {
             final landscapeContent = [
               const SizedBox(height: 16),
-              _buildDashboardSummaryCards(),
+              _buildDashboardSummaryCards(appState),
               const SizedBox(height: 12),
               _buildNetworkPerformanceCard(isCompactTimeline: false),
               const SizedBox(height: 12),
@@ -1772,7 +1778,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const SizedBox(height: 16),
-                              _buildDashboardSummaryCards(),
+                              _buildDashboardSummaryCards(appState),
                               const SizedBox(height: 12),
                               _buildNetworkPerformanceCard(
                                 isCompactTimeline: constraints.maxWidth < 600,

@@ -532,6 +532,7 @@ class AppState extends ChangeNotifier {
         final interfaceDump = results[3][1] as Map<String, dynamic>;
         final rawDhcpData = results[5][1] as Map<String, dynamic>;
         final processedDhcpData = _processDhcpLeases(rawDhcpData);
+        final associatedMacs = await _apiService!.fetchAssociatedStations();
 
         _dashboardData = {
           'boardInfo': results[0][1],
@@ -544,6 +545,7 @@ class AppState extends ChangeNotifier {
           'wan': _extractWanData(interfaceDump),
           'wireguard': <String, dynamic>{}, // Empty for reviewer mode
           'conntrack': {'count': 142, 'max': 1000},
+          'deviceCount': _countRouterDevices(processedDhcpData, associatedMacs),
           '_lastUpdated':
               DateTime.now().millisecondsSinceEpoch, // Force UI updates
         };
@@ -644,18 +646,17 @@ class AppState extends ChangeNotifier {
         params: {'config': 'wireless'},
       );
 
-      final conntrackFuture = _apiService!
-          .systemExec(
-            ip,
-            _authService!.sysauth!,
-            useHttps,
-            command:
-                'cat /proc/sys/net/netfilter/nf_conntrack_count /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null || cat /proc/sys/net/ipv4/netfilter/ip_conntrack_count /proc/sys/net/ipv4/netfilter/ip_conntrack_max 2>/dev/null',
+      final conntrackFuture = _fetchConntrackData(ip, useHttps);
+      final associatedMacsFuture = _apiService!
+          .fetchAllAssociatedWirelessMacsWithContext(
+            ipAddress: ip,
+            sysauth: _authService!.sysauth!,
+            useHttps: useHttps,
           )
           .catchError((e, stack) {
-            Logger.warning('Optional system.exec conntrack failed: $e');
-            Logger.debug('Optional system.exec conntrack stack: $stack');
-            return null;
+            Logger.warning('Optional associated station fetch failed: $e');
+            Logger.debug('Optional associated station fetch stack: $stack');
+            return <String, Set<String>>{};
           });
 
       final results = await Future.wait([
@@ -738,10 +739,12 @@ class AppState extends ChangeNotifier {
         wirelessFuture,
         uciWirelessFuture,
         conntrackFuture,
+        associatedMacsFuture,
       ]);
       final wirelessRaw = optionalResults[0];
       final uciWirelessRaw = optionalResults[1];
-      final conntrackRaw = optionalResults[2];
+      final conntrackData = optionalResults[2] as Map<String, int>;
+      final associatedMacs = optionalResults[3] as Map<String, Set<String>>;
 
       Map<String, dynamic>? wirelessData;
       if (wirelessRaw != null) {
@@ -758,12 +761,6 @@ class AppState extends ChangeNotifier {
       if (uciWirelessRaw != null) {
         uciWirelessConfig = getOptionalData(uciWirelessRaw, 'uci.get wireless');
       }
-
-      final conntrackData = conntrackRaw != null
-          ? _parseConntrackData(
-              getOptionalData(conntrackRaw, 'system.exec conntrack'),
-            )
-          : <String, int>{'count': 0, 'max': 1000};
 
       // Fetch WireGuard peer information for WireGuard interfaces
       final wireguardData = <String, dynamic>{};
@@ -859,6 +856,7 @@ class AppState extends ChangeNotifier {
         'uciWirelessConfig': uciWirelessConfig,
         'wireguard': wireguardData,
         'conntrack': conntrackData,
+        'deviceCount': _countRouterDevices(dhcpLeases, associatedMacs),
         '_lastUpdated':
             DateTime.now().millisecondsSinceEpoch, // Force UI updates
       };
@@ -925,7 +923,11 @@ class AppState extends ChangeNotifier {
   }
 
   Map<String, int> _parseConntrackData(dynamic rawData) {
-    final raw = rawData?.toString() ?? '';
+    final raw = switch (rawData) {
+      {'stdout': final stdout} => stdout?.toString() ?? '',
+      {'data': final data} => data?.toString() ?? '',
+      _ => rawData?.toString() ?? '',
+    };
     final values = RegExp(r'\d+')
         .allMatches(raw)
         .map((match) => int.tryParse(match.group(0) ?? ''))
@@ -936,6 +938,58 @@ class AppState extends ChangeNotifier {
       'count': values.isNotEmpty ? values[0] : 0,
       'max': values.length > 1 && values[1] > 0 ? values[1] : 1000,
     };
+  }
+
+  int _countRouterDevices(
+    Map<String, dynamic>? dhcpLeases,
+    Map<String, Set<String>> associatedMacs,
+  ) {
+    final macs = <String>{};
+    final leases = dhcpLeases?['dhcp_leases'] as List<dynamic>? ?? const [];
+
+    for (final lease in leases) {
+      if (lease is Map) {
+        final mac = lease['macaddr']?.toString();
+        if (mac != null && mac.isNotEmpty) {
+          macs.add(mac.toUpperCase().replaceAll('-', ':'));
+        }
+      }
+    }
+
+    for (final stations in associatedMacs.values) {
+      for (final mac in stations) {
+        if (mac.isNotEmpty) {
+          macs.add(mac.toUpperCase().replaceAll('-', ':'));
+        }
+      }
+    }
+
+    return macs.length;
+  }
+
+  Future<Map<String, int>> _fetchConntrackData(String ip, bool useHttps) async {
+    if (_authService?.sysauth == null) {
+      return {'count': 0, 'max': 1000};
+    }
+
+    try {
+      final result = await _apiService!.systemExec(
+        ip,
+        _authService!.sysauth!,
+        useHttps,
+        command:
+            'cat /proc/sys/net/netfilter/nf_conntrack_count /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null || cat /proc/sys/net/ipv4/netfilter/ip_conntrack_count /proc/sys/net/ipv4/netfilter/ip_conntrack_max 2>/dev/null',
+      );
+
+      if (result is List && result.length > 1 && result[0] == 0) {
+        return _parseConntrackData(result[1]);
+      }
+      return _parseConntrackData(result);
+    } catch (e, stack) {
+      Logger.warning('Optional system.exec conntrack failed: $e');
+      Logger.debug('Optional system.exec conntrack stack: $stack');
+      return {'count': 0, 'max': 1000};
+    }
   }
 
   Map<String, dynamic>? _extractWanData(Map<String, dynamic>? interfaceDump) {
@@ -1040,6 +1094,7 @@ class AppState extends ChangeNotifier {
     final useHttps = _routerService!.selectedRouter!.useHttps;
 
     try {
+      final conntrackFuture = _fetchConntrackData(ip, useHttps);
       final result = await _apiService!.call(
         ip,
         _authService!.sysauth!,
@@ -1050,9 +1105,11 @@ class AppState extends ChangeNotifier {
       );
 
       if (result is List && result.length > 1 && result[0] == 0) {
+        final conntrackData = await conntrackFuture;
         _dashboardData = {
           ...?_dashboardData,
           'sysInfo': result[1],
+          'conntrack': conntrackData,
           '_lastUpdated': DateTime.now().millisecondsSinceEpoch,
         };
         notifyListeners();
