@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:luci_mobile/main.dart';
+import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 
-class MonthlyUsageScreen extends StatelessWidget {
+class MonthlyUsageScreen extends ConsumerStatefulWidget {
   final String interfaceName;
 
   const MonthlyUsageScreen({super.key, required this.interfaceName});
@@ -9,9 +12,58 @@ class MonthlyUsageScreen extends StatelessWidget {
   static const Color _cyan = Color(0xFF18AEEA);
   static const Color _orange = Color(0xFFF27C24);
 
+  @override
+  ConsumerState<MonthlyUsageScreen> createState() => _MonthlyUsageScreenState();
+}
+
+class _MonthlyUsageScreenState extends ConsumerState<MonthlyUsageScreen> {
+  late final Future<List<VnstatUsageSample>> _usageFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _usageFuture = ref
+        .read(appStateProvider)
+        .fetchVnstatUsageSamples(
+          period: 'daily',
+          interfaceName: widget.interfaceName,
+          limit: 62,
+          context: context,
+        );
+  }
+
   int _daysInMonth(DateTime date) {
     final nextMonth = DateTime(date.year, date.month + 1);
     return nextMonth.subtract(const Duration(days: 1)).day;
+  }
+
+  List<_MonthlyDailyUsage> _dailyUsageSamples(
+    List<VnstatUsageSample> samples,
+    DateTime now,
+    int totalDays,
+  ) {
+    return List.generate(totalDays, (index) {
+      final day = DateTime(now.year, now.month, index + 1);
+      final nextDay = day.add(const Duration(days: 1));
+      final matches = samples.where((sample) {
+        final time = sample.timestamp.toLocal();
+        return !time.isBefore(day) && time.isBefore(nextDay);
+      }).toList();
+      final downloadBytes = matches.fold<int>(
+        0,
+        (sum, sample) => sum + sample.downloadBytes,
+      );
+      final uploadBytes = matches.fold<int>(
+        0,
+        (sum, sample) => sum + sample.uploadBytes,
+      );
+      return _MonthlyDailyUsage(
+        day: index + 1,
+        downloadBytes: downloadBytes,
+        uploadBytes: uploadBytes,
+        hasData: matches.isNotEmpty,
+      );
+    });
   }
 
   @override
@@ -21,26 +73,57 @@ class MonthlyUsageScreen extends StatelessWidget {
     final daysLeft = totalDays - now.day;
 
     return Scaffold(
-      appBar: LuciAppBar(title: '$interfaceName Monthly Usage', showBack: true),
+      appBar: LuciAppBar(
+        title: '${widget.interfaceName} Monthly Usage',
+        showBack: true,
+      ),
       body: SafeArea(
         top: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
-          children: [
-            _MonthlySummaryCard(
-              interfaceName: interfaceName,
-              daysLeft: daysLeft,
-            ),
-            const SizedBox(height: 14),
-            _DailyUsageChartCard(
-              interfaceName: interfaceName,
-              totalDays: totalDays,
-            ),
-          ],
+        child: FutureBuilder<List<VnstatUsageSample>>(
+          future: _usageFuture,
+          builder: (context, snapshot) {
+            final samples = _dailyUsageSamples(
+              snapshot.data ?? const [],
+              now,
+              totalDays,
+            );
+            final monthlyTotal = samples.fold<int>(
+              0,
+              (sum, sample) => sum + sample.downloadBytes + sample.uploadBytes,
+            );
+
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+              children: [
+                _MonthlySummaryCard(
+                  interfaceName: widget.interfaceName,
+                  daysLeft: daysLeft,
+                  usedBytes: monthlyTotal,
+                  progress: totalDays > 0 ? now.day / totalDays : 0,
+                ),
+                const SizedBox(height: 14),
+                _DailyUsageChartCard(samples: samples),
+              ],
+            );
+          },
         ),
       ),
     );
   }
+}
+
+class _MonthlyDailyUsage {
+  final int day;
+  final int downloadBytes;
+  final int uploadBytes;
+  final bool hasData;
+
+  const _MonthlyDailyUsage({
+    required this.day,
+    required this.downloadBytes,
+    required this.uploadBytes,
+    required this.hasData,
+  });
 }
 
 class _OpenwallaPanel extends StatelessWidget {
@@ -77,10 +160,14 @@ class _OpenwallaPanel extends StatelessWidget {
 class _MonthlySummaryCard extends StatelessWidget {
   final String interfaceName;
   final int daysLeft;
+  final int usedBytes;
+  final double progress;
 
   const _MonthlySummaryCard({
     required this.interfaceName,
     required this.daysLeft,
+    required this.usedBytes,
+    required this.progress,
   });
 
   @override
@@ -104,7 +191,7 @@ class _MonthlySummaryCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '0 MB',
+                _formatUsageTotal(usedBytes),
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   color: colorScheme.onSurface,
                   fontWeight: FontWeight.w900,
@@ -130,7 +217,7 @@ class _MonthlySummaryCard extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: LinearProgressIndicator(
-              value: 0,
+              value: progress.clamp(0, 1),
               minHeight: 16,
               backgroundColor: colorScheme.surfaceContainerHighest,
               valueColor: const AlwaysStoppedAnimation<Color>(
@@ -142,33 +229,30 @@ class _MonthlySummaryCard extends StatelessWidget {
       ),
     );
   }
+
+  String _formatUsageTotal(int bytes) {
+    if (bytes <= 0) return '0 B';
+    final mb = bytes / (1024 * 1024);
+    if (mb < 1024) return '${mb.toStringAsFixed(mb >= 10 ? 0 : 1)} MB';
+    final gb = mb / 1024;
+    if (gb >= 100) return '${gb.toStringAsFixed(0)} GB';
+    if (gb >= 10) return '${gb.toStringAsFixed(1)} GB';
+    return '${gb.toStringAsFixed(2)} GB';
+  }
 }
 
 class _DailyUsageChartCard extends StatelessWidget {
-  final String interfaceName;
-  final int totalDays;
+  final List<_MonthlyDailyUsage> samples;
 
-  const _DailyUsageChartCard({
-    required this.interfaceName,
-    required this.totalDays,
-  });
-
-  List<double> _placeholderValues() {
-    return List<double>.generate(totalDays, (index) {
-      final wave = ((index * 7) % 17) / 17;
-      final spike = index == totalDays - 4 || index == totalDays - 2
-          ? 0.95
-          : 0.0;
-      return spike > 0
-          ? spike
-          : (0.08 + wave * 0.46).clamp(0.06, 0.72).toDouble();
-    });
-  }
+  const _DailyUsageChartCard({required this.samples});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final values = _placeholderValues();
+    final maxTotal = samples.fold<int>(0, (max, sample) {
+      final total = sample.downloadBytes + sample.uploadBytes;
+      return total > max ? total : max;
+    });
 
     return _OpenwallaPanel(
       child: Column(
@@ -188,9 +272,11 @@ class _DailyUsageChartCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                _UsageAxis(),
+                _UsageAxis(maxTotal: maxTotal),
                 const SizedBox(width: 12),
-                Expanded(child: _DailyBars(values: values)),
+                Expanded(
+                  child: _DailyBars(samples: samples, maxTotal: maxTotal),
+                ),
               ],
             ),
           ),
@@ -201,10 +287,20 @@ class _DailyUsageChartCard extends StatelessWidget {
 }
 
 class _UsageAxis extends StatelessWidget {
+  final int maxTotal;
+
+  const _UsageAxis({required this.maxTotal});
+
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.onSurfaceVariant;
-    final labels = ['500 MB', '375 MB', '250 MB', '125 MB', '0 B'];
+    final labels = [
+      _formatUsageTotal(maxTotal),
+      _formatUsageTotal((maxTotal * 0.75).round()),
+      _formatUsageTotal((maxTotal * 0.5).round()),
+      _formatUsageTotal((maxTotal * 0.25).round()),
+      '0 B',
+    ];
 
     return SizedBox(
       width: 56,
@@ -227,25 +323,50 @@ class _UsageAxis extends StatelessWidget {
       ),
     );
   }
+
+  String _formatUsageTotal(int bytes) {
+    if (bytes <= 0) return '0 B';
+    final mb = bytes / (1024 * 1024);
+    if (mb < 1024) return '${mb.toStringAsFixed(mb >= 10 ? 0 : 1)} MB';
+    final gb = mb / 1024;
+    if (gb >= 100) return '${gb.toStringAsFixed(0)} GB';
+    if (gb >= 10) return '${gb.toStringAsFixed(1)} GB';
+    return '${gb.toStringAsFixed(2)} GB';
+  }
 }
 
 class _DailyBars extends StatelessWidget {
-  final List<double> values;
+  final List<_MonthlyDailyUsage> samples;
+  final int maxTotal;
 
-  const _DailyBars({required this.values});
+  const _DailyBars({required this.samples, required this.maxTotal});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final labelEvery = values.length > 28 ? 5 : 4;
+    final labelEvery = samples.length > 28 ? 5 : 4;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
-      children: List.generate(values.length, (index) {
-        final height = 204 * values[index].clamp(0, 1).toDouble();
-        final day = index + 1;
+      children: List.generate(samples.length, (index) {
+        final sample = samples[index];
+        final total = sample.downloadBytes + sample.uploadBytes;
+        final totalFactor = maxTotal > 0
+            ? (total / maxTotal).clamp(0.08, 1.0)
+            : 0.0;
+        final barHeight = 204 * totalFactor;
+        final downloadHeight = total > 0
+            ? (barHeight * (sample.downloadBytes / total)).clamp(4.0, barHeight)
+            : 0.0;
+        final uploadHeight = total > 0
+            ? (barHeight * (sample.uploadBytes / total)).clamp(
+                sample.uploadBytes > 0 ? 4.0 : 0.0,
+                barHeight,
+              )
+            : 0.0;
+        final day = sample.day;
         final showLabel =
-            day == 1 || day == values.length || day % labelEvery == 0;
+            day == 1 || day == samples.length || day % labelEvery == 0;
 
         return Expanded(
           child: Column(
@@ -257,13 +378,30 @@ class _DailyBars extends StatelessWidget {
                   alignment: Alignment.bottomCenter,
                   child: Container(
                     width: 7,
-                    height: height < 3 ? 3 : height,
+                    height: 210,
+                    alignment: Alignment.bottomCenter,
                     decoration: BoxDecoration(
-                      color: index.isOdd
-                          ? MonthlyUsageScreen._orange
-                          : MonthlyUsageScreen._cyan,
+                      color: colorScheme.surfaceContainerHighest.withValues(
+                        alpha: 0.42,
+                      ),
                       borderRadius: BorderRadius.circular(3),
                     ),
+                    clipBehavior: Clip.antiAlias,
+                    child: sample.hasData
+                        ? Column(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Container(
+                                height: uploadHeight,
+                                color: MonthlyUsageScreen._orange,
+                              ),
+                              Container(
+                                height: downloadHeight,
+                                color: MonthlyUsageScreen._cyan,
+                              ),
+                            ],
+                          )
+                        : null,
                   ),
                 ),
               ),
