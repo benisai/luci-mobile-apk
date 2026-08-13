@@ -93,23 +93,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     super.dispose();
   }
 
-  String _formatUptime(int seconds) {
-    final duration = Duration(seconds: seconds);
-    final days = duration.inDays;
-    final hours = duration.inHours.remainder(24);
-    final minutes = duration.inMinutes.remainder(60);
-    final parts = <String>[];
-    if (days > 0) parts.add('${days}d');
-    if (hours > 0 || days > 0) parts.add('${hours}h');
-    parts.add('${minutes}m');
-    return parts.join(' ');
-  }
-
-  String _formatCpuLoad(List<dynamic> load) {
-    if (load.isEmpty) return 'N/A';
-    // Use the first value as the main CPU load
-    final percent = ((load[0] / 65536) * 100).clamp(0, 100);
-    return '${percent.toStringAsFixed(0)}%';
+  double _loadPercent(List<dynamic>? load, int index) {
+    if (load == null || load.isEmpty) return 0;
+    final safeIndex = index < load.length ? index : 0;
+    final value = load[safeIndex];
+    if (value is! num) return 0;
+    return ((value / 65536) * 100).clamp(0, 100).toDouble();
   }
 
   Widget _buildOpenwallaCard({
@@ -720,29 +709,96 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return '${(bitsPerSecond / 1_000_000).toStringAsFixed(2)} Mbps';
   }
 
-  // Consistent card builder for all dashboard vitals and summary cards
-  Widget _buildVitalsColumn(
-    BuildContext context, {
+  Widget _buildSystemGauge({
     required String label,
-    required String value,
+    required double percent,
+    required Color color,
   }) {
-    final labelStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-      color: Theme.of(context).colorScheme.onSurface,
-    );
-    final valueStyle = Theme.of(
-      context,
-    ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold);
+    final colorScheme = Theme.of(context).colorScheme;
+    final displayValue = percent.round().clamp(0, 100);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+    return SizedBox(
+      width: 82,
+      height: 82,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          SizedBox(
+            width: 78,
+            height: 78,
+            child: CircularProgressIndicator(
+              value: displayValue / 100,
+              strokeWidth: 8,
+              strokeCap: StrokeCap.round,
+              backgroundColor: colorScheme.surfaceContainerHighest,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$displayValue%',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSystemGaugeColumn({
+    required String label,
+    required double percent,
+    required Color color,
+  }) {
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildSystemGauge(label: label, percent: percent, color: color),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSystemGaugeRow({
+    required double cpuPercent,
+    required double memoryPercent,
+    required double loadPercent,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: labelStyle),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: valueStyle,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
+        _buildSystemGaugeColumn(
+          label: 'CPU',
+          percent: cpuPercent,
+          color: _openwallaGreen,
+        ),
+        _buildSystemGaugeColumn(
+          label: 'Mem',
+          percent: memoryPercent,
+          color: _openwallaCyan,
+        ),
+        _buildSystemGaugeColumn(
+          label: 'Load',
+          percent: loadPercent,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ],
     );
@@ -751,55 +807,37 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget _buildSystemVitalsCard(AppState appState) {
     final sysInfo = appState.dashboardData?['sysInfo'] as Map<String, dynamic>?;
 
-    final uptime = sysInfo?['uptime'] as int?;
-    final uptimeValue = uptime != null ? _formatUptime(uptime) : 'N/A';
-
     final cpuLoad = sysInfo?['load'] as List<dynamic>?;
-    final cpuLoadValue = cpuLoad != null ? _formatCpuLoad(cpuLoad) : 'N/A';
+    final cpuPercent = _loadPercent(cpuLoad, 0);
+    final loadPercent = _loadPercent(cpuLoad, 1);
 
     final totalMem = sysInfo?['memory']?['total'] as int? ?? 0;
     final freeMem = sysInfo?['memory']?['free'] as int? ?? 0;
     final bufferedMem = sysInfo?['memory']?['buffered'] as int? ?? 0;
     final usedMem = totalMem - freeMem - bufferedMem;
-    final memoryValue = totalMem > 0
-        ? '${(usedMem / totalMem * 100).toStringAsFixed(0)}%'
-        : 'N/A';
+    final memoryPercent = totalMem > 0
+        ? (usedMem / totalMem * 100).clamp(0, 100).toDouble()
+        : 0.0;
 
     return _buildOpenwallaCard(
       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 0),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 20),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildOpenwallaCardHeader(
-            icon: Icons.memory_rounded,
-            title: 'System',
-            color: _openwallaOrange,
+          Text(
+            'System Resources',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
           ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _buildVitalsColumn(
-                  context,
-                  label: 'CPU Load',
-                  value: cpuLoadValue,
-                ),
-              ),
-              Expanded(
-                child: _buildVitalsColumn(
-                  context,
-                  label: 'Memory',
-                  value: memoryValue,
-                ),
-              ),
-              Expanded(
-                child: _buildVitalsColumn(
-                  context,
-                  label: 'Uptime',
-                  value: uptimeValue,
-                ),
-              ),
-            ],
+          const SizedBox(height: 18),
+          _buildSystemGaugeRow(
+            cpuPercent: cpuPercent,
+            memoryPercent: memoryPercent,
+            loadPercent: loadPercent,
           ),
         ],
       ),
@@ -1695,38 +1733,45 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
             );
           } else {
-            // Portrait mode: Fill available height exactly without scrolling
+            // Portrait mode: let content scroll naturally so cards never get
+            // squeezed into a height that causes internal overflows.
             return LayoutBuilder(
               builder: (context, constraints) {
                 return RefreshIndicator(
                   onRefresh: () => appState.fetchDashboardData(),
                   child: SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    child: SizedBox(
-                      height: constraints.maxHeight,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 16),
-                            _buildDashboardSummaryCards(),
-                            const SizedBox(height: 12),
-                            _buildNetworkPerformanceCard(
-                              isCompactTimeline: constraints.maxWidth < 600,
-                            ),
-                            const SizedBox(height: 12),
-                            Expanded(
-                              child: _buildRealtimeThroughputCard(appState),
-                            ),
-                            const SizedBox(height: 12),
-                            _buildSystemVitalsCard(appState),
-                            const SizedBox(height: 12),
-                            _buildWirelessNetworksCard(appState),
-                            const SizedBox(height: 12),
-                            _buildInterfaceStatusCards(appState),
-                            const SizedBox(height: 12),
-                          ],
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
+                      child: SafeArea(
+                        top: false,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 16),
+                              _buildDashboardSummaryCards(),
+                              const SizedBox(height: 12),
+                              _buildNetworkPerformanceCard(
+                                isCompactTimeline: constraints.maxWidth < 600,
+                              ),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                height: 220,
+                                child: _buildRealtimeThroughputCard(appState),
+                              ),
+                              const SizedBox(height: 12),
+                              _buildSystemVitalsCard(appState),
+                              const SizedBox(height: 12),
+                              _buildWirelessNetworksCard(appState),
+                              const SizedBox(height: 12),
+                              _buildInterfaceStatusCards(appState),
+                              const SizedBox(height: 24),
+                            ],
+                          ),
                         ),
                       ),
                     ),
