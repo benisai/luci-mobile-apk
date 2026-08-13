@@ -1,6 +1,6 @@
 {
-	"moci": {
-		"description": "ACL permissions for MoCI OpenWrt interface",
+	"openwalla": {
+		"description": "ACL permissions for openwalla OpenWrt interface",
 		"read": {
 			"file": {
 				"/usr/lib/opkg/status": ["read"],
@@ -16,10 +16,10 @@
 					"/etc/banip/banip.feeds": ["read"],
 					"/etc/banip/banip.custom.feeds": ["read"],
 					"/etc/banip/banip.countries": ["read"],
-					"/tmp/moci-ping-monitor.txt": ["read"],
-				"/tmp/moci-dns-monitor.txt": ["read"],
-				"/tmp/moci-speedtest-monitor.txt": ["read"],
-				"/tmp/moci-netify.sqlite": ["read"],
+					"/tmp/openwalla-ping-monitor.txt": ["read"],
+				"/tmp/openwalla-dns-monitor.txt": ["read"],
+				"/tmp/openwalla-speedtest-monitor.txt": ["read"],
+				"/tmp/openwalla-netify.sqlite": ["read"],
 				"/tmp/connection-flows.sqlite": ["read"],
 				"/tmp/firmware.bin": ["read"],
 				"/tmp/backup.tar.gz": ["read"]
@@ -34,7 +34,7 @@
 				"luci.bandix": ["getStatus", "getMetrics"],
 				"service": ["list"]
 			},
-				"uci": ["moci", "banip", "sqm"]
+				"uci": ["openwalla", "banip", "sqm"]
 			},
 		"write": {
 			"file": {
@@ -48,18 +48,18 @@
 					"/etc/init.d/banip": ["exec"],
 					"/etc/init.d/sqm": ["exec"],
 					"/etc/init.d/firewall": ["exec"],
-				"/usr/bin/moci-netify-collector": ["exec"],
-				"/usr/bin/moci-connection-flow-collector": ["exec"],
-				"/usr/bin/moci-speedtest-monitor": ["exec"],
-				"/usr/bin/moci-device-traffic-summary": ["exec"],
+				"/usr/bin/openwalla-netify-collector": ["exec"],
+				"/usr/bin/openwalla-connection-flow-collector": ["exec"],
+				"/usr/bin/openwalla-speedtest-monitor": ["exec"],
+				"/usr/bin/openwalla-device-traffic-summary": ["exec"],
 				"/usr/bin/sqlite3": ["exec"],
 				"/usr/bin/sqlite3-cli": ["exec"],
 				"/etc/crontabs/root": ["write"],
-				"/tmp/moci-netify.sqlite": ["write"],
+				"/tmp/openwalla-netify.sqlite": ["write"],
 				"/tmp/connection-flows.sqlite": ["write"],
-				"/tmp/moci-ping-monitor.txt": ["write"],
-				"/tmp/moci-dns-monitor.txt": ["write"],
-				"/tmp/moci-speedtest-monitor.txt": ["write"]
+				"/tmp/openwalla-ping-monitor.txt": ["write"],
+				"/tmp/openwalla-dns-monitor.txt": ["write"],
+				"/tmp/openwalla-speedtest-monitor.txt": ["write"]
 			},
 			"ubus": {
 				"uci": ["set", "add", "delete", "commit"],
@@ -77,7 +77,7 @@
 					"sqm",
 					"ddns",
 					"banip",
-					"moci"
+					"openwalla"
 				]
 		}
 	}
