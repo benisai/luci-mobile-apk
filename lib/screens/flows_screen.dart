@@ -141,23 +141,52 @@ class _FlowItem {
 class _FlowsScreenState extends ConsumerState<FlowsScreen> {
   static const Color _cyan = Color(0xFF18AEEA);
   static const Color _red = Color(0xFFFF4D4F);
+  static const int _pageSize = 250;
 
   int _selectedTab = 2;
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMoreFlows = true;
   String? _error;
   int _flowCount = 0;
   List<_FlowItem> _flows = const [];
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_handleScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadFlows());
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_handleScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleScroll() {
+    if (!_scrollController.hasClients ||
+        _isLoading ||
+        _isLoadingMore ||
+        !_hasMoreFlows) {
+      return;
+    }
+
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 320) {
+      _loadMoreFlows();
+    }
   }
 
   Future<void> _loadFlows() async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
+      _isLoadingMore = false;
+      _hasMoreFlows = true;
       _error = null;
     });
 
@@ -166,20 +195,14 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
       final hostnames = _hostnameMaps(appState);
       final results = await Future.wait([
         appState.fetchNetifyFlowCount(context: context),
-        appState.fetchNetifyFlows(limit: 75, context: context),
+        appState.fetchNetifyFlows(limit: _pageSize, context: context),
       ]);
       if (!mounted) return;
+      final flows = results[1] as List<NetifyFlow>;
       setState(() {
         _flowCount = results[0] as int;
-        _flows = (results[1] as List<NetifyFlow>)
-            .map(
-              (flow) => _FlowItem.fromNetify(
-                flow,
-                hostnameByMac: hostnames.$1,
-                hostnameByIp: hostnames.$2,
-              ),
-            )
-            .toList();
+        _flows = _mapFlowItems(flows, hostnames);
+        _hasMoreFlows = flows.length == _pageSize && _flows.length < _flowCount;
         _isLoading = false;
       });
     } catch (e) {
@@ -189,6 +212,50 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _loadMoreFlows() async {
+    if (!mounted || _isLoading || _isLoadingMore || !_hasMoreFlows) return;
+
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final appState = ref.read(appStateProvider);
+      final hostnames = _hostnameMaps(appState);
+      final flows = await appState.fetchNetifyFlows(
+        limit: _pageSize,
+        offset: _flows.length,
+        context: context,
+      );
+      if (!mounted) return;
+      final items = _mapFlowItems(flows, hostnames);
+      setState(() {
+        _flows = [..._flows, ...items];
+        _hasMoreFlows = flows.length == _pageSize && _flows.length < _flowCount;
+        _isLoadingMore = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _hasMoreFlows = false;
+        _isLoadingMore = false;
+      });
+    }
+  }
+
+  List<_FlowItem> _mapFlowItems(
+    List<NetifyFlow> flows,
+    (Map<String, String>, Map<String, String>) hostnames,
+  ) {
+    return flows
+        .map(
+          (flow) => _FlowItem.fromNetify(
+            flow,
+            hostnameByMac: hostnames.$1,
+            hostnameByIp: hostnames.$2,
+          ),
+        )
+        .toList();
   }
 
   (Map<String, String>, Map<String, String>) _hostnameMaps(AppState appState) {
@@ -246,6 +313,7 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
         child: RefreshIndicator(
           onRefresh: _loadFlows,
           child: ListView(
+            controller: _scrollController,
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
             children: [
               Row(
@@ -329,6 +397,23 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
                 )
               else
                 _FlowListCard(flows: _flows, onTapFlow: _showFlowDetails),
+              if (_isLoadingMore)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 18),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (!_isLoading && _flows.isNotEmpty && !_hasMoreFlows)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  child: Text(
+                    'End of flows',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
