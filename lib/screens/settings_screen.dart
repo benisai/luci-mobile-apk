@@ -349,21 +349,15 @@ class _PingSettingsScreenState extends ConsumerState<_PingSettingsScreen> {
                       keyboardType: TextInputType.number,
                       enabled: !_isSaving,
                     ),
-                    const SizedBox(height: 20),
-                    FilledButton.icon(
-                      onPressed: _isSaving ? null : _saveSettings,
-                      icon: _isSaving
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.save_rounded),
-                      label: Text(_isSaving ? 'Saving' : 'Save'),
-                    ),
                   ],
                 ),
               ],
+            ),
+      bottomNavigationBar: _isLoading
+          ? null
+          : _SettingsSaveBar(
+              isSaving: _isSaving,
+              onPressed: _isSaving ? null : _saveSettings,
             ),
     );
   }
@@ -496,21 +490,15 @@ class _SpeedtestSettingsScreenState
                       value: _selectedTime.format(context),
                       onTap: _isSaving ? null : _selectTime,
                     ),
-                    const SizedBox(height: 20),
-                    FilledButton.icon(
-                      onPressed: _isSaving ? null : _saveSettings,
-                      icon: _isSaving
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.save_rounded),
-                      label: Text(_isSaving ? 'Saving' : 'Save'),
-                    ),
                   ],
                 ),
               ],
+            ),
+      bottomNavigationBar: _isLoading
+          ? null
+          : _SettingsSaveBar(
+              isSaving: _isSaving,
+              onPressed: _isSaving ? null : _saveSettings,
             ),
     );
   }
@@ -640,22 +628,54 @@ class _MonthlyUsageSettingsScreenState
                               }
                             },
                     ),
-                    const SizedBox(height: 20),
-                    FilledButton.icon(
-                      onPressed: _isSaving ? null : _saveSettings,
-                      icon: _isSaving
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.save_rounded),
-                      label: Text(_isSaving ? 'Saving' : 'Save'),
-                    ),
                   ],
                 ),
               ],
             ),
+      bottomNavigationBar: _isLoading
+          ? null
+          : _SettingsSaveBar(
+              isSaving: _isSaving,
+              onPressed: _isSaving ? null : _saveSettings,
+            ),
+    );
+  }
+}
+
+class _SettingsSaveBar extends StatelessWidget {
+  final bool isSaving;
+  final VoidCallback? onPressed;
+
+  const _SettingsSaveBar({required this.isSaving, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          border: Border(
+            top: BorderSide(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+            ),
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: FilledButton.icon(
+          onPressed: onPressed,
+          icon: isSaving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.save_rounded),
+          label: Text(isSaving ? 'Saving' : 'Save'),
+        ),
+      ),
     );
   }
 }
