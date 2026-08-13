@@ -25,55 +25,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   static const Color _openwallaCardBorder = Color(0xFF313C52);
   static const double _openwallaRadius = 8;
 
-  final ScrollController _wirelessScrollController = ScrollController();
-  bool _showWirelessLeftArrow = false;
-  bool _showWirelessRightArrow = false;
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(appStateProvider).fetchDashboardData();
-      // Initialize arrows after layout
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _updateWirelessArrows();
-      });
     });
-    _wirelessScrollController.addListener(_updateWirelessArrows);
-  }
-
-  @override
-  void didUpdateWidget(covariant DashboardScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _updateWirelessArrows();
-    });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _updateWirelessArrows();
-    });
-  }
-
-  void _updateWirelessArrows() {
-    if (!_wirelessScrollController.hasClients) return;
-    final max = _wirelessScrollController.position.maxScrollExtent;
-    final min = _wirelessScrollController.position.minScrollExtent;
-    final offset = _wirelessScrollController.offset;
-    setState(() {
-      _showWirelessLeftArrow = offset > min + 2;
-      _showWirelessRightArrow = offset < max - 2;
-    });
-  }
-
-  @override
-  void dispose() {
-    _wirelessScrollController.removeListener(_updateWirelessArrows);
-    _wirelessScrollController.dispose();
-    super.dispose();
   }
 
   double _scaledLoadPercent(List<dynamic>? load, int index) {
@@ -226,8 +183,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        _buildDashboardFlowsCard(),
       ],
     );
   }
@@ -936,315 +891,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _buildWirelessInfoCardContent(
-    BuildContext context, {
-    required String ssid,
-    required bool isEnabled,
-    required int? signal,
-    required String channel,
-  }) {
-    final textTheme = Theme.of(context).textTheme;
-    final primaryColor = Theme.of(context).colorScheme.primary;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.wifi,
-              color: isEnabled
-                  ? primaryColor
-                  : Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.5),
-              size: 20,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              ssid,
-              style: textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.max,
-          children: [
-            if (signal != null)
-              Flexible(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.network_cell,
-                      size: 16,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.6),
-                    ),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        '$signal dBm',
-                        style: textTheme.bodySmall,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (signal != null) const SizedBox(width: 8),
-            Flexible(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.settings_input_antenna,
-                    size: 16,
-                    color: Colors.grey.shade600,
-                  ),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      'Ch: $channel',
-                      style: textTheme.bodySmall,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildWirelessNetworksCard(AppState appState) {
-    final prefs = appState.dashboardPreferences;
-    final wirelessRadios =
-        appState.dashboardData?['wireless'] as Map<String, dynamic>?;
-    final uciWirelessConfig = appState.dashboardData?['uciWirelessConfig'];
-
-    // Track which interfaces we've already added from runtime data
-    final addedInterfaces = <String>{};
-
-    List<Widget> networkCardWidgets = [];
-
-    // First, add interfaces from runtime wireless data
-    if (wirelessRadios != null) {
-      wirelessRadios.forEach((radioName, radioData) {
-        final interfaces = radioData['interfaces'] as List<dynamic>?;
-        if (interfaces != null) {
-          for (var interface in interfaces) {
-            final config = interface['config'] ?? {};
-            final iwinfo = interface['iwinfo'] ?? {};
-            final ssid = iwinfo['ssid'] ?? config['ssid'] ?? 'N/A';
-            if (ssid == 'N/A') continue;
-
-            final deviceName = config['device'] ?? radioName;
-            final interfaceId = '$ssid ($deviceName)';
-            final uciName = interface['section'] as String?;
-
-            if (uciName != null) {
-              addedInterfaces.add(uciName);
-            }
-
-            // If preferences are not empty, check if this interface should be shown
-            // Empty preferences means show all interfaces by default
-            if (prefs.enabledWirelessInterfaces.isNotEmpty &&
-                !prefs.enabledWirelessInterfaces.contains(interfaceId)) {
-              continue; // Skip this interface
-            }
-
-            final isEnabled = !(config['disabled'] as bool? ?? false);
-            final channel = (iwinfo['channel'] ?? config['channel'] ?? 'N/A')
-                .toString();
-            final signal = iwinfo['signal'] as int?;
-
-            networkCardWidgets.add(
-              _buildOpenwallaCard(
-                margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                padding: const EdgeInsets.all(10),
-                onLongPress: () {
-                  // Navigate to interfaces tab with the specific interface name
-                  final appState = ref.read(appStateProvider);
-                  appState.requestTab(2, interfaceToScroll: deviceName);
-                },
-                child: _buildWirelessInfoCardContent(
-                  context,
-                  ssid: ssid,
-                  isEnabled: isEnabled,
-                  signal: signal,
-                  channel: channel,
-                ),
-              ),
-            );
-          }
-        }
-      });
-    }
-
-    // Now add disabled interfaces from UCI config that aren't in runtime data
-    if (uciWirelessConfig != null) {
-      final uciValues = uciWirelessConfig['values'] as Map?;
-      if (uciValues != null) {
-        final uciRadios = <String, Map>{};
-        final uciInterfaces = <String, Map>{};
-
-        // Categorize UCI entries
-        uciValues.forEach((key, value) {
-          final typedValue = value as Map?;
-          if (typedValue?['.type'] == 'wifi-device') {
-            uciRadios[key] = typedValue!;
-          } else if (typedValue?['.type'] == 'wifi-iface') {
-            uciInterfaces[key] = typedValue!;
-          }
-        });
-
-        // Add interfaces that aren't in runtime data
-        uciInterfaces.forEach((uciName, config) {
-          if (!addedInterfaces.contains(uciName)) {
-            final ssid = config['ssid'] ?? 'Unnamed';
-            final device = config['device'] ?? '';
-            final interfaceId = '$ssid ($device)';
-
-            // Check if this interface should be shown based on preferences
-            if (prefs.enabledWirelessInterfaces.isNotEmpty &&
-                !prefs.enabledWirelessInterfaces.contains(interfaceId)) {
-              return; // Skip this interface
-            }
-
-            final isRadioEnabled = uciRadios[device]?['disabled'] != '1';
-            final isIfaceEnabled = config['disabled'] != '1';
-            final isEnabled = isRadioEnabled && isIfaceEnabled;
-
-            networkCardWidgets.add(
-              _buildOpenwallaCard(
-                margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                padding: const EdgeInsets.all(10),
-                onLongPress: () {
-                  // Navigate to interfaces tab with the specific interface name
-                  final appState = ref.read(appStateProvider);
-                  appState.requestTab(2, interfaceToScroll: device);
-                },
-                child: _buildWirelessInfoCardContent(
-                  context,
-                  ssid: ssid,
-                  isEnabled: isEnabled,
-                  signal: null, // No signal for disabled interfaces
-                  channel: config['channel']?.toString() ?? 'N/A',
-                ),
-              ),
-            );
-          }
-        });
-      }
-    }
-
-    if (networkCardWidgets.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    List<Widget> rowChildren = [];
-    final isScrollable = networkCardWidgets.length > 2;
-    for (int i = 0; i < networkCardWidgets.length; i++) {
-      if (isScrollable) {
-        rowChildren.add(SizedBox(width: 180, child: networkCardWidgets[i]));
-      } else {
-        rowChildren.add(Expanded(child: networkCardWidgets[i]));
-      }
-      if (i < networkCardWidgets.length - 1) {
-        rowChildren.add(SizedBox(width: isScrollable ? 4 : 8));
-      }
-    }
-
-    if (isScrollable) {
-      return Stack(
-        children: [
-          SizedBox(
-            height: 110, // or whatever height fits the card
-            child: ListView(
-              controller: _wirelessScrollController,
-              scrollDirection: Axis.horizontal,
-              children: rowChildren,
-            ),
-          ),
-          if (_showWirelessRightArrow)
-            Positioned(
-              right: 0,
-              top: 0,
-              bottom: 0,
-              child: IgnorePointer(
-                child: Container(
-                  width: 28,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: [
-                        Colors.transparent,
-                        Theme.of(context).colorScheme.surface,
-                      ],
-                    ),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    size: 18,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.45),
-                  ),
-                ),
-              ),
-            ),
-          if (_showWirelessLeftArrow)
-            Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              child: IgnorePointer(
-                child: Container(
-                  width: 28,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.centerRight,
-                      end: Alignment.centerLeft,
-                      colors: [
-                        Colors.transparent,
-                        Theme.of(context).colorScheme.surface,
-                      ],
-                    ),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(
-                    Icons.arrow_back_ios_new_rounded,
-                    size: 18,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.45),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      );
-    } else {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: rowChildren,
-      );
-    }
-  }
-
   String _primaryUsageInterfaceName(AppState appState) {
     final interfaces =
         appState.dashboardData?['interfaceDump']?['interface']
@@ -1857,14 +1503,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               const SizedBox(height: 12),
               _buildNetworkPerformanceCard(isCompactTimeline: false),
               const SizedBox(height: 12),
+              _buildSystemVitalsCard(appState),
+              const SizedBox(height: 12),
               SizedBox(
                 height: 240,
                 child: _buildRealtimeThroughputCard(appState),
               ),
               const SizedBox(height: 12),
-              _buildSystemVitalsCard(appState),
-              const SizedBox(height: 12),
-              _buildWirelessNetworksCard(appState),
+              _buildDashboardFlowsCard(),
               const SizedBox(height: 12),
               _buildDashboardBottomCards(appState),
               const SizedBox(height: 12),
@@ -1909,14 +1555,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                 isCompactTimeline: constraints.maxWidth < 600,
                               ),
                               const SizedBox(height: 12),
+                              _buildSystemVitalsCard(appState),
+                              const SizedBox(height: 12),
                               SizedBox(
                                 height: 220,
                                 child: _buildRealtimeThroughputCard(appState),
                               ),
                               const SizedBox(height: 12),
-                              _buildSystemVitalsCard(appState),
-                              const SizedBox(height: 12),
-                              _buildWirelessNetworksCard(appState),
+                              _buildDashboardFlowsCard(),
                               const SizedBox(height: 12),
                               _buildDashboardBottomCards(appState),
                               const SizedBox(height: 24),
