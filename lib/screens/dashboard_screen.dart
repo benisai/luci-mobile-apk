@@ -185,61 +185,50 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Widget _buildDashboardSummaryCards(AppState appState) {
     final deviceCount = appState.dashboardData?['deviceCount'];
-    final cards = [
-      _buildDashboardSummaryCard(
-        label: 'Devices',
-        count: (deviceCount is int ? deviceCount : 0).toString(),
-        icon: Icons.devices_rounded,
-        color: _openwallaCyan,
-        onTap: () => ref.read(appStateProvider).requestTab(1),
-      ),
-      _buildDashboardSummaryCard(
-        label: 'Notifications',
-        count: '0',
-        icon: Icons.notifications_rounded,
-        color: _openwallaOrange,
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => const NotificationsScreen(),
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _buildDashboardSummaryCard(
+                label: 'Devices',
+                count: (deviceCount is int ? deviceCount : 0).toString(),
+                icon: Icons.devices_rounded,
+                color: _openwallaCyan,
+                onTap: () => ref.read(appStateProvider).requestTab(1),
+              ),
             ),
-          );
-        },
-      ),
-      _buildDashboardSummaryCard(
-        label: 'Rules',
-        count: '0',
-        icon: Icons.rule_rounded,
-        color: _openwallaGreen,
-      ),
-      _buildDashboardSummaryCard(
-        label: 'Flows',
-        count: '0',
-        icon: Icons.account_tree_rounded,
-        color: const Color(0xFF8B5CF6),
-        onTap: () {
-          Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (context) => const FlowsScreen()));
-        },
-      ),
-    ];
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columnCount = constraints.maxWidth >= 700 ? 4 : 2;
-        final spacing = 10.0;
-        final cardWidth =
-            (constraints.maxWidth - spacing * (columnCount - 1)) / columnCount;
-
-        return Wrap(
-          spacing: spacing,
-          runSpacing: spacing,
-          children: cards
-              .map((card) => SizedBox(width: cardWidth, child: card))
-              .toList(),
-        );
-      },
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildDashboardSummaryCard(
+                label: 'Notifications',
+                count: '0',
+                icon: Icons.notifications_rounded,
+                color: _openwallaOrange,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const NotificationsScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildDashboardSummaryCard(
+                label: 'Rules',
+                count: '0',
+                icon: Icons.rule_rounded,
+                color: _openwallaGreen,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _buildDashboardFlowsCard(),
+      ],
     );
   }
 
@@ -278,6 +267,69 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDashboardFlowsCard() {
+    final colorScheme = Theme.of(context).colorScheme;
+    const flowColor = Color(0xFF8B5CF6);
+
+    return _buildOpenwallaCard(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      onTap: () {
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (context) => const FlowsScreen()));
+      },
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: flowColor.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(_openwallaRadius),
+            ),
+            child: const Icon(
+              Icons.account_tree_rounded,
+              color: flowColor,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Flows',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '0',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                    height: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            Icons.arrow_forward_ios_rounded,
+            size: 16,
+            color: colorScheme.onSurfaceVariant,
           ),
         ],
       ),
