@@ -1367,52 +1367,47 @@ class AppState extends ChangeNotifier {
 
     try {
       final output = await _sqliteQueryOutput(
-        dbExpression: _connectionFlowsDbExpression(),
-        sql:
-            'SELECT COUNT(*) FROM connection_flows ${_connectionFlowWhereClause(protocolFilter)};',
-        context: context,
-      );
-      final countText = output
-          .split('\n')
-          .map((line) => line.trim())
-          .where((line) => RegExp(r'^\d+$').hasMatch(line))
-          .lastOrNull;
-      final connectionFlowCount = int.tryParse(countText ?? '') ?? 0;
-      if (connectionFlowCount > 0) return connectionFlowCount;
-      return await _fetchNetifyRawFlowCount(protocolFilter: protocolFilter);
-    } catch (e, stack) {
-      Logger.warning('Optional connection flow count fetch failed: $e');
-      Logger.debug('Optional connection flow count stack: $stack');
-      return await _fetchNetifyRawFlowCount(protocolFilter: protocolFilter);
-    }
-  }
-
-  Future<int> _fetchNetifyRawFlowCount({
-    String? protocolFilter,
-    BuildContext? context,
-  }) async {
-    final router = _routerService?.selectedRouter;
-    final sysauth = _authService?.sysauth;
-    if (router == null || sysauth == null || _apiService == null) return 0;
-
-    try {
-      final output = await _sqliteQueryOutput(
         dbExpression: _netifyDbExpression(),
         sql:
             'SELECT COUNT(*) FROM flow_raw ${_netifyRawWhereClause(protocolFilter)};',
         context: context,
       );
-      final countText = output
-          .split('\n')
-          .map((line) => line.trim())
-          .where((line) => RegExp(r'^\d+$').hasMatch(line))
-          .lastOrNull;
-      return int.tryParse(countText ?? '') ?? 0;
+      final netifyCount = _parseSqliteCount(output);
+      if (netifyCount > 0) return netifyCount;
+      return await _fetchConnectionFlowCount(protocolFilter: protocolFilter);
     } catch (e, stack) {
       Logger.warning('Optional Netify raw flow count fetch failed: $e');
       Logger.debug('Optional Netify raw flow count stack: $stack');
+      return await _fetchConnectionFlowCount(protocolFilter: protocolFilter);
+    }
+  }
+
+  Future<int> _fetchConnectionFlowCount({
+    String? protocolFilter,
+    BuildContext? context,
+  }) async {
+    try {
+      final output = await _sqliteQueryOutput(
+        dbExpression: _connectionFlowsDbExpression(),
+        sql:
+            'SELECT COUNT(*) FROM connection_flows ${_connectionFlowWhereClause(protocolFilter)};',
+        context: context,
+      );
+      return _parseSqliteCount(output);
+    } catch (e, stack) {
+      Logger.warning('Optional connection flow count fetch failed: $e');
+      Logger.debug('Optional connection flow count stack: $stack');
       return 0;
     }
+  }
+
+  int _parseSqliteCount(String output) {
+    final countText = output
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => RegExp(r'^\d+$').hasMatch(line))
+        .lastOrNull;
+    return int.tryParse(countText ?? '') ?? 0;
   }
 
   Future<List<NetifyFlow>> fetchNetifyFlows({
@@ -1468,40 +1463,44 @@ class AppState extends ChangeNotifier {
           .toList();
     }
 
-    final router = _routerService?.selectedRouter;
-    final sysauth = _authService?.sysauth;
-    if (router == null || sysauth == null || _apiService == null) {
-      return const [];
-    }
-
     final safeLimit = limit.clamp(1, 500).toInt();
     final safeOffset = offset < 0 ? 0 : offset;
+    final netifyFlows = await _fetchNetifyRawFlows(
+      limit: safeLimit,
+      offset: safeOffset,
+      protocolFilter: protocolFilter,
+      context: context,
+    );
+    if (netifyFlows.isNotEmpty) return netifyFlows;
+    return await _fetchConnectionFlows(
+      limit: safeLimit,
+      offset: safeOffset,
+      protocolFilter: protocolFilter,
+    );
+  }
+
+  Future<List<NetifyFlow>> _fetchConnectionFlows({
+    required int limit,
+    required int offset,
+    String? protocolFilter,
+    BuildContext? context,
+  }) async {
     try {
       final output = await _sqliteQueryOutput(
         dbExpression: _connectionFlowsDbExpression(),
         sql:
-            'SELECT id,timeinsert,protocol,source,destination,transfer,status FROM connection_flows ${_connectionFlowWhereClause(protocolFilter)} ORDER BY id DESC LIMIT $safeLimit OFFSET $safeOffset;',
+            'SELECT id,timeinsert,protocol,source,destination,transfer,status FROM connection_flows ${_connectionFlowWhereClause(protocolFilter)} ORDER BY id DESC LIMIT $limit OFFSET $offset;',
         context: context,
       );
-      final connectionFlows = output
+      return output
           .split('\n')
           .map((line) => NetifyFlow.fromConnectionFlowRow(line.trim()))
           .whereType<NetifyFlow>()
           .toList();
-      if (connectionFlows.isNotEmpty) return connectionFlows;
-      return await _fetchNetifyRawFlows(
-        limit: safeLimit,
-        offset: safeOffset,
-        protocolFilter: protocolFilter,
-      );
     } catch (e, stack) {
       Logger.warning('Optional connection flows fetch failed: $e');
       Logger.debug('Optional connection flows stack: $stack');
-      return await _fetchNetifyRawFlows(
-        limit: safeLimit,
-        offset: safeOffset,
-        protocolFilter: protocolFilter,
-      );
+      return const [];
     }
   }
 
