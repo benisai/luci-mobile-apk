@@ -5,6 +5,7 @@ import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/widgets/luci_animation_system.dart';
+import 'package:luci_mobile/screens/notifications_screen.dart';
 import 'package:luci_mobile/models/router.dart' as model;
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -199,6 +200,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             count: '0',
             icon: Icons.notifications_rounded,
             color: _openwallaOrange,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const NotificationsScreen(),
+                ),
+              );
+            },
           ),
         ),
         const SizedBox(width: 10),
