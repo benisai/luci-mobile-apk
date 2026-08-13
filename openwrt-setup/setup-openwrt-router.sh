@@ -160,6 +160,7 @@ install_file() {
 	src="$1"
 	dst="$2"
 	mode="$3"
+	mkdir -p "$(dirname "$dst")"
 	cp "$src" "$dst"
 	chmod "$mode" "$dst"
 	log "Installed $dst"
@@ -242,6 +243,7 @@ require_file "$FILES_DIR/openwalla-dns-monitor.init"
 require_file "$FILES_DIR/openwalla-state-sync.init"
 require_file "$FILES_DIR/openwalla-device-quarantine.init"
 require_file "$FILES_DIR/openwalla.config"
+require_file "$SCRIPT_DIR/rpcd-acl.json"
 if [ "$INSTALL_NETIFY" = "1" ]; then
 	require_file "$FILES_DIR/openwalla-netify-collector.sh"
 	require_file "$FILES_DIR/openwalla-netify-collector.init"
@@ -326,6 +328,7 @@ install_file "$FILES_DIR/openwalla-ping-monitor.init" /etc/init.d/openwalla-ping
 install_file "$FILES_DIR/openwalla-dns-monitor.init" /etc/init.d/openwalla-dns-monitor 0755
 install_file "$FILES_DIR/openwalla-state-sync.init" /etc/init.d/openwalla-state-sync 0755
 install_file "$FILES_DIR/openwalla-device-quarantine.init" /etc/init.d/openwalla-device-quarantine 0755
+install_file "$SCRIPT_DIR/rpcd-acl.json" /usr/share/rpcd/acl.d/openwalla.json 0644
 if [ "$INSTALL_NETIFY" = "1" ]; then
 	install_file "$FILES_DIR/openwalla-netify-collector.sh" /usr/bin/openwalla-netify-collector 0755
 	install_file "$FILES_DIR/openwalla-netify-collector.init" /etc/init.d/openwalla-netify-collector 0755
