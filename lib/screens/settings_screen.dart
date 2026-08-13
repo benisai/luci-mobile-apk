@@ -55,12 +55,8 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  void _openPlaceholderSettings(BuildContext context, String title) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => _PlaceholderSettingsScreen(title: title),
-      ),
-    );
+  void _openSettingsPage(BuildContext context, Widget page) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (context) => page));
   }
 
   void _showReviewerModeResetDialog(BuildContext context, WidgetRef ref) {
@@ -170,23 +166,27 @@ class SettingsScreen extends ConsumerWidget {
                     subtitle:
                         'Configure latency monitoring and alert thresholds',
                     onTap: () =>
-                        _openPlaceholderSettings(context, 'Ping Settings'),
+                        _openSettingsPage(context, const _PingSettingsScreen()),
                   ),
                   _buildSettingsCard(
                     context: context,
                     icon: Icons.speed_rounded,
                     title: 'Speedtest Settings',
                     subtitle: 'Configure scheduled speed tests',
-                    onTap: () =>
-                        _openPlaceholderSettings(context, 'Speedtest Settings'),
+                    onTap: () => _openSettingsPage(
+                      context,
+                      const _SpeedtestSettingsScreen(),
+                    ),
                   ),
                   _buildSettingsCard(
                     context: context,
                     icon: Icons.bar_chart_rounded,
                     title: 'Monthly Usage',
                     subtitle: 'Configure monthly usage tracking',
-                    onTap: () =>
-                        _openPlaceholderSettings(context, 'Monthly Usage'),
+                    onTap: () => _openSettingsPage(
+                      context,
+                      const _MonthlyUsageSettingsScreen(),
+                    ),
                   ),
                   if (appState.reviewerModeEnabled) ...[
                     const Divider(height: 32),
@@ -238,30 +238,265 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-class _PlaceholderSettingsScreen extends StatelessWidget {
-  final String title;
+class _PingSettingsScreen extends StatefulWidget {
+  const _PingSettingsScreen();
 
-  const _PlaceholderSettingsScreen({required this.title});
+  @override
+  State<_PingSettingsScreen> createState() => _PingSettingsScreenState();
+}
+
+class _PingSettingsScreenState extends State<_PingSettingsScreen> {
+  final _targetController = TextEditingController(text: '1.1.1.1');
+  final _thresholdController = TextEditingController(text: '100');
+
+  @override
+  void dispose() {
+    _targetController.dispose();
+    _thresholdController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: const LuciAppBar(title: 'Ping Settings', showBack: true),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _SettingsFormCard(
+            children: [
+              TextField(
+                controller: _targetController,
+                decoration: const InputDecoration(
+                  labelText: 'Target',
+                  hintText: '1.1.1.1',
+                  prefixIcon: Icon(Icons.public_rounded),
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.url,
+                textInputAction: TextInputAction.next,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _thresholdController,
+                decoration: const InputDecoration(
+                  labelText: 'Alert Threshold',
+                  suffixText: 'ms',
+                  prefixIcon: Icon(Icons.notifications_active_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SpeedtestSettingsScreen extends StatefulWidget {
+  const _SpeedtestSettingsScreen();
+
+  @override
+  State<_SpeedtestSettingsScreen> createState() =>
+      _SpeedtestSettingsScreenState();
+}
+
+class _SpeedtestSettingsScreenState extends State<_SpeedtestSettingsScreen> {
+  bool _enabled = false;
+  DateTime _selectedDate = DateTime.now();
+  TimeOfDay _selectedTime = const TimeOfDay(hour: 3, minute: 0);
+
+  Future<void> _selectDate() async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+
+    if (pickedDate != null && mounted) {
+      setState(() => _selectedDate = pickedDate);
+    }
+  }
+
+  Future<void> _selectTime() async {
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime,
+    );
+
+    if (pickedTime != null && mounted) {
+      setState(() => _selectedTime = pickedTime);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: const LuciAppBar(title: 'Speedtest Settings', showBack: true),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _SettingsFormCard(
+            children: [
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Scheduled Speedtest'),
+                subtitle: Text(_enabled ? 'Enabled' : 'Disabled'),
+                value: _enabled,
+                onChanged: (value) => setState(() => _enabled = value),
+              ),
+              const Divider(height: 24),
+              _PickerTile(
+                icon: Icons.calendar_month_rounded,
+                title: 'Date',
+                value: _formatDate(_selectedDate),
+                onTap: _selectDate,
+              ),
+              _PickerTile(
+                icon: Icons.schedule_rounded,
+                title: 'Time',
+                value: _selectedTime.format(context),
+                onTap: _selectTime,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MonthlyUsageSettingsScreen extends StatefulWidget {
+  const _MonthlyUsageSettingsScreen();
+
+  @override
+  State<_MonthlyUsageSettingsScreen> createState() =>
+      _MonthlyUsageSettingsScreenState();
+}
+
+class _MonthlyUsageSettingsScreenState
+    extends State<_MonthlyUsageSettingsScreen> {
+  static const _interfaces = ['br-lan', 'wan', 'eth0', 'eth1'];
+
+  DateTime _startDate = DateTime.now();
+  String _selectedInterface = _interfaces.first;
+
+  Future<void> _selectStartDate() async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _startDate,
+      firstDate: DateTime(DateTime.now().year - 1),
+      lastDate: DateTime(DateTime.now().year + 1),
+    );
+
+    if (pickedDate != null && mounted) {
+      setState(() => _startDate = pickedDate);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: const LuciAppBar(title: 'Monthly Usage', showBack: true),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _SettingsFormCard(
+            children: [
+              _PickerTile(
+                icon: Icons.event_available_rounded,
+                title: 'Start Date',
+                value: _formatDate(_startDate),
+                onTap: _selectStartDate,
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                initialValue: _selectedInterface,
+                decoration: const InputDecoration(
+                  labelText: 'Interface',
+                  prefixIcon: Icon(Icons.settings_ethernet_rounded),
+                  border: OutlineInputBorder(),
+                ),
+                items: _interfaces
+                    .map(
+                      (interface) => DropdownMenuItem(
+                        value: interface,
+                        child: Text(interface),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => _selectedInterface = value);
+                  }
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsFormCard extends StatelessWidget {
+  final List<Widget> children;
+
+  const _SettingsFormCard({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        ),
+      ),
+    );
+  }
+}
+
+class _PickerTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String value;
+  final VoidCallback onTap;
+
+  const _PickerTile({
+    required this.icon,
+    required this.title,
+    required this.value,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      appBar: LuciAppBar(title: title, showBack: true),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            '$title controls will be added here.',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w700,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ),
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon, color: colorScheme.primary),
+      title: Text(title),
+      subtitle: Text(value),
+      trailing: Icon(
+        Icons.arrow_forward_ios,
+        size: 16,
+        color: colorScheme.onSurfaceVariant,
       ),
+      onTap: onTap,
     );
   }
+}
+
+String _formatDate(DateTime date) {
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  return '${date.year}-$month-$day';
 }
