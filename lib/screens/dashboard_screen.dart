@@ -18,6 +18,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   static const Color _openwallaCyan = Color(0xFF18AEEA);
   static const Color _openwallaOrange = Color(0xFFF27C24);
   static const Color _openwallaGreen = Color(0xFF20CF70);
+  static const Color _openwallaCardBorder = Color(0xFF313C52);
   static const double _openwallaRadius = 8;
 
   final ScrollController _wirelessScrollController = ScrollController();
@@ -176,6 +177,99 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
   }
 
+  Widget _buildOpenwallaCard({
+    required Widget child,
+    EdgeInsetsGeometry? padding,
+    EdgeInsetsGeometry? margin,
+    VoidCallback? onLongPress,
+    Color? accentColor,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final borderColor = isDark
+        ? _openwallaCardBorder
+        : colorScheme.outlineVariant.withValues(alpha: 0.62);
+    final highlight = accentColor ?? colorScheme.primary;
+
+    return Container(
+      margin: margin ?? EdgeInsets.zero,
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(_openwallaRadius),
+        border: Border.all(color: borderColor, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.22 : 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            child: Container(
+              width: 3,
+              color: highlight.withValues(alpha: isDark ? 0.9 : 0.7),
+            ),
+          ),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onLongPress: onLongPress,
+              child: Padding(
+                padding: padding ?? const EdgeInsets.all(16),
+                child: child,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOpenwallaCardHeader({
+    required IconData icon,
+    required String title,
+    Color? color,
+    Widget? trailing,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final accent = color ?? colorScheme.primary;
+
+    return Row(
+      children: [
+        Container(
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(_openwallaRadius),
+          ),
+          child: Icon(icon, size: 17, color: accent),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (trailing != null) trailing,
+      ],
+    );
+  }
+
   Widget _buildDeviceInfoCard(AppState appState) {
     final boardInfo =
         appState.dashboardData?['boardInfo'] as Map<String, dynamic>?;
@@ -193,77 +287,80 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       context,
     ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold);
 
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_openwallaRadius),
-      ),
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8.0),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Model', style: labelStyle),
-                  const SizedBox(height: 4),
-                  Text(
-                    model,
-                    style: valueStyle,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+    return _buildOpenwallaCard(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      child: Column(
+        children: [
+          _buildOpenwallaCardHeader(
+            icon: Icons.router_rounded,
+            title: 'Router',
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Model', style: labelStyle),
+                    const SizedBox(height: 4),
+                    Text(
+                      model,
+                      style: valueStyle,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Version', style: labelStyle),
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          version,
-                          style: valueStyle,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: channelColors.background,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          channelLabel,
-                          style: TextStyle(
-                            color: channelColors.foreground,
-                            fontWeight: FontWeight.bold,
-                            fontSize: Theme.of(
-                              context,
-                            ).textTheme.bodySmall?.fontSize,
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Version', style: labelStyle),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            version,
+                            style: valueStyle,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                        const SizedBox(width: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: channelColors.background,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            channelLabel,
+                            style: TextStyle(
+                              color: channelColors.foreground,
+                              fontWeight: FontWeight.bold,
+                              fontSize: Theme.of(
+                                context,
+                              ).textTheme.bodySmall?.fontSize,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -319,35 +416,30 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final isSwitchingRouter =
         appState.isLoading && appState.dashboardData == null;
 
-    final card = Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_openwallaRadius),
-      ),
-      clipBehavior: Clip.antiAlias,
+    final card = _buildOpenwallaCard(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      accentColor: _openwallaCyan,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (throughputLabel.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8.0),
-              child: Center(
-                child: Text(
-                  'Throughput$throughputLabel',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.7),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ),
+          _buildOpenwallaCardHeader(
+            icon: Icons.show_chart_rounded,
+            title: 'Live Traffic',
+            color: _openwallaCyan,
+            trailing: throughputLabel.isNotEmpty
+                ? Text(
+                    throughputLabel.replaceFirst(' - ', ''),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  )
+                : null,
+          ),
+          const SizedBox(height: 12),
           Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
-            ),
+            padding: const EdgeInsets.symmetric(vertical: 4.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -366,7 +458,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(
@@ -674,39 +766,44 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         ? '${(usedMem / totalMem * 100).toStringAsFixed(0)}%'
         : 'N/A';
 
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_openwallaRadius),
-      ),
+    return _buildOpenwallaCard(
       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 0),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 8.0),
-        child: Row(
-          children: [
-            Expanded(
-              child: _buildVitalsColumn(
-                context,
-                label: 'CPU Load',
-                value: cpuLoadValue,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      accentColor: _openwallaOrange,
+      child: Column(
+        children: [
+          _buildOpenwallaCardHeader(
+            icon: Icons.memory_rounded,
+            title: 'System',
+            color: _openwallaOrange,
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _buildVitalsColumn(
+                  context,
+                  label: 'CPU Load',
+                  value: cpuLoadValue,
+                ),
               ),
-            ),
-            Expanded(
-              child: _buildVitalsColumn(
-                context,
-                label: 'Memory',
-                value: memoryValue,
+              Expanded(
+                child: _buildVitalsColumn(
+                  context,
+                  label: 'Memory',
+                  value: memoryValue,
+                ),
               ),
-            ),
-            Expanded(
-              child: _buildVitalsColumn(
-                context,
-                label: 'Uptime',
-                value: uptimeValue,
+              Expanded(
+                child: _buildVitalsColumn(
+                  context,
+                  label: 'Uptime',
+                  value: uptimeValue,
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -845,30 +942,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             final signal = iwinfo['signal'] as int?;
 
             networkCardWidgets.add(
-              Card(
+              _buildOpenwallaCard(
                 margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(_openwallaRadius),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(_openwallaRadius),
-                  onLongPress: () {
-                    // Navigate to interfaces tab with the specific interface name
-                    final appState = ref.read(appStateProvider);
-                    appState.requestTab(2, interfaceToScroll: deviceName);
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: _buildWirelessInfoCardContent(
-                      context,
-                      ssid: ssid,
-                      isEnabled: isEnabled,
-                      signal: signal,
-                      channel: channel,
-                    ),
-                  ),
+                padding: const EdgeInsets.all(10),
+                accentColor: isEnabled
+                    ? _openwallaCyan
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                onLongPress: () {
+                  // Navigate to interfaces tab with the specific interface name
+                  final appState = ref.read(appStateProvider);
+                  appState.requestTab(2, interfaceToScroll: deviceName);
+                },
+                child: _buildWirelessInfoCardContent(
+                  context,
+                  ssid: ssid,
+                  isEnabled: isEnabled,
+                  signal: signal,
+                  channel: channel,
                 ),
               ),
             );
@@ -912,30 +1002,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             final isEnabled = isRadioEnabled && isIfaceEnabled;
 
             networkCardWidgets.add(
-              Card(
+              _buildOpenwallaCard(
                 margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(_openwallaRadius),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(_openwallaRadius),
-                  onLongPress: () {
-                    // Navigate to interfaces tab with the specific interface name
-                    final appState = ref.read(appStateProvider);
-                    appState.requestTab(2, interfaceToScroll: device);
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: _buildWirelessInfoCardContent(
-                      context,
-                      ssid: ssid,
-                      isEnabled: isEnabled,
-                      signal: null, // No signal for disabled interfaces
-                      channel: config['channel']?.toString() ?? 'N/A',
-                    ),
-                  ),
+                padding: const EdgeInsets.all(10),
+                accentColor: isEnabled
+                    ? _openwallaCyan
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                onLongPress: () {
+                  // Navigate to interfaces tab with the specific interface name
+                  final appState = ref.read(appStateProvider);
+                  appState.requestTab(2, interfaceToScroll: device);
+                },
+                child: _buildWirelessInfoCardContent(
+                  context,
+                  ssid: ssid,
+                  isEnabled: isEnabled,
+                  signal: null, // No signal for disabled interfaces
+                  channel: config['channel']?.toString() ?? 'N/A',
                 ),
               ),
             );
@@ -1127,89 +1210,79 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       final proto = interface['proto'] as String? ?? '';
 
       interfaceCardWidgets.add(
-        Card(
+        _buildOpenwallaCard(
           margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(_openwallaRadius),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(_openwallaRadius),
-            onLongPress: () {
-              // Navigate to interfaces tab with the specific interface name
-              final appState = ref.read(appStateProvider);
-              appState.requestTab(2, interfaceToScroll: name);
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                vertical: 12.0,
-                horizontal: 12.0,
+          padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 12.0),
+          accentColor: isUp
+              ? _openwallaGreen
+              : Theme.of(context).colorScheme.primary,
+          onLongPress: () {
+            // Navigate to interfaces tab with the specific interface name
+            final appState = ref.read(appStateProvider);
+            appState.requestTab(2, interfaceToScroll: name);
+          },
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(
+                _getInterfaceIcon(name, proto),
+                color: Theme.of(context).colorScheme.primary,
+                size: 20,
               ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Icon(
-                    _getInterfaceIcon(name, proto),
-                    color: Theme.of(context).colorScheme.primary,
-                    size: 20,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    name.toUpperCase(),
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isUp
-                          ? _openwallaGreen.withValues(alpha: 0.15)
-                          : Theme.of(
-                              context,
-                            ).colorScheme.primary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: SizedBox(
-                      width: 63,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              isUp ? Icons.check_circle : Icons.cancel,
-                              size: 11,
-                              color: isUp
-                                  ? _openwallaGreen
-                                  : Theme.of(context).colorScheme.primary,
-                            ),
-                            const SizedBox(width: 1),
-                            Text(
-                              isUp ? 'UP' : 'DOWN',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: isUp
-                                    ? _openwallaGreen
-                                    : Theme.of(context).colorScheme.primary,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ],
+              const SizedBox(height: 4),
+              Text(
+                name.toUpperCase(),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: isUp
+                      ? _openwallaGreen.withValues(alpha: 0.15)
+                      : Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SizedBox(
+                  width: 63,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          isUp ? Icons.check_circle : Icons.cancel,
+                          size: 11,
+                          color: isUp
+                              ? _openwallaGreen
+                              : Theme.of(context).colorScheme.primary,
                         ),
-                      ),
+                        const SizedBox(width: 1),
+                        Text(
+                          isUp ? 'UP' : 'DOWN',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: isUp
+                                ? _openwallaGreen
+                                : Theme.of(context).colorScheme.primary,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         ),
       );
