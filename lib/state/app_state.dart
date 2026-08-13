@@ -1350,9 +1350,16 @@ class AppState extends ChangeNotifier {
   }
 
   String _netifyRawWhereClause(String? protocolFilter) {
-    final normalized = protocolFilter?.toUpperCase();
-    if (normalized == null || normalized.isEmpty) return '';
-    return "WHERE upper(json) LIKE '%$normalized%'";
+    switch (protocolFilter?.toUpperCase()) {
+      case 'HTTP':
+        return 'WHERE upper(json) LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"HTTP"%\'';
+      case 'HTTPS':
+        return 'WHERE upper(json) LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"HTTP/S"%\'';
+      case 'DNS':
+        return 'WHERE upper(json) LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"DNS"%\'';
+      default:
+        return '';
+    }
   }
 
   Future<int> fetchNetifyFlowCount({
@@ -1433,7 +1440,7 @@ class AppState extends ChangeNotifier {
           localPort: '${33399 + index}',
           destination: hosts[index % hosts.length],
           application: hosts[index % hosts.length],
-          protocol: index % 3 == 0 ? 'TLS' : 'HTTPS',
+          protocol: index % 3 == 0 ? 'HTTP/S' : 'HTTP',
           destinationIp: index % 3 == 0 ? '54.69.167.88' : '142.250.72.14',
           destinationPort: index % 3 == 0 ? '8883' : '443',
           interfaceName: 'wan',
