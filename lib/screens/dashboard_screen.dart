@@ -5,6 +5,7 @@ import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/widgets/luci_animation_system.dart';
+import 'package:luci_mobile/screens/flows_screen.dart';
 import 'package:luci_mobile/screens/monthly_usage_screen.dart';
 import 'package:luci_mobile/screens/network_performance_screen.dart';
 import 'package:luci_mobile/screens/notifications_screen.dart';
@@ -184,43 +185,61 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Widget _buildDashboardSummaryCards(AppState appState) {
     final deviceCount = appState.dashboardData?['deviceCount'];
-    return Row(
-      children: [
-        Expanded(
-          child: _buildDashboardSummaryCard(
-            label: 'Devices',
-            count: (deviceCount is int ? deviceCount : 0).toString(),
-            icon: Icons.devices_rounded,
-            color: _openwallaCyan,
-            onTap: () => ref.read(appStateProvider).requestTab(1),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildDashboardSummaryCard(
-            label: 'Notifications',
-            count: '0',
-            icon: Icons.notifications_rounded,
-            color: _openwallaOrange,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => const NotificationsScreen(),
-                ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildDashboardSummaryCard(
-            label: 'Rules',
-            count: '0',
-            icon: Icons.rule_rounded,
-            color: _openwallaGreen,
-          ),
-        ),
-      ],
+    final cards = [
+      _buildDashboardSummaryCard(
+        label: 'Devices',
+        count: (deviceCount is int ? deviceCount : 0).toString(),
+        icon: Icons.devices_rounded,
+        color: _openwallaCyan,
+        onTap: () => ref.read(appStateProvider).requestTab(1),
+      ),
+      _buildDashboardSummaryCard(
+        label: 'Notifications',
+        count: '0',
+        icon: Icons.notifications_rounded,
+        color: _openwallaOrange,
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const NotificationsScreen(),
+            ),
+          );
+        },
+      ),
+      _buildDashboardSummaryCard(
+        label: 'Rules',
+        count: '0',
+        icon: Icons.rule_rounded,
+        color: _openwallaGreen,
+      ),
+      _buildDashboardSummaryCard(
+        label: 'Flows',
+        count: '0',
+        icon: Icons.account_tree_rounded,
+        color: const Color(0xFF8B5CF6),
+        onTap: () {
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (context) => const FlowsScreen()));
+        },
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columnCount = constraints.maxWidth >= 700 ? 4 : 2;
+        final spacing = 10.0;
+        final cardWidth =
+            (constraints.maxWidth - spacing * (columnCount - 1)) / columnCount;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: cards
+              .map((card) => SizedBox(width: cardWidth, child: card))
+              .toList(),
+        );
+      },
     );
   }
 
