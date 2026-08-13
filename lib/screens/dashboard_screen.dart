@@ -29,6 +29,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   static const double _openwallaRadius = 8;
   _UsageRange _usageRange = _UsageRange.day;
   final Map<String, Future<List<VnstatUsageSample>>> _usageFutures = {};
+  Future<MonthlyUsageSettings>? _monthlyUsageSettingsFuture;
 
   @override
   void initState() {
@@ -1013,15 +1014,29 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildDashboardBottomCards(AppState appState) {
-    final interfaceName = _primaryUsageInterfaceName(appState);
-    return Column(
-      children: [
-        _buildUsageCard(interfaceName),
-        const SizedBox(height: 12),
-        _buildMonthlyUsageCard(interfaceName),
-        const SizedBox(height: 12),
-        _buildConntrackCard(appState),
-      ],
+    final fallbackInterface = _primaryUsageInterfaceName(appState);
+    _monthlyUsageSettingsFuture ??= ref
+        .read(appStateProvider)
+        .fetchMonthlyUsageSettings();
+
+    return FutureBuilder<MonthlyUsageSettings>(
+      future: _monthlyUsageSettingsFuture,
+      builder: (context, snapshot) {
+        final configuredInterface = snapshot.data?.interfaceName;
+        final interfaceName = configuredInterface?.isNotEmpty == true
+            ? configuredInterface!
+            : fallbackInterface;
+
+        return Column(
+          children: [
+            _buildUsageCard(interfaceName),
+            const SizedBox(height: 12),
+            _buildMonthlyUsageCard(interfaceName),
+            const SizedBox(height: 12),
+            _buildConntrackCard(appState),
+          ],
+        );
+      },
     );
   }
 
