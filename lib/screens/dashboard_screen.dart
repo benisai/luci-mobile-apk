@@ -117,14 +117,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     EdgeInsetsGeometry? padding,
     EdgeInsetsGeometry? margin,
     VoidCallback? onLongPress,
-    Color? accentColor,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final borderColor = isDark
         ? _openwallaCardBorder
         : colorScheme.outlineVariant.withValues(alpha: 0.62);
-    final highlight = accentColor ?? colorScheme.primary;
 
     return Container(
       margin: margin ?? EdgeInsets.zero,
@@ -141,28 +139,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            child: Container(
-              width: 3,
-              color: highlight.withValues(alpha: isDark ? 0.9 : 0.7),
-            ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onLongPress: onLongPress,
+          child: Padding(
+            padding: padding ?? const EdgeInsets.all(16),
+            child: child,
           ),
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onLongPress: onLongPress,
-              child: Padding(
-                padding: padding ?? const EdgeInsets.all(16),
-                child: child,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -248,7 +233,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
     return _buildOpenwallaCard(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
-      accentColor: color,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -272,6 +256,109 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTimelineHour(DateTime time) {
+    final hour = time.hour % 12 == 0 ? 12 : time.hour % 12;
+    final suffix = time.hour >= 12 ? 'PM' : 'AM';
+    return '$hour $suffix';
+  }
+
+  Widget _buildNetworkPerformanceCard({required bool isCompactTimeline}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final intervalHours = isCompactTimeline ? 2 : 1;
+    final sectionCount = 12 ~/ intervalHours;
+    final now = DateTime.now();
+    final labels = List<String>.generate(sectionCount + 1, (index) {
+      if (index == sectionCount) return 'Now';
+      final hoursAgo = 12 - (index * intervalHours);
+      return _formatTimelineHour(now.subtract(Duration(hours: hoursAgo)));
+    });
+
+    return _buildOpenwallaCard(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Network Performance',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '0ms',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                  height: 0.95,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Text(
+                  'Latency',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          Row(
+            children: List.generate(sectionCount, (index) {
+              final isLast = index == sectionCount - 1;
+              return Expanded(
+                child: Container(
+                  height: 12,
+                  margin: EdgeInsets.only(right: isLast ? 0 : 2),
+                  decoration: BoxDecoration(
+                    color: index == sectionCount - 2
+                        ? const Color(0xFFEAB308)
+                        : _openwallaGreen,
+                    borderRadius: BorderRadius.horizontal(
+                      left: index == 0 ? const Radius.circular(6) : Radius.zero,
+                      right: isLast ? const Radius.circular(6) : Radius.zero,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: labels
+                .map(
+                  (label) => Flexible(
+                    child: Text(
+                      label,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+                .toList(),
           ),
         ],
       ),
@@ -331,7 +418,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
     final card = _buildOpenwallaCard(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-      accentColor: _openwallaCyan,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -682,7 +768,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     return _buildOpenwallaCard(
       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 0),
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-      accentColor: _openwallaOrange,
       child: Column(
         children: [
           _buildOpenwallaCardHeader(
@@ -858,9 +943,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               _buildOpenwallaCard(
                 margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                 padding: const EdgeInsets.all(10),
-                accentColor: isEnabled
-                    ? _openwallaCyan
-                    : Theme.of(context).colorScheme.onSurfaceVariant,
                 onLongPress: () {
                   // Navigate to interfaces tab with the specific interface name
                   final appState = ref.read(appStateProvider);
@@ -918,9 +1000,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               _buildOpenwallaCard(
                 margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                 padding: const EdgeInsets.all(10),
-                accentColor: isEnabled
-                    ? _openwallaCyan
-                    : Theme.of(context).colorScheme.onSurfaceVariant,
                 onLongPress: () {
                   // Navigate to interfaces tab with the specific interface name
                   final appState = ref.read(appStateProvider);
@@ -1126,9 +1205,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         _buildOpenwallaCard(
           margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
           padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 12.0),
-          accentColor: isUp
-              ? _openwallaGreen
-              : Theme.of(context).colorScheme.primary,
           onLongPress: () {
             // Navigate to interfaces tab with the specific interface name
             final appState = ref.read(appStateProvider);
@@ -1591,6 +1667,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               const SizedBox(height: 16),
               _buildDashboardSummaryCards(),
               const SizedBox(height: 12),
+              _buildNetworkPerformanceCard(isCompactTimeline: false),
+              const SizedBox(height: 12),
               SizedBox(
                 height: 240,
                 child: _buildRealtimeThroughputCard(appState),
@@ -1633,6 +1711,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           children: [
                             const SizedBox(height: 16),
                             _buildDashboardSummaryCards(),
+                            const SizedBox(height: 12),
+                            _buildNetworkPerformanceCard(
+                              isCompactTimeline: constraints.maxWidth < 600,
+                            ),
                             const SizedBox(height: 12),
                             Expanded(
                               child: _buildRealtimeThroughputCard(appState),
