@@ -93,12 +93,31 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     super.dispose();
   }
 
-  double _loadPercent(List<dynamic>? load, int index) {
+  double _scaledLoadPercent(List<dynamic>? load, int index) {
     if (load == null || load.isEmpty) return 0;
     final safeIndex = index < load.length ? index : 0;
     final value = load[safeIndex];
     if (value is! num) return 0;
     return ((value / 65536) * 100).clamp(0, 100).toDouble();
+  }
+
+  double _legacyCpuLoadPercent(Map<String, dynamic>? sysInfo) {
+    final load = sysInfo?['load'] as List<dynamic>?;
+    return _scaledLoadPercent(load, 0);
+  }
+
+  double _legacyMemoryPercent(Map<String, dynamic>? sysInfo) {
+    final memory = sysInfo?['memory'];
+    if (memory is! Map) return 0;
+
+    final totalMem = memory['total'] as int? ?? 0;
+    final freeMem = memory['free'] as int? ?? 0;
+    final bufferedMem = memory['buffered'] as int? ?? 0;
+    final usedMem = totalMem - freeMem - bufferedMem;
+
+    return totalMem > 0
+        ? (usedMem / totalMem * 100).clamp(0, 100).toDouble()
+        : 0.0;
   }
 
   Widget _buildOpenwallaCard({
@@ -808,16 +827,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final sysInfo = appState.dashboardData?['sysInfo'] as Map<String, dynamic>?;
 
     final cpuLoad = sysInfo?['load'] as List<dynamic>?;
-    final cpuPercent = _loadPercent(cpuLoad, 0);
-    final loadPercent = _loadPercent(cpuLoad, 1);
-
-    final totalMem = sysInfo?['memory']?['total'] as int? ?? 0;
-    final freeMem = sysInfo?['memory']?['free'] as int? ?? 0;
-    final bufferedMem = sysInfo?['memory']?['buffered'] as int? ?? 0;
-    final usedMem = totalMem - freeMem - bufferedMem;
-    final memoryPercent = totalMem > 0
-        ? (usedMem / totalMem * 100).clamp(0, 100).toDouble()
-        : 0.0;
+    final cpuPercent = _legacyCpuLoadPercent(sysInfo);
+    final memoryPercent = _legacyMemoryPercent(sysInfo);
+    final loadPercent = _scaledLoadPercent(cpuLoad, 1);
 
     return _buildOpenwallaCard(
       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 0),
