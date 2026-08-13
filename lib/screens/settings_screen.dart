@@ -369,18 +369,75 @@ class _PingSettingsScreenState extends ConsumerState<_PingSettingsScreen> {
   }
 }
 
-class _SpeedtestSettingsScreen extends StatefulWidget {
+class _SpeedtestSettingsScreen extends ConsumerStatefulWidget {
   const _SpeedtestSettingsScreen();
 
   @override
-  State<_SpeedtestSettingsScreen> createState() =>
+  ConsumerState<_SpeedtestSettingsScreen> createState() =>
       _SpeedtestSettingsScreenState();
 }
 
-class _SpeedtestSettingsScreenState extends State<_SpeedtestSettingsScreen> {
-  bool _enabled = false;
+class _SpeedtestSettingsScreenState
+    extends ConsumerState<_SpeedtestSettingsScreen> {
+  bool _enabled = true;
+  bool _isLoading = true;
+  bool _isSaving = false;
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = const TimeOfDay(hour: 3, minute: 0);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSettings());
+  }
+
+  Future<void> _loadSettings() async {
+    setState(() => _isLoading = true);
+    final settings = await ref
+        .read(appStateProvider)
+        .fetchSpeedtestMonitorSettings(context: context);
+    if (!mounted) return;
+
+    setState(() {
+      _enabled = settings.enabled;
+      _selectedDate = settings.runDate ?? DateTime.now();
+      _selectedTime = TimeOfDay(
+        hour: settings.runHour,
+        minute: settings.runMinute,
+      );
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _saveSettings() async {
+    setState(() => _isSaving = true);
+    try {
+      await ref
+          .read(appStateProvider)
+          .saveSpeedtestMonitorSettings(
+            SpeedtestMonitorSettings(
+              enabled: _enabled,
+              runDate: _selectedDate,
+              runHour: _selectedTime.hour,
+              runMinute: _selectedTime.minute,
+            ),
+            context: context,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Speedtest settings saved.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save speedtest settings: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
 
   Future<void> _selectDate() async {
     final pickedDate = await showDatePicker(
@@ -410,53 +467,124 @@ class _SpeedtestSettingsScreenState extends State<_SpeedtestSettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const LuciAppBar(title: 'Speedtest Settings', showBack: true),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _SettingsFormCard(
-            children: [
-              SwitchListTile.adaptive(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Scheduled Speedtest'),
-                subtitle: Text(_enabled ? 'Enabled' : 'Disabled'),
-                value: _enabled,
-                onChanged: (value) => setState(() => _enabled = value),
-              ),
-              const Divider(height: 24),
-              _PickerTile(
-                icon: Icons.calendar_month_rounded,
-                title: 'Date',
-                value: _formatDate(_selectedDate),
-                onTap: _selectDate,
-              ),
-              _PickerTile(
-                icon: Icons.schedule_rounded,
-                title: 'Time',
-                value: _selectedTime.format(context),
-                onTap: _selectTime,
-              ),
-            ],
-          ),
-        ],
-      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _SettingsFormCard(
+                  children: [
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Scheduled Speedtest'),
+                      subtitle: Text(_enabled ? 'Enabled' : 'Disabled'),
+                      value: _enabled,
+                      onChanged: _isSaving
+                          ? null
+                          : (value) => setState(() => _enabled = value),
+                    ),
+                    const Divider(height: 24),
+                    _PickerTile(
+                      icon: Icons.calendar_month_rounded,
+                      title: 'Date',
+                      value: _formatDate(_selectedDate),
+                      onTap: _isSaving ? null : _selectDate,
+                    ),
+                    _PickerTile(
+                      icon: Icons.schedule_rounded,
+                      title: 'Time',
+                      value: _selectedTime.format(context),
+                      onTap: _isSaving ? null : _selectTime,
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton.icon(
+                      onPressed: _isSaving ? null : _saveSettings,
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save_rounded),
+                      label: Text(_isSaving ? 'Saving' : 'Save'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
     );
   }
 }
 
-class _MonthlyUsageSettingsScreen extends StatefulWidget {
+class _MonthlyUsageSettingsScreen extends ConsumerStatefulWidget {
   const _MonthlyUsageSettingsScreen();
 
   @override
-  State<_MonthlyUsageSettingsScreen> createState() =>
+  ConsumerState<_MonthlyUsageSettingsScreen> createState() =>
       _MonthlyUsageSettingsScreenState();
 }
 
 class _MonthlyUsageSettingsScreenState
-    extends State<_MonthlyUsageSettingsScreen> {
-  static const _interfaces = ['br-lan', 'wan', 'eth0', 'eth1'];
-
+    extends ConsumerState<_MonthlyUsageSettingsScreen> {
+  static const _defaultInterface = 'br-lan';
+  var _interfaces = const ['br-lan', 'wan', 'eth0', 'eth1'];
   DateTime _startDate = DateTime.now();
-  String _selectedInterface = _interfaces.first;
+  String _selectedInterface = _defaultInterface;
+  bool _isLoading = true;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadSettings());
+  }
+
+  Future<void> _loadSettings() async {
+    setState(() => _isLoading = true);
+    final appState = ref.read(appStateProvider);
+    final settings = await appState.fetchMonthlyUsageSettings(context: context);
+    final interfaces = appState.dashboardInterfaceNames();
+    if (!mounted) return;
+
+    setState(() {
+      _interfaces = interfaces.contains(settings.interfaceName)
+          ? interfaces
+          : [...interfaces, settings.interfaceName];
+      _selectedInterface = settings.interfaceName;
+      final now = DateTime.now();
+      final safeDay = settings.monthStartDay.clamp(1, 28);
+      _startDate = DateTime(now.year, now.month, safeDay);
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _saveSettings() async {
+    setState(() => _isSaving = true);
+    try {
+      await ref
+          .read(appStateProvider)
+          .saveMonthlyUsageSettings(
+            MonthlyUsageSettings(
+              monthStartDay: _startDate.day,
+              interfaceName: _selectedInterface,
+            ),
+            context: context,
+          );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Monthly usage settings saved.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to save monthly usage settings: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
 
   Future<void> _selectStartDate() async {
     final pickedDate = await showDatePicker(
@@ -475,43 +603,59 @@ class _MonthlyUsageSettingsScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const LuciAppBar(title: 'Monthly Usage', showBack: true),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _SettingsFormCard(
-            children: [
-              _PickerTile(
-                icon: Icons.event_available_rounded,
-                title: 'Start Date',
-                value: _formatDate(_startDate),
-                onTap: _selectStartDate,
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                initialValue: _selectedInterface,
-                decoration: const InputDecoration(
-                  labelText: 'Interface',
-                  prefixIcon: Icon(Icons.settings_ethernet_rounded),
-                  border: OutlineInputBorder(),
-                ),
-                items: _interfaces
-                    .map(
-                      (interface) => DropdownMenuItem(
-                        value: interface,
-                        child: Text(interface),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _SettingsFormCard(
+                  children: [
+                    _PickerTile(
+                      icon: Icons.event_available_rounded,
+                      title: 'Start Date',
+                      value: _formatDate(_startDate),
+                      onTap: _isSaving ? null : _selectStartDate,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedInterface,
+                      decoration: const InputDecoration(
+                        labelText: 'Interface',
+                        prefixIcon: Icon(Icons.settings_ethernet_rounded),
+                        border: OutlineInputBorder(),
                       ),
-                    )
-                    .toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() => _selectedInterface = value);
-                  }
-                },
-              ),
-            ],
-          ),
-        ],
-      ),
+                      items: _interfaces
+                          .map(
+                            (interface) => DropdownMenuItem(
+                              value: interface,
+                              child: Text(interface),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _isSaving
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                setState(() => _selectedInterface = value);
+                              }
+                            },
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton.icon(
+                      onPressed: _isSaving ? null : _saveSettings,
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save_rounded),
+                      label: Text(_isSaving ? 'Saving' : 'Save'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
     );
   }
 }
@@ -541,7 +685,7 @@ class _PickerTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String value;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _PickerTile({
     required this.icon,

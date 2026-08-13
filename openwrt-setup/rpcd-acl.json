@@ -41,6 +41,8 @@
 			"file": {
 				"/bin/sh": ["exec"],
 				"/bin/cat": ["exec"],
+				"/bin/grep": ["exec"],
+				"/bin/mv": ["exec"],
 				"/bin/rm": ["exec"],
 				"/bin/tail": ["exec"],
 				"/usr/bin/tail": ["exec"],
@@ -55,6 +57,7 @@
 				"/etc/init.d/openwalla-device-quarantine": ["exec"],
 				"/etc/init.d/dnsmasq": ["exec"],
 				"/etc/init.d/banip": ["exec"],
+				"/etc/init.d/cron": ["exec"],
 				"/etc/init.d/sqm": ["exec"],
 				"/etc/init.d/firewall": ["exec"],
 				"/usr/bin/openwalla-netify-collector": ["exec"],

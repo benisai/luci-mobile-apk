@@ -61,6 +61,30 @@ class PingMonitorSample {
   }
 }
 
+class SpeedtestMonitorSettings {
+  final bool enabled;
+  final DateTime? runDate;
+  final int runHour;
+  final int runMinute;
+
+  const SpeedtestMonitorSettings({
+    required this.enabled,
+    required this.runDate,
+    required this.runHour,
+    required this.runMinute,
+  });
+}
+
+class MonthlyUsageSettings {
+  final int monthStartDay;
+  final String interfaceName;
+
+  const MonthlyUsageSettings({
+    required this.monthStartDay,
+    required this.interfaceName,
+  });
+}
+
 class AppState extends ChangeNotifier {
   static AppState? _instance;
 
@@ -1053,6 +1077,26 @@ class AppState extends ChangeNotifier {
     return result;
   }
 
+  Future<Map?> _fetchOpenwallaUciValues({BuildContext? context}) async {
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return null;
+    }
+
+    final result = await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'uci',
+      method: 'get',
+      params: {'config': 'openwalla'},
+      context: context,
+    );
+    final data = _extractRpcData(result);
+    return data is Map ? data['values'] as Map? : null;
+  }
+
   Future<PingMonitorSettings> fetchPingMonitorSettings({
     BuildContext? context,
   }) async {
@@ -1066,17 +1110,7 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      final result = await _apiService!.call(
-        router.ipAddress,
-        sysauth,
-        router.useHttps,
-        object: 'uci',
-        method: 'get',
-        params: {'config': 'openwalla'},
-        context: context,
-      );
-      final data = _extractRpcData(result);
-      final values = data is Map ? data['values'] : null;
+      final values = await _fetchOpenwallaUciValues(context: context);
       final ping = values is Map ? values['ping_monitor'] : null;
 
       if (ping is Map) {
@@ -1180,6 +1214,172 @@ class AppState extends ChangeNotifier {
       Logger.debug('Optional ping monitor samples stack: $stack');
       return const [];
     }
+  }
+
+  Future<SpeedtestMonitorSettings> fetchSpeedtestMonitorSettings({
+    BuildContext? context,
+  }) async {
+    final defaults = SpeedtestMonitorSettings(
+      enabled: true,
+      runDate: DateTime.now(),
+      runHour: 3,
+      runMinute: 15,
+    );
+    if (_reviewerModeEnabled) return defaults;
+
+    try {
+      final values = await _fetchOpenwallaUciValues(context: context);
+      final speedtest = values is Map ? values['speedtest_monitor'] : null;
+      if (speedtest is Map) {
+        final enabled = speedtest['enabled']?.toString() != '0';
+        final runHour =
+            int.tryParse(speedtest['run_hour']?.toString() ?? '') ??
+            defaults.runHour;
+        final runMinute =
+            int.tryParse(speedtest['run_minute']?.toString() ?? '') ??
+            defaults.runMinute;
+        final runDate = DateTime.tryParse(
+          speedtest['run_date']?.toString() ?? '',
+        );
+        return SpeedtestMonitorSettings(
+          enabled: enabled,
+          runDate: runDate ?? defaults.runDate,
+          runHour: runHour.clamp(0, 23),
+          runMinute: runMinute.clamp(0, 59),
+        );
+      }
+    } catch (e, stack) {
+      Logger.warning('Failed to fetch speedtest monitor settings: $e');
+      Logger.debug('Speedtest settings stack: $stack');
+    }
+
+    return defaults;
+  }
+
+  Future<void> saveSpeedtestMonitorSettings(
+    SpeedtestMonitorSettings settings, {
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) return;
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw Exception('Router is not connected');
+    }
+
+    final runDate = settings.runDate;
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'openwalla',
+      section: 'speedtest_monitor',
+      values: {
+        'enabled': settings.enabled ? '1' : '0',
+        'run_hour': settings.runHour.clamp(0, 23).toString(),
+        'run_minute': settings.runMinute.clamp(0, 59).toString(),
+        if (runDate != null)
+          'run_date':
+              '${runDate.year.toString().padLeft(4, '0')}-${runDate.month.toString().padLeft(2, '0')}-${runDate.day.toString().padLeft(2, '0')}',
+      },
+      context: context,
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'openwalla',
+    );
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command:
+          r'MARKER="# OPENWALLA_SPEEDTEST_MONITOR"; CRON="/etc/crontabs/root"; TMP="/tmp/.openwalla_cron_app.$$"; HOUR="$(uci -q get openwalla.speedtest_monitor.run_hour 2>/dev/null || echo 3)"; MINUTE="$(uci -q get openwalla.speedtest_monitor.run_minute 2>/dev/null || echo 15)"; ENABLED="$(uci -q get openwalla.speedtest_monitor.enabled 2>/dev/null || echo 1)"; case "$HOUR" in ""|*[!0-9]*) HOUR=3 ;; esac; case "$MINUTE" in ""|*[!0-9]*) MINUTE=15 ;; esac; [ "$HOUR" -gt 23 ] && HOUR=3; [ "$MINUTE" -gt 59 ] && MINUTE=15; if [ -f "$CRON" ]; then grep -v "$MARKER" "$CRON" >"$TMP" 2>/dev/null || : >"$TMP"; else : >"$TMP"; fi; if [ "$ENABLED" = "1" ]; then echo "$MINUTE $HOUR * * * /usr/bin/openwalla-speedtest-monitor --once >/tmp/openwalla-speedtest-monitor.last.log 2>&1 $MARKER" >>"$TMP"; fi; mv "$TMP" "$CRON"; /etc/init.d/cron reload >/dev/null 2>&1 || /etc/init.d/cron restart >/dev/null 2>&1 || true',
+    );
+  }
+
+  Future<MonthlyUsageSettings> fetchMonthlyUsageSettings({
+    BuildContext? context,
+  }) async {
+    const defaults = MonthlyUsageSettings(
+      monthStartDay: 1,
+      interfaceName: 'br-lan',
+    );
+    if (_reviewerModeEnabled) return defaults;
+
+    try {
+      final values = await _fetchOpenwallaUciValues(context: context);
+      final dashboard = values is Map ? values['dashboard'] : null;
+      if (dashboard is Map) {
+        final monthStartDay =
+            int.tryParse(dashboard['month_start_day']?.toString() ?? '') ??
+            defaults.monthStartDay;
+        final interfaceName = dashboard['vnstat_interface']?.toString();
+        return MonthlyUsageSettings(
+          monthStartDay: monthStartDay.clamp(1, 31),
+          interfaceName: interfaceName?.isNotEmpty == true
+              ? interfaceName!
+              : defaults.interfaceName,
+        );
+      }
+    } catch (e, stack) {
+      Logger.warning('Failed to fetch monthly usage settings: $e');
+      Logger.debug('Monthly usage settings stack: $stack');
+    }
+
+    return defaults;
+  }
+
+  Future<void> saveMonthlyUsageSettings(
+    MonthlyUsageSettings settings, {
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) return;
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw Exception('Router is not connected');
+    }
+
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'openwalla',
+      section: 'dashboard',
+      values: {
+        'month_start_day': settings.monthStartDay.clamp(1, 31).toString(),
+        'vnstat_interface': settings.interfaceName,
+      },
+      context: context,
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'openwalla',
+    );
+  }
+
+  List<String> dashboardInterfaceNames() {
+    final interfaces =
+        _dashboardData?['interfaceDump']?['interface'] as List<dynamic>?;
+    final names = interfaces
+        ?.whereType<Map<String, dynamic>>()
+        .map((interface) => interface['interface']?.toString())
+        .whereType<String>()
+        .where((name) => name != 'loopback' && name != 'lo')
+        .toSet()
+        .toList();
+
+    if (names == null || names.isEmpty) {
+      return const ['br-lan', 'wan', 'eth0', 'eth1'];
+    }
+    names.sort();
+    return names;
   }
 
   Map<String, dynamic>? _extractWanData(Map<String, dynamic>? interfaceDump) {
