@@ -1,0 +1,84 @@
+{
+	"moci": {
+		"description": "ACL permissions for MoCI OpenWrt interface",
+		"read": {
+			"file": {
+				"/usr/lib/opkg/status": ["read"],
+				"/var/lib/opkg/status": ["read"],
+				"/proc/net/dev": ["read"],
+				"/proc/net/arp": ["read"],
+				"/proc/stat": ["read"],
+				"/proc/sys/net/netfilter/nf_conntrack_count": ["read"],
+				"/proc/sys/net/netfilter/nf_conntrack_max": ["read"],
+				"/etc/crontabs/root": ["read"],
+					"/etc/dropbear/authorized_keys": ["read"],
+					"/etc/hosts": ["read"],
+					"/etc/banip/banip.feeds": ["read"],
+					"/etc/banip/banip.custom.feeds": ["read"],
+					"/etc/banip/banip.countries": ["read"],
+					"/tmp/moci-ping-monitor.txt": ["read"],
+				"/tmp/moci-dns-monitor.txt": ["read"],
+				"/tmp/moci-speedtest-monitor.txt": ["read"],
+				"/tmp/moci-netify.sqlite": ["read"],
+				"/tmp/connection-flows.sqlite": ["read"],
+				"/tmp/firmware.bin": ["read"],
+				"/tmp/backup.tar.gz": ["read"]
+			},
+			"ubus": {
+				"network.interface": ["dump"],
+				"network.wireless": ["status"],
+				"uci": ["get"],
+				"file": ["read"],
+				"system": ["info", "board"],
+				"luci-rpc": ["getDHCPLeases"],
+				"luci.bandix": ["getStatus", "getMetrics"],
+				"service": ["list"]
+			},
+				"uci": ["moci", "banip", "sqm"]
+			},
+		"write": {
+			"file": {
+				"/bin/sh": ["exec"],
+				"/bin/rm": ["exec"],
+				"/etc/init.d/netify-collector": ["exec"],
+				"/etc/init.d/connection-flows-collector": ["exec"],
+					"/etc/init.d/ping-monitor": ["exec"],
+					"/etc/init.d/dns-monitor": ["exec"],
+					"/etc/init.d/dnsmasq": ["exec"],
+					"/etc/init.d/banip": ["exec"],
+					"/etc/init.d/sqm": ["exec"],
+					"/etc/init.d/firewall": ["exec"],
+				"/usr/bin/moci-netify-collector": ["exec"],
+				"/usr/bin/moci-connection-flow-collector": ["exec"],
+				"/usr/bin/moci-speedtest-monitor": ["exec"],
+				"/usr/bin/moci-device-traffic-summary": ["exec"],
+				"/usr/bin/sqlite3": ["exec"],
+				"/usr/bin/sqlite3-cli": ["exec"],
+				"/etc/crontabs/root": ["write"],
+				"/tmp/moci-netify.sqlite": ["write"],
+				"/tmp/connection-flows.sqlite": ["write"],
+				"/tmp/moci-ping-monitor.txt": ["write"],
+				"/tmp/moci-dns-monitor.txt": ["write"],
+				"/tmp/moci-speedtest-monitor.txt": ["write"]
+			},
+			"ubus": {
+				"uci": ["set", "add", "delete", "commit"],
+				"file": ["write", "exec"],
+				"system": ["reboot"],
+				"network.interface": ["up", "down"]
+			},
+			"uci": [
+				"network",
+				"wireless",
+				"firewall",
+				"dhcp",
+					"system",
+					"qos",
+					"sqm",
+					"ddns",
+					"banip",
+					"moci"
+				]
+		}
+	}
+}
