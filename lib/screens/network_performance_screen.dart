@@ -24,6 +24,21 @@ class NetworkPerformanceScreen extends ConsumerStatefulWidget {
     return '${latencyMs.toStringAsFixed(1)}ms';
   }
 
+  static double? averageLatestPingLatency(
+    List<PingMonitorSample> samples, {
+    int count = 5,
+  }) {
+    final latestLatencies = samples.where((sample) => sample.isOk).toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final selected = latestLatencies
+        .take(count)
+        .map((sample) => sample.latencyMs)
+        .whereType<double>()
+        .toList();
+    if (selected.isEmpty) return null;
+    return selected.reduce((a, b) => a + b) / selected.length;
+  }
+
   static List<_PingHourBucket> _hourBuckets(List<PingMonitorSample> samples) {
     final now = DateTime.now();
     final currentHour = DateTime(now.year, now.month, now.day, now.hour);
@@ -190,13 +205,9 @@ class _NetworkTimelineCard extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final now = DateTime.now();
     final buckets = NetworkPerformanceScreen._hourBuckets(samples);
-    final validAverages = buckets
-        .map((bucket) => bucket.averageLatencyMs)
-        .whereType<double>()
-        .toList();
-    final averageLatency = validAverages.isEmpty
-        ? null
-        : validAverages.reduce((a, b) => a + b) / validAverages.length;
+    final averageLatency = NetworkPerformanceScreen.averageLatestPingLatency(
+      samples,
+    );
     final currentHour = DateTime(now.year, now.month, now.day, now.hour);
     final labels = List<String>.generate(7, (index) {
       if (index == 6) return 'Now';
@@ -440,9 +451,15 @@ class _PingTestCard extends StatelessWidget {
     final maxLatency = validLatencies.isEmpty
         ? 100.0
         : validLatencies.reduce((a, b) => a > b ? a : b).clamp(1, 1000);
-    final averageLatency = validLatencies.isEmpty
+    final averageLatency = NetworkPerformanceScreen.averageLatestPingLatency(
+      samples,
+    );
+    final minLatency = validLatencies.isEmpty
         ? null
-        : validLatencies.reduce((a, b) => a + b) / validLatencies.length;
+        : validLatencies.reduce((a, b) => a < b ? a : b);
+    final maxLatencyValue = validLatencies.isEmpty
+        ? null
+        : validLatencies.reduce((a, b) => a > b ? a : b);
     final bars = slotSamples
         .map(
           (sample) => sample?.latencyMs == null
@@ -453,16 +470,36 @@ class _PingTestCard extends StatelessWidget {
     final hasData = slotSamples
         .map((sample) => sample?.latencyMs != null)
         .toList();
+    final readableLabels = labels.asMap().entries.map((entry) {
+      final index = entry.key;
+      if (index == 0 || index == labels.length ~/ 2) return entry.value;
+      if (index == labels.length - 1) return 'Now';
+      return '';
+    }).toList();
 
     return _ChartPanel(
       title: 'Ping Test',
       value: NetworkPerformanceScreen.formatLatency(averageLatency),
-      label: 'Average latency',
+      label: 'Last 5 avg',
       bars: bars,
       hasData: hasData,
       color: NetworkPerformanceScreen._green,
       secondaryColor: NetworkPerformanceScreen._yellow,
-      labels: labels,
+      labels: readableLabels,
+      stats: [
+        (
+          label: 'Min',
+          value: NetworkPerformanceScreen.formatLatency(minLatency),
+        ),
+        (
+          label: 'Avg',
+          value: NetworkPerformanceScreen.formatLatency(averageLatency),
+        ),
+        (
+          label: 'Max',
+          value: NetworkPerformanceScreen.formatLatency(maxLatencyValue),
+        ),
+      ],
     );
   }
 }
@@ -532,6 +569,56 @@ class _SpeedTestCard extends StatelessWidget {
   }
 }
 
+class _ChartStatPill extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _ChartStatPill({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.34),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ChartPanel extends StatelessWidget {
   final String title;
   final String value;
@@ -541,6 +628,7 @@ class _ChartPanel extends StatelessWidget {
   final Color color;
   final Color secondaryColor;
   final List<String> labels;
+  final List<({String label, String value})> stats;
 
   const _ChartPanel({
     required this.title,
@@ -551,6 +639,7 @@ class _ChartPanel extends StatelessWidget {
     required this.color,
     required this.secondaryColor,
     required this.labels,
+    this.stats = const [],
   });
 
   @override
@@ -589,6 +678,21 @@ class _ChartPanel extends StatelessWidget {
               ),
             ],
           ),
+          if (stats.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: stats
+                  .map(
+                    (stat) => Expanded(
+                      child: _ChartStatPill(
+                        label: stat.label,
+                        value: stat.value,
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
           const SizedBox(height: 22),
           SizedBox(
             height: 128,

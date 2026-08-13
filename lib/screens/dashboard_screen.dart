@@ -370,13 +370,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final samples = _pingSamples(appState);
     final buckets = _pingHourBuckets(samples);
-    final validAverages = buckets
-        .map((bucket) => bucket.averageLatencyMs)
-        .whereType<double>()
-        .toList();
-    final averageLatency = validAverages.isEmpty
-        ? null
-        : validAverages.reduce((a, b) => a + b) / validAverages.length;
+    final averageLatency = NetworkPerformanceScreen.averageLatestPingLatency(
+      samples,
+    );
     final now = DateTime.now();
     final currentHour = DateTime(now.year, now.month, now.day, now.hour);
     final labels = List<String>.generate(7, (index) {
