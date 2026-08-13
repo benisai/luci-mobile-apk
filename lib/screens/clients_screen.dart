@@ -46,7 +46,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
     _aggregateAllRouters = initState.clientsAggregateAllRouters;
     _lastSelectedRouterId = initState.selectedRouter?.id;
     _computeClientsFuture();
-
   }
 
   void _computeClientsFuture() {
@@ -88,12 +87,16 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                 onRefresh: () async {
                   // Trigger a refresh by re-fetching dashboard data for selected router
                   await ref.read(appStateProvider).fetchDashboardData();
-                  setState(() { _computeClientsFuture(); });
+                  setState(() {
+                    _computeClientsFuture();
+                  });
                 },
                 child: Builder(
                   builder: (context) {
                     final appState = ref.watch(appStateProvider);
-                    final isLoading = snapshot.connectionState == ConnectionState.waiting && (aggregatedClients.isEmpty);
+                    final isLoading =
+                        snapshot.connectionState == ConnectionState.waiting &&
+                        (aggregatedClients.isEmpty);
                     final dashboardError = appState.dashboardError;
 
                     if (isLoading) {
@@ -137,8 +140,9 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                         message:
                             'Could not connect to the router. Please check your network connection and the router\'s IP address.',
                         actionLabel: 'Retry',
-                        onAction: () =>
-                            ref.read(appStateProvider).fetchDashboardData(),
+                        onAction: () => ref
+                            .read(appStateProvider)
+                            .retryDashboardConnection(context: context),
                         icon: Icons.wifi_off_rounded,
                       );
                     }
@@ -220,7 +224,9 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                             showSelectedIcon: false,
                             style: SegmentedButton.styleFrom(
                               visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
                             ),
                             onSelectionChanged: (s) {
                               setState(() {
@@ -231,7 +237,8 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                               ref
                                   .read(appStateProvider)
                                   .setClientsAggregateAllRouters(
-                                      _aggregateAllRouters);
+                                    _aggregateAllRouters,
+                                  );
                             },
                           ),
                         ),

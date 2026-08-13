@@ -462,6 +462,51 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> retryDashboardConnection({BuildContext? context}) async {
+    final router = _routerService?.selectedRouter;
+    if (router == null || _authService == null) {
+      await fetchDashboardData();
+      return;
+    }
+
+    _isDashboardLoading = true;
+    _dashboardError = null;
+    _cancelThroughputTimer();
+    _httpClientManager.disposeClient(router.ipAddress, router.useHttps);
+    notifyListeners();
+
+    try {
+      final safeContext = context?.mounted == true ? context : null;
+      final loginSuccess = await _authService!.tryAutoLogin(
+        router.ipAddress,
+        router.username,
+        router.password,
+        router.useHttps,
+        context: safeContext,
+      );
+
+      if (!loginSuccess || _authService?.sysauth == null) {
+        _dashboardError =
+            'Failed to reconnect. Please check your router credentials and network connection.';
+        _dashboardData = null;
+        return;
+      }
+
+      final actualUseHttps = _authService!.useHttps;
+      if (actualUseHttps != router.useHttps) {
+        await updateRouter(router.copyWith(useHttps: actualUseHttps));
+      }
+
+      await fetchDashboardData();
+    } catch (e) {
+      _dashboardError = 'Failed to reconnect: $e';
+      _dashboardData = null;
+    } finally {
+      _isDashboardLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> fetchDashboardData() async {
     if (_reviewerModeEnabled) {
       // For reviewer mode, return mock data immediately

@@ -1691,7 +1691,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         message:
             'Unable to connect to the router. Please check your network connection and router settings.',
         actionLabel: 'Retry Connection',
-        onAction: () => appState.fetchDashboardData(),
+        onAction: () => appState.retryDashboardConnection(context: context),
         icon: Icons.wifi_off_rounded,
       );
     }

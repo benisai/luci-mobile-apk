@@ -388,7 +388,8 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
                       message:
                           'Could not connect to the router. Please check your network connection and router settings.',
                       actionLabel: 'Retry',
-                      onAction: () => appState.fetchDashboardData(),
+                      onAction: () =>
+                          appState.retryDashboardConnection(context: context),
                       icon: Icons.wifi_off_rounded,
                     );
                   }
