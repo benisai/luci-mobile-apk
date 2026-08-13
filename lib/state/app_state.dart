@@ -136,7 +136,11 @@ class AppState extends ChangeNotifier {
         await _secureStorageService.deleteValue(globalKey);
       }
     } catch (e, stack) {
-      Logger.exception('Failed migrating global dashboard preferences', e, stack);
+      Logger.exception(
+        'Failed migrating global dashboard preferences',
+        e,
+        stack,
+      );
     }
   }
 
@@ -270,22 +274,34 @@ class AppState extends ChangeNotifier {
   // Interface-specific throughput getters
   List<double> getRxHistoryForInterface(String interface) {
     final deviceName = _getDeviceNameForInterface(interface);
-    return _throughputService?.getRxHistoryForInterface(deviceName ?? interface) ?? [];
+    return _throughputService?.getRxHistoryForInterface(
+          deviceName ?? interface,
+        ) ??
+        [];
   }
 
   List<double> getTxHistoryForInterface(String interface) {
     final deviceName = _getDeviceNameForInterface(interface);
-    return _throughputService?.getTxHistoryForInterface(deviceName ?? interface) ?? [];
+    return _throughputService?.getTxHistoryForInterface(
+          deviceName ?? interface,
+        ) ??
+        [];
   }
 
   double getCurrentRxRateForInterface(String interface) {
     final deviceName = _getDeviceNameForInterface(interface);
-    return _throughputService?.getCurrentRxRateForInterface(deviceName ?? interface) ?? 0.0;
+    return _throughputService?.getCurrentRxRateForInterface(
+          deviceName ?? interface,
+        ) ??
+        0.0;
   }
 
   double getCurrentTxRateForInterface(String interface) {
     final deviceName = _getDeviceNameForInterface(interface);
-    return _throughputService?.getCurrentTxRateForInterface(deviceName ?? interface) ?? 0.0;
+    return _throughputService?.getCurrentTxRateForInterface(
+          deviceName ?? interface,
+        ) ??
+        0.0;
   }
 
   Future<void> loadRouters() async {
@@ -334,7 +350,9 @@ class AppState extends ChangeNotifier {
     _cancelThroughputTimer();
 
     // Determine a safe context before any awaits
-    final safeContext = context?.mounted == true ? context : null; // ignore: use_build_context_synchronously
+    final safeContext = context?.mounted == true
+        ? context
+        : null; // ignore: use_build_context_synchronously
 
     // Load router-scoped dashboard preferences immediately on selection
     await loadDashboardPreferences();
@@ -479,6 +497,7 @@ class AppState extends ChangeNotifier {
           'uciWirelessConfig': results[6][1],
           'wan': _extractWanData(interfaceDump),
           'wireguard': <String, dynamic>{}, // Empty for reviewer mode
+          'conntrack': {'count': 142, 'max': 1000},
           '_lastUpdated':
               DateTime.now().millisecondsSinceEpoch, // Force UI updates
         };
@@ -492,14 +511,16 @@ class AppState extends ChangeNotifier {
             'br-lan',
           }; // Mock all devices
 
-        // Check if we should track specific interface
-        final prefs = _dashboardPreferences;
-        String? specificInterface;
-        if (!prefs.showAllThroughput &&
-            prefs.primaryThroughputInterface != null) {
-          // Map interface name to actual device name
-          specificInterface = _getDeviceNameForInterface(prefs.primaryThroughputInterface!);
-        }
+          // Check if we should track specific interface
+          final prefs = _dashboardPreferences;
+          String? specificInterface;
+          if (!prefs.showAllThroughput &&
+              prefs.primaryThroughputInterface != null) {
+            // Map interface name to actual device name
+            specificInterface = _getDeviceNameForInterface(
+              prefs.primaryThroughputInterface!,
+            );
+          }
 
           _throughputService!.updateThroughput(
             networkData,
@@ -575,6 +596,20 @@ class AppState extends ChangeNotifier {
         method: 'get',
         params: {'config': 'wireless'},
       );
+
+      final conntrackFuture = _apiService!
+          .systemExec(
+            ip,
+            _authService!.sysauth!,
+            useHttps,
+            command:
+                'cat /proc/sys/net/netfilter/nf_conntrack_count /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null || cat /proc/sys/net/ipv4/netfilter/ip_conntrack_count /proc/sys/net/ipv4/netfilter/ip_conntrack_max 2>/dev/null',
+          )
+          .catchError((e, stack) {
+            Logger.warning('Optional system.exec conntrack failed: $e');
+            Logger.debug('Optional system.exec conntrack stack: $stack');
+            return null;
+          });
 
       final results = await Future.wait([
         _apiService!.call(
@@ -652,15 +687,21 @@ class AppState extends ChangeNotifier {
       final dhcpLeases = getData(results[4]) as Map<String, dynamic>?;
 
       // Await optional wireless futures in parallel (won't throw — wired-only routers are fine)
-      final optionalResults =
-          await Future.wait([wirelessFuture, uciWirelessFuture]);
+      final optionalResults = await Future.wait([
+        wirelessFuture,
+        uciWirelessFuture,
+        conntrackFuture,
+      ]);
       final wirelessRaw = optionalResults[0];
       final uciWirelessRaw = optionalResults[1];
+      final conntrackRaw = optionalResults[2];
 
       Map<String, dynamic>? wirelessData;
       if (wirelessRaw != null) {
-        final parsedWireless =
-            getOptionalData(wirelessRaw, 'luci-rpc.getWirelessDevices');
+        final parsedWireless = getOptionalData(
+          wirelessRaw,
+          'luci-rpc.getWirelessDevices',
+        );
         if (parsedWireless is Map<String, dynamic>) {
           wirelessData = parsedWireless;
         }
@@ -668,9 +709,14 @@ class AppState extends ChangeNotifier {
 
       dynamic uciWirelessConfig;
       if (uciWirelessRaw != null) {
-        uciWirelessConfig =
-            getOptionalData(uciWirelessRaw, 'uci.get wireless');
+        uciWirelessConfig = getOptionalData(uciWirelessRaw, 'uci.get wireless');
       }
+
+      final conntrackData = conntrackRaw != null
+          ? _parseConntrackData(
+              getOptionalData(conntrackRaw, 'system.exec conntrack'),
+            )
+          : <String, int>{'count': 0, 'max': 1000};
 
       // Fetch WireGuard peer information for WireGuard interfaces
       final wireguardData = <String, dynamic>{};
@@ -738,14 +784,16 @@ class AppState extends ChangeNotifier {
       }
 
       // Update throughput data using the service
-        // Check if we should track specific interface
-        final prefs = _dashboardPreferences;
-        String? specificInterface;
-        if (!prefs.showAllThroughput &&
-            prefs.primaryThroughputInterface != null) {
-          // Map interface name to actual device name
-          specificInterface = _getDeviceNameForInterface(prefs.primaryThroughputInterface!);
-        }
+      // Check if we should track specific interface
+      final prefs = _dashboardPreferences;
+      String? specificInterface;
+      if (!prefs.showAllThroughput &&
+          prefs.primaryThroughputInterface != null) {
+        // Map interface name to actual device name
+        specificInterface = _getDeviceNameForInterface(
+          prefs.primaryThroughputInterface!,
+        );
+      }
 
       _throughputService?.updateThroughput(
         networkData,
@@ -763,6 +811,7 @@ class AppState extends ChangeNotifier {
         'wan': _extractWanData(interfaceDump),
         'uciWirelessConfig': uciWirelessConfig,
         'wireguard': wireguardData,
+        'conntrack': conntrackData,
         '_lastUpdated':
             DateTime.now().millisecondsSinceEpoch, // Force UI updates
       };
@@ -827,6 +876,20 @@ class AppState extends ChangeNotifier {
     return {'dhcp_leases': leases};
   }
 
+  Map<String, int> _parseConntrackData(dynamic rawData) {
+    final raw = rawData?.toString() ?? '';
+    final values = RegExp(r'\d+')
+        .allMatches(raw)
+        .map((match) => int.tryParse(match.group(0) ?? ''))
+        .whereType<int>()
+        .toList();
+
+    return {
+      'count': values.isNotEmpty ? values[0] : 0,
+      'max': values.length > 1 && values[1] > 0 ? values[1] : 1000,
+    };
+  }
+
   Map<String, dynamic>? _extractWanData(Map<String, dynamic>? interfaceDump) {
     if (interfaceDump == null || interfaceDump['interface'] == null) {
       return null;
@@ -856,9 +919,10 @@ class AppState extends ChangeNotifier {
       final match = RegExp(r'\(([^)]+)\)').firstMatch(interfaceName);
       return match?.group(1);
     }
-    
+
     // Map interface names to their actual device names from interface dump
-    final interfaceDump = _dashboardData?['interfaceDump'] as Map<String, dynamic>?;
+    final interfaceDump =
+        _dashboardData?['interfaceDump'] as Map<String, dynamic>?;
     if (interfaceDump != null && interfaceDump['interface'] is List) {
       for (final interface in interfaceDump['interface']) {
         if (interface is Map<String, dynamic>) {
@@ -870,7 +934,7 @@ class AppState extends ChangeNotifier {
         }
       }
     }
-    
+
     // If not found in interface dump, check if it's already a device name
     // (e.g., eth0, br-lan, wlan0)
     return interfaceName;
@@ -1162,7 +1226,8 @@ class AppState extends ChangeNotifier {
         // print('[Ping] Response from $endpoint: ${response.statusCode}');
 
         // Accept various status codes as "alive"
-        final isAlive = response.statusCode != null &&
+        final isAlive =
+            response.statusCode != null &&
             response.statusCode! >= 200 &&
             response.statusCode! < 500;
 
@@ -1375,8 +1440,9 @@ class AppState extends ChangeNotifier {
           }
         }
 
-        final cmpType =
-            typeOrder(a.connectionType).compareTo(typeOrder(b.connectionType));
+        final cmpType = typeOrder(
+          a.connectionType,
+        ).compareTo(typeOrder(b.connectionType));
         if (cmpType != 0) return cmpType;
         return a.hostname.toLowerCase().compareTo(b.hostname.toLowerCase());
       });
@@ -1440,27 +1506,33 @@ class AppState extends ChangeNotifier {
                 return 2;
             }
           }
-          final cmpType =
-              typeOrder(a.connectionType).compareTo(typeOrder(b.connectionType));
+
+          final cmpType = typeOrder(
+            a.connectionType,
+          ).compareTo(typeOrder(b.connectionType));
           if (cmpType != 0) return cmpType;
           return a.hostname.toLowerCase().compareTo(b.hostname.toLowerCase());
         });
         return reviewerClients;
       }
 
-      if (_routerService?.selectedRouter == null || _authService?.sysauth == null) {
+      if (_routerService?.selectedRouter == null ||
+          _authService?.sysauth == null) {
         return [];
       }
       final router = _routerService!.selectedRouter!;
 
       // Get wireless MACs for this router
-      final stationsMap = await _apiService!.fetchAllAssociatedWirelessMacsWithContext(
-        ipAddress: router.ipAddress,
-        sysauth: _authService!.sysauth!,
-        useHttps: router.useHttps,
-      );
+      final stationsMap = await _apiService!
+          .fetchAllAssociatedWirelessMacsWithContext(
+            ipAddress: router.ipAddress,
+            sysauth: _authService!.sysauth!,
+            useHttps: router.useHttps,
+          );
       final wireless = <String>{};
-      stationsMap.forEach((_, s) => wireless.addAll(s.map((m) => m.toLowerCase())));
+      stationsMap.forEach(
+        (_, s) => wireless.addAll(s.map((m) => m.toLowerCase())),
+      );
 
       // Get DHCP leases for this router
       final callRes = await _apiService!.call(
@@ -1517,8 +1589,9 @@ class AppState extends ChangeNotifier {
           }
         }
 
-        final cmpType =
-            typeOrder(a.connectionType).compareTo(typeOrder(b.connectionType));
+        final cmpType = typeOrder(
+          a.connectionType,
+        ).compareTo(typeOrder(b.connectionType));
         if (cmpType != 0) return cmpType;
         return a.hostname.toLowerCase().compareTo(b.hostname.toLowerCase());
       });
@@ -1555,11 +1628,12 @@ class AppState extends ChangeNotifier {
               r.useHttps,
             );
             if (res.token == null) return <String>{};
-            final map = await _apiService!.fetchAllAssociatedWirelessMacsWithContext(
-              ipAddress: r.ipAddress,
-              sysauth: res.token!,
-              useHttps: res.actualUseHttps,
-            );
+            final map = await _apiService!
+                .fetchAllAssociatedWirelessMacsWithContext(
+                  ipAddress: r.ipAddress,
+                  sysauth: res.token!,
+                  useHttps: res.actualUseHttps,
+                );
             final set = <String>{};
             map.forEach((_, stations) {
               set.addAll(stations.map((m) => m.toLowerCase()));
@@ -1585,7 +1659,11 @@ class AppState extends ChangeNotifier {
     try {
       if (_reviewerModeEnabled) {
         // Use mock data
-        final result = await _apiService!.callSimple('luci-rpc', 'getDHCPLeases', {});
+        final result = await _apiService!.callSimple(
+          'luci-rpc',
+          'getDHCPLeases',
+          {},
+        );
         if (result is List && result.length > 1 && result[0] == 0) {
           final data = result[1] as Map<String, dynamic>;
           final leases = (data['dhcp_leases'] as List<dynamic>? ?? [])

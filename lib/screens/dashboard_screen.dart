@@ -25,10 +25,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   bool _showWirelessLeftArrow = false;
   bool _showWirelessRightArrow = false;
 
-  final ScrollController _wanScrollController = ScrollController();
-  bool _showWanLeftArrow = false;
-  bool _showWanRightArrow = false;
-
   @override
   void initState() {
     super.initState();
@@ -37,11 +33,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       // Initialize arrows after layout
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _updateWirelessArrows();
-        _updateWanArrows();
       });
     });
     _wirelessScrollController.addListener(_updateWirelessArrows);
-    _wanScrollController.addListener(_updateWanArrows);
   }
 
   @override
@@ -49,7 +43,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     super.didUpdateWidget(oldWidget);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateWirelessArrows();
-      _updateWanArrows();
     });
   }
 
@@ -58,7 +51,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     super.didChangeDependencies();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _updateWirelessArrows();
-      _updateWanArrows();
     });
   }
 
@@ -73,23 +65,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     });
   }
 
-  void _updateWanArrows() {
-    if (!_wanScrollController.hasClients) return;
-    final max = _wanScrollController.position.maxScrollExtent;
-    final min = _wanScrollController.position.minScrollExtent;
-    final offset = _wanScrollController.offset;
-    setState(() {
-      _showWanLeftArrow = offset > min + 2;
-      _showWanRightArrow = offset < max - 2;
-    });
-  }
-
   @override
   void dispose() {
     _wirelessScrollController.removeListener(_updateWirelessArrows);
     _wirelessScrollController.dispose();
-    _wanScrollController.removeListener(_updateWanArrows);
-    _wanScrollController.dispose();
     super.dispose();
   }
 
@@ -1165,274 +1144,302 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
   }
 
-  IconData _getInterfaceIcon(String name, String proto) {
-    final lower = name.toLowerCase();
-
-    // Check name-based patterns first
-    if (lower.contains('wan')) {
-      return Icons.public_rounded;
-    }
-    if (lower.contains('lan')) {
-      return Icons.router_rounded;
-    }
-    if (lower.contains('iot')) {
-      return Icons.sensors_rounded;
-    }
-    if (lower.contains('guest')) {
-      return Icons.people_rounded;
-    }
-    if (lower.contains('dmz')) {
-      return Icons.security_rounded;
-    }
-    if (lower.contains('docker')) {
-      return Icons.computer_rounded;
-    }
-    if (lower.contains('bridge') || lower.startsWith('br-')) {
-      return Icons.hub_rounded;
-    }
-    if (lower.contains('vlan')) {
-      return Icons.layers_rounded;
-    }
-    if (lower.startsWith('eth')) {
-      return Icons.cable_rounded;
-    }
-    if (lower.startsWith('wlan')) {
-      return Icons.wifi_rounded;
-    }
-
-    // Check protocol-based patterns
-    switch (proto) {
-      case 'wireguard':
-      case 'openvpn':
-        return Icons.vpn_key_rounded;
-      case 'pppoe':
-        return Icons.settings_ethernet_rounded;
-      case 'dhcp':
-      case 'static':
-        return Icons.lan_rounded;
-      default:
-        return Icons.lan_rounded;
-    }
-  }
-
-  Widget _buildInterfaceStatusCards(AppState appState) {
-    final prefs = appState.dashboardPreferences;
+  String _primaryUsageInterfaceName(AppState appState) {
     final interfaces =
         appState.dashboardData?['interfaceDump']?['interface']
             as List<dynamic>?;
-    if (interfaces == null || interfaces.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    if (interfaces == null) return 'br-lan';
 
-    final wanVpnInterfaces = interfaces.where((item) {
-      final interface = item as Map<String, dynamic>;
-      final name = interface['interface'] as String? ?? '';
+    final names = interfaces
+        .whereType<Map<String, dynamic>>()
+        .map((interface) => interface['interface']?.toString())
+        .whereType<String>()
+        .where((name) => name != 'loopback' && name != 'lo')
+        .toList();
 
-      // Skip loopback interface
-      if (name == 'loopback' || name == 'lo') return false;
+    return names.firstWhere(
+      (name) => name == 'br-lan',
+      orElse: () => names.isNotEmpty ? names.first : 'br-lan',
+    );
+  }
 
-      // If preferences are empty, show all interfaces by default
-      if (prefs.enabledWiredInterfaces.isEmpty) {
-        return true; // Show all interfaces when no specific preferences
-      }
+  ({int count, int max}) _conntrackValues(AppState appState) {
+    final conntrack = appState.dashboardData?['conntrack'];
+    if (conntrack is! Map) return (count: 0, max: 1000);
 
-      // Otherwise, check if this interface is in the enabled list
-      return prefs.enabledWiredInterfaces.contains(name);
-    }).toList();
+    final count = conntrack['count'];
+    final max = conntrack['max'];
+    return (
+      count: count is int ? count : int.tryParse(count?.toString() ?? '') ?? 0,
+      max: max is int ? max : int.tryParse(max?.toString() ?? '') ?? 1000,
+    );
+  }
 
-    if (wanVpnInterfaces.isEmpty) {
-      return const SizedBox.shrink();
-    }
+  Widget _buildDashboardBottomCards(AppState appState) {
+    final interfaceName = _primaryUsageInterfaceName(appState);
+    return Column(
+      children: [
+        _buildUsageCard(interfaceName),
+        const SizedBox(height: 12),
+        _buildMonthlyUsageCard(interfaceName),
+        const SizedBox(height: 12),
+        _buildConntrackCard(appState),
+      ],
+    );
+  }
 
-    List<Widget> interfaceCardWidgets = [];
-    for (var item in wanVpnInterfaces) {
-      final interface = item as Map<String, dynamic>;
-      final name = interface['interface'] as String? ?? 'N/A';
-      final isUp = interface['up'] as bool? ?? false;
-      final proto = interface['proto'] as String? ?? '';
+  Widget _buildUsageCard(String interfaceName) {
+    final values = <double>[
+      0.03,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.25,
+      0.01,
+      0.02,
+      0.01,
+      0.0,
+      0.98,
+      0.58,
+    ];
+    final txValues = <double>[
+      0.01,
+      0.01,
+      0.0,
+      0.01,
+      0.01,
+      0.02,
+      0.01,
+      0.02,
+      0.01,
+      0.0,
+      0.07,
+      0.04,
+    ];
 
-      interfaceCardWidgets.add(
-        _buildOpenwallaCard(
-          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 12.0),
-          onLongPress: () {
-            // Navigate to interfaces tab with the specific interface name
-            final appState = ref.read(appStateProvider);
-            appState.requestTab(2, interfaceToScroll: name);
-          },
+    return _buildOpenwallaCard(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _metricCardTitle('$interfaceName Usage - 12 Hours'),
+          const SizedBox(height: 18),
+          SizedBox(
+            height: 210,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                _usageYAxis(),
+                const SizedBox(width: 14),
+                Expanded(child: _usageBars(values, txValues)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _usageYAxis() {
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    final labels = ['19.07\nMB', '14.31\nMB', '9.54\nMB', '4.77 MB', '0 B'];
+
+    return SizedBox(
+      width: 54,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: labels
+            .map(
+              (label) => Text(
+                label,
+                textAlign: TextAlign.right,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: color.withValues(alpha: 0.76),
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0,
+                  height: 0.95,
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _usageBars(List<double> rxValues, List<double> txValues) {
+    final now = DateTime.now();
+    final labels = List<String>.generate(12, (index) {
+      final hour = now.subtract(Duration(hours: 11 - index)).hour;
+      return '${hour.toString().padLeft(2, '0')}:00';
+    });
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: List.generate(rxValues.length, (index) {
+        final rxHeight = 150 * rxValues[index].clamp(0, 1).toDouble();
+        final txHeight = 150 * txValues[index].clamp(0, 1).toDouble();
+        return Expanded(
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Icon(
-                _getInterfaceIcon(name, proto),
-                color: Theme.of(context).colorScheme.primary,
-                size: 20,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                name.toUpperCase(),
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: isUp
-                      ? _openwallaGreen.withValues(alpha: 0.15)
-                      : Theme.of(
-                          context,
-                        ).colorScheme.primary.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: SizedBox(
-                  width: 63,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          isUp ? Icons.check_circle : Icons.cancel,
-                          size: 11,
-                          color: isUp
-                              ? _openwallaGreen
-                              : Theme.of(context).colorScheme.primary,
+              SizedBox(
+                height: 156,
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Container(
+                        width: 10,
+                        height: rxHeight < 2 ? 2.0 : rxHeight,
+                        decoration: BoxDecoration(
+                          color: _openwallaCyan,
+                          borderRadius: BorderRadius.circular(3),
                         ),
-                        const SizedBox(width: 1),
-                        Text(
-                          isUp ? 'UP' : 'DOWN',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: isUp
-                                ? _openwallaGreen
-                                : Theme.of(context).colorScheme.primary,
-                            fontSize: 10,
-                          ),
+                      ),
+                      const SizedBox(width: 3),
+                      Container(
+                        width: 10,
+                        height: txHeight < 2 ? 2.0 : txHeight,
+                        decoration: BoxDecoration(
+                          color: _openwallaOrange,
+                          borderRadius: BorderRadius.circular(3),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                labels[index],
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.clip,
               ),
             ],
           ),
-        ),
-      );
-    }
+        );
+      }),
+    );
+  }
 
-    List<Widget> rowChildren = [];
-    final isScrollable = interfaceCardWidgets.length >= 5;
-    for (int i = 0; i < interfaceCardWidgets.length; i++) {
-      rowChildren.add(Expanded(child: interfaceCardWidgets[i]));
-      if (i < interfaceCardWidgets.length - 1) {
-        rowChildren.add(const SizedBox(width: 6));
-      }
-    }
-
-    if (isScrollable) {
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          // 4 cards visible, 3 gaps between them
-          final totalSpacing = 6.0 * 3;
-          final width = constraints.maxWidth;
-          final calculatedCardWidth = (width - totalSpacing) / 4;
-          final localRowChildren = <Widget>[];
-          for (int i = 0; i < interfaceCardWidgets.length; i++) {
-            localRowChildren.add(
-              SizedBox(
-                width: calculatedCardWidth,
-                child: interfaceCardWidgets[i],
-              ),
-            );
-            if (i < interfaceCardWidgets.length - 1) {
-              localRowChildren.add(const SizedBox(width: 6));
-            }
-          }
-          return Stack(
-            children: [
-              SizedBox(
-                height: 110,
-                child: ListView(
-                  controller: _wanScrollController,
-                  scrollDirection: Axis.horizontal,
-                  children: localRowChildren,
-                ),
-              ),
-              if (_showWanRightArrow)
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: IgnorePointer(
-                    child: Container(
-                      width: 28,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                          colors: [
-                            Colors.transparent,
-                            Theme.of(context).colorScheme.surface,
-                          ],
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Icons.arrow_forward_ios_rounded,
-                        size: 18,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.45),
-                      ),
-                    ),
-                  ),
-                ),
-              if (_showWanLeftArrow)
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: IgnorePointer(
-                    child: Container(
-                      width: 28,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.centerRight,
-                          end: Alignment.centerLeft,
-                          colors: [
-                            Colors.transparent,
-                            Theme.of(context).colorScheme.surface,
-                          ],
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Icons.arrow_back_ios_new_rounded,
-                        size: 18,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.45),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          );
-        },
-      );
-    } else {
-      return Row(
+  Widget _buildMonthlyUsageCard(String interfaceName) {
+    return _buildOpenwallaCard(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: rowChildren,
-      );
-    }
+        children: [
+          _metricCardTitle('$interfaceName Monthly Usage'),
+          const SizedBox(height: 20),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '0 MB',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                  height: 0.95,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Text('26 days left', style: _metricMutedTextStyle()),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          _metricProgressBar(value: 0),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildConntrackCard(AppState appState) {
+    final values = _conntrackValues(appState);
+    final max = values.max <= 0 ? 1000 : values.max;
+    final progress = (values.count / max).clamp(0.0, 1.0);
+
+    return _buildOpenwallaCard(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _metricCardTitle('Conntrack'),
+          const SizedBox(height: 20),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                values.count.toString(),
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                  height: 0.95,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Text('connections', style: _metricMutedTextStyle()),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          _metricProgressBar(value: progress, fillColor: _openwallaCyan),
+          const SizedBox(height: 10),
+          Text(
+            '${(progress * 100).toStringAsFixed(1)}% of maximum capacity ($max max)',
+            style: _metricMutedTextStyle(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metricCardTitle(String title) {
+    return Text(
+      title,
+      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0,
+      ),
+    );
+  }
+
+  TextStyle? _metricMutedTextStyle() {
+    return Theme.of(context).textTheme.titleSmall?.copyWith(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 0,
+    );
+  }
+
+  Widget _metricProgressBar({required double value, Color? fillColor}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: LinearProgressIndicator(
+        value: value.clamp(0, 1),
+        minHeight: 16,
+        backgroundColor: colorScheme.surfaceContainerHighest,
+        valueColor: AlwaysStoppedAnimation<Color>(
+          fillColor ?? colorScheme.surfaceContainerHighest,
+        ),
+      ),
+    );
   }
 
   @override
@@ -1728,7 +1735,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               const SizedBox(height: 12),
               _buildWirelessNetworksCard(appState),
               const SizedBox(height: 12),
-              _buildInterfaceStatusCards(appState),
+              _buildDashboardBottomCards(appState),
               const SizedBox(height: 12),
               // Extra padding to ensure scroll behavior for RefreshIndicator
               const SizedBox(height: 100),
@@ -1780,7 +1787,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                               const SizedBox(height: 12),
                               _buildWirelessNetworksCard(appState),
                               const SizedBox(height: 12),
-                              _buildInterfaceStatusCards(appState),
+                              _buildDashboardBottomCards(appState),
                               const SizedBox(height: 24),
                             ],
                           ),
