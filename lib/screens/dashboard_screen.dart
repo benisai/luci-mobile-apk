@@ -12,6 +12,8 @@ import 'package:luci_mobile/screens/notifications_screen.dart';
 import 'package:luci_mobile/screens/system_resources_screen.dart';
 import 'package:luci_mobile/models/router.dart' as model;
 
+enum _UsageRange { minute, day, week }
+
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
 
@@ -25,6 +27,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   static const Color _openwallaGreen = Color(0xFF20CF70);
   static const Color _openwallaCardBorder = Color(0xFF313C52);
   static const double _openwallaRadius = 8;
+  _UsageRange _usageRange = _UsageRange.day;
 
   @override
   void initState() {
@@ -1018,145 +1021,270 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   Widget _buildUsageCard(String interfaceName) {
-    final values = <double>[
-      0.03,
-      0.01,
-      0.01,
-      0.01,
-      0.01,
-      0.25,
-      0.01,
-      0.02,
-      0.01,
-      0.0,
-      0.98,
-      0.58,
-    ];
-    final txValues = <double>[
-      0.01,
-      0.01,
-      0.0,
-      0.01,
-      0.01,
-      0.02,
-      0.01,
-      0.02,
-      0.01,
-      0.0,
-      0.07,
-      0.04,
-    ];
+    final samples = _usageSamplesForRange(_usageRange);
 
     return _buildOpenwallaCard(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _metricCardTitle('$interfaceName Usage - 12 Hours'),
-          const SizedBox(height: 18),
-          SizedBox(
-            height: 210,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                _usageYAxis(),
-                const SizedBox(width: 14),
-                Expanded(child: _usageBars(values, txValues)),
-              ],
+          _metricCardTitle(
+            '$interfaceName Usage',
+            trailing: _usageRangePicker(),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _usageSubtitle(_usageRange),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurfaceVariant.withValues(alpha: 0.78),
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0,
             ),
           ),
+          const SizedBox(height: 20),
+          _usageStackedBars(samples),
+          const SizedBox(height: 18),
+          _usageLegend(),
         ],
       ),
     );
   }
 
-  Widget _usageYAxis() {
-    final color = Theme.of(context).colorScheme.onSurfaceVariant;
-    final labels = ['19.07\nMB', '14.31\nMB', '9.54\nMB', '4.77 MB', '0 B'];
+  String _usageRangeLabel(_UsageRange range) {
+    return switch (range) {
+      _UsageRange.minute => 'Minute',
+      _UsageRange.day => 'Day',
+      _UsageRange.week => 'Week',
+    };
+  }
 
-    return SizedBox(
-      width: 54,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: labels
-            .map(
-              (label) => Text(
-                label,
-                textAlign: TextAlign.right,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: color.withValues(alpha: 0.76),
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0,
-                  height: 0.95,
-                ),
+  String _usageSubtitle(_UsageRange range) {
+    return switch (range) {
+      _UsageRange.minute => 'Last 60 minutes',
+      _UsageRange.day => 'Last 7 days',
+      _UsageRange.week => 'Last 4 weeks',
+    };
+  }
+
+  Widget _usageRangePicker() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return PopupMenuButton<_UsageRange>(
+      initialValue: _usageRange,
+      onSelected: (range) => setState(() => _usageRange = range),
+      itemBuilder: (context) => _UsageRange.values
+          .map(
+            (range) => PopupMenuItem<_UsageRange>(
+              value: range,
+              child: Text(_usageRangeLabel(range)),
+            ),
+          )
+          .toList(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.34),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.55),
+          ),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _usageRangeLabel(_usageRange),
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0,
               ),
-            )
-            .toList(),
+            ),
+            const SizedBox(width: 6),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 18,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _usageBars(List<double> rxValues, List<double> txValues) {
+  List<({String label, double downloadGb, double uploadGb})>
+  _usageSamplesForRange(_UsageRange range) {
     final now = DateTime.now();
-    final labels = List<String>.generate(12, (index) {
-      final hour = now.subtract(Duration(hours: 11 - index)).hour;
-      return '${hour.toString().padLeft(2, '0')}:00';
-    });
+    final daily = <double>[77.70, 127.94, 92.19, 115.65, 90.41, 101.14, 78.03];
+
+    return switch (range) {
+      _UsageRange.minute => List.generate(6, (index) {
+        final minutesAgo = (5 - index) * 10;
+        final time = now.subtract(Duration(minutes: minutesAgo));
+        final total = [0.42, 0.58, 0.35, 0.72, 0.64, 0.48][index];
+        return (
+          label: '${time.minute.toString().padLeft(2, '0')}m',
+          downloadGb: total * 0.86,
+          uploadGb: total * 0.14,
+        );
+      }),
+      _UsageRange.day => List.generate(7, (index) {
+        final day = now.subtract(Duration(days: 6 - index));
+        final total = daily[index];
+        return (
+          label: index == 6 ? 'Today' : _weekdayShort(day.weekday),
+          downloadGb: total * 0.88,
+          uploadGb: total * 0.12,
+        );
+      }),
+      _UsageRange.week => List.generate(4, (index) {
+        final total = [416.4, 529.8, 472.1, 386.7][index];
+        return (
+          label: index == 3 ? 'This Week' : 'W-${3 - index}',
+          downloadGb: total * 0.9,
+          uploadGb: total * 0.1,
+        );
+      }),
+    };
+  }
+
+  String _weekdayShort(int weekday) {
+    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return labels[(weekday - 1).clamp(0, 6)];
+  }
+
+  String _formatUsageTotal(double valueGb) {
+    if (valueGb >= 1) return '${valueGb.toStringAsFixed(2)} GB';
+    return '${(valueGb * 1024).toStringAsFixed(0)} MB';
+  }
+
+  Widget _usageStackedBars(
+    List<({String label, double downloadGb, double uploadGb})> samples,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final maxTotal = samples
+        .map((sample) => sample.downloadGb + sample.uploadGb)
+        .fold<double>(0, (max, total) => total > max ? total : max);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
-      children: List.generate(rxValues.length, (index) {
-        final rxHeight = 150 * rxValues[index].clamp(0, 1).toDouble();
-        final txHeight = 150 * txValues[index].clamp(0, 1).toDouble();
+      children: List.generate(samples.length, (index) {
+        final sample = samples[index];
+        final total = sample.downloadGb + sample.uploadGb;
+        final totalFactor = maxTotal > 0
+            ? (total / maxTotal).clamp(0.12, 1.0)
+            : 0.12;
+        final downloadFactor = total > 0 ? sample.downloadGb / total : 0.0;
+        final uploadFactor = total > 0 ? sample.uploadGb / total : 0.0;
+        final barHeight = 154 * totalFactor;
+        final downloadHeight = (barHeight * downloadFactor).clamp(
+          6.0,
+          barHeight,
+        );
+        final uploadHeight = (barHeight * uploadFactor).clamp(
+          sample.uploadGb > 0 ? 6.0 : 0.0,
+          barHeight,
+        );
+
         return Expanded(
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
             children: [
+              SizedBox(
+                height: 24,
+                child: Text(
+                  _formatUsageTotal(total),
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: index == samples.length - 1
+                        ? colorScheme.onSurface
+                        : colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(height: 8),
               SizedBox(
                 height: 156,
                 child: Align(
                   alignment: Alignment.bottomCenter,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Container(
-                        width: 10,
-                        height: rxHeight < 2 ? 2.0 : rxHeight,
-                        decoration: BoxDecoration(
-                          color: _openwallaCyan,
-                          borderRadius: BorderRadius.circular(3),
-                        ),
+                  child: Container(
+                    width: 30,
+                    height: 156,
+                    alignment: Alignment.bottomCenter,
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest.withValues(
+                        alpha: 0.42,
                       ),
-                      const SizedBox(width: 3),
-                      Container(
-                        width: 10,
-                        height: txHeight < 2 ? 2.0 : txHeight,
-                        decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Container(
+                          height: uploadHeight,
                           color: _openwallaOrange,
-                          borderRadius: BorderRadius.circular(3),
                         ),
-                      ),
-                    ],
+                        Container(
+                          height: downloadHeight,
+                          color: _openwallaCyan,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
               const SizedBox(height: 8),
               Text(
-                labels[index],
+                sample.label,
+                textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w700,
+                  color: index == samples.length - 1
+                      ? colorScheme.onSurface
+                      : colorScheme.onSurfaceVariant,
+                  fontWeight: index == samples.length - 1
+                      ? FontWeight.w900
+                      : FontWeight.w700,
                   letterSpacing: 0,
                 ),
                 maxLines: 1,
-                overflow: TextOverflow.clip,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
         );
       }),
+    );
+  }
+
+  Widget _usageLegend() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _usageLegendItem('Download', _openwallaCyan),
+        const SizedBox(width: 18),
+        _usageLegendItem('Upload', _openwallaOrange),
+      ],
+    );
+  }
+
+  Widget _usageLegendItem(String label, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(label, style: _metricMutedTextStyle()),
+      ],
     );
   }
 
