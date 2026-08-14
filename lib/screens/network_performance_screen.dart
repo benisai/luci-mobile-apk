@@ -54,11 +54,14 @@ class NetworkPerformanceScreen extends ConsumerStatefulWidget {
           .map((sample) => sample.latencyMs)
           .whereType<double>()
           .toList();
+      final failureCount = bucketSamples.length - latencies.length;
       final average = latencies.isEmpty
           ? null
           : latencies.reduce((a, b) => a + b) / latencies.length;
       return _PingHourBucket(
         averageLatencyMs: average,
+        sampleCount: bucketSamples.length,
+        failureCount: failureCount,
         hasSamples: bucketSamples.isNotEmpty,
         hasOnlyFailures: bucketSamples.isNotEmpty && latencies.isEmpty,
       );
@@ -197,6 +200,23 @@ class _NetworkTimelineCard extends StatelessWidget {
     return '$hour $suffix';
   }
 
+  String _bucketTooltip(
+    _PingHourBucket bucket,
+    String startLabel,
+    String endLabel,
+  ) {
+    if (!bucket.hasSamples) {
+      return '$startLabel - $endLabel\nNo ping data';
+    }
+    final latency = bucket.averageLatencyMs == null
+        ? 'No replies'
+        : NetworkPerformanceScreen.formatLatency(bucket.averageLatencyMs);
+    return '$startLabel - $endLabel\n'
+        'Average latency: $latency\n'
+        'Samples: ${bucket.sampleCount}\n'
+        'Failures: ${bucket.failureCount}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -249,17 +269,29 @@ class _NetworkTimelineCard extends StatelessWidget {
               final isLast = index == buckets.length - 1;
               final bucket = buckets[index];
               return Expanded(
-                child: Container(
-                  height: 12,
-                  margin: EdgeInsets.only(right: isLast ? 0 : 2),
-                  decoration: BoxDecoration(
-                    color: NetworkPerformanceScreen._bucketColor(
-                      bucket,
-                      colorScheme.surfaceContainerHighest,
-                    ),
-                    borderRadius: BorderRadius.horizontal(
-                      left: index == 0 ? const Radius.circular(6) : Radius.zero,
-                      right: isLast ? const Radius.circular(6) : Radius.zero,
+                child: Tooltip(
+                  message: _bucketTooltip(
+                    bucket,
+                    labels[index],
+                    labels[index + 1],
+                  ),
+                  triggerMode: TooltipTriggerMode.tap,
+                  showDuration: const Duration(seconds: 3),
+                  preferBelow: false,
+                  child: Container(
+                    height: 12,
+                    margin: EdgeInsets.only(right: isLast ? 0 : 2),
+                    decoration: BoxDecoration(
+                      color: NetworkPerformanceScreen._bucketColor(
+                        bucket,
+                        colorScheme.surfaceContainerHighest,
+                      ),
+                      borderRadius: BorderRadius.horizontal(
+                        left: index == 0
+                            ? const Radius.circular(6)
+                            : Radius.zero,
+                        right: isLast ? const Radius.circular(6) : Radius.zero,
+                      ),
                     ),
                   ),
                 ),
@@ -294,11 +326,15 @@ class _NetworkTimelineCard extends StatelessWidget {
 
 class _PingHourBucket {
   final double? averageLatencyMs;
+  final int sampleCount;
+  final int failureCount;
   final bool hasSamples;
   final bool hasOnlyFailures;
 
   const _PingHourBucket({
     required this.averageLatencyMs,
+    required this.sampleCount,
+    required this.failureCount,
     required this.hasSamples,
     required this.hasOnlyFailures,
   });

@@ -429,11 +429,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           .map((sample) => sample.latencyMs)
           .whereType<double>()
           .toList();
+      final failureCount = bucketSamples.length - latencies.length;
       final average = latencies.isEmpty
           ? null
           : latencies.reduce((a, b) => a + b) / latencies.length;
       return _PingHourBucket(
         averageLatencyMs: average,
+        sampleCount: bucketSamples.length,
+        failureCount: failureCount,
         hasSamples: bucketSamples.isNotEmpty,
         hasOnlyFailures: bucketSamples.isNotEmpty && latencies.isEmpty,
       );
@@ -450,6 +453,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final latency = bucket.averageLatencyMs ?? 0;
     if (latency >= 100) return const Color(0xFFEAB308);
     return _openwallaGreen;
+  }
+
+  String _pingBucketTooltip(
+    _PingHourBucket bucket,
+    String startLabel,
+    String endLabel,
+  ) {
+    if (!bucket.hasSamples) {
+      return '$startLabel - $endLabel\nNo ping data';
+    }
+    final latency = bucket.averageLatencyMs == null
+        ? 'No replies'
+        : _formatLatencyValue(bucket.averageLatencyMs);
+    return '$startLabel - $endLabel\n'
+        'Average latency: $latency\n'
+        'Samples: ${bucket.sampleCount}\n'
+        'Failures: ${bucket.failureCount}';
   }
 
   Widget _buildNetworkPerformanceCard({required AppState appState}) {
@@ -528,14 +548,26 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               final isLast = index == buckets.length - 1;
               final bucket = buckets[index];
               return Expanded(
-                child: Container(
-                  height: 12,
-                  margin: EdgeInsets.only(right: isLast ? 0 : 2),
-                  decoration: BoxDecoration(
-                    color: _pingBucketColor(bucket),
-                    borderRadius: BorderRadius.horizontal(
-                      left: index == 0 ? const Radius.circular(6) : Radius.zero,
-                      right: isLast ? const Radius.circular(6) : Radius.zero,
+                child: Tooltip(
+                  message: _pingBucketTooltip(
+                    bucket,
+                    labels[index],
+                    labels[index + 1],
+                  ),
+                  triggerMode: TooltipTriggerMode.tap,
+                  showDuration: const Duration(seconds: 3),
+                  preferBelow: false,
+                  child: Container(
+                    height: 12,
+                    margin: EdgeInsets.only(right: isLast ? 0 : 2),
+                    decoration: BoxDecoration(
+                      color: _pingBucketColor(bucket),
+                      borderRadius: BorderRadius.horizontal(
+                        left: index == 0
+                            ? const Radius.circular(6)
+                            : Radius.zero,
+                        right: isLast ? const Radius.circular(6) : Radius.zero,
+                      ),
                     ),
                   ),
                 ),
@@ -2200,11 +2232,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
 class _PingHourBucket {
   final double? averageLatencyMs;
+  final int sampleCount;
+  final int failureCount;
   final bool hasSamples;
   final bool hasOnlyFailures;
 
   const _PingHourBucket({
     required this.averageLatencyMs,
+    required this.sampleCount,
+    required this.failureCount,
     required this.hasSamples,
     required this.hasOnlyFailures,
   });
