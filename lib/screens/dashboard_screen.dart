@@ -1096,6 +1096,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   }
 
   Widget _buildDashboardBottomCards(AppState appState) {
+    final preferences = appState.dashboardPreferences;
     final fallbackInterface = _primaryUsageInterfaceName(appState);
     _monthlyUsageSettingsFuture ??= ref
         .read(appStateProvider)
@@ -1108,14 +1109,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         final interfaceName = configuredInterface?.isNotEmpty == true
             ? configuredInterface!
             : fallbackInterface;
+        final cards = <Widget>[
+          if (preferences.showUsageCard) _buildUsageCard(interfaceName),
+          if (preferences.showMonthlyUsageCard)
+            _buildMonthlyUsageCard(interfaceName),
+          _buildConntrackCard(appState),
+        ];
 
         return Column(
           children: [
-            _buildUsageCard(interfaceName),
-            const SizedBox(height: 12),
-            _buildMonthlyUsageCard(interfaceName),
-            const SizedBox(height: 12),
-            _buildConntrackCard(appState),
+            for (var index = 0; index < cards.length; index++) ...[
+              if (index > 0) const SizedBox(height: 12),
+              cards[index],
+            ],
           ],
         );
       },
@@ -1987,12 +1993,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
           // Split layout handling to avoid Expanded widget conflicts with staggered animations
           if (isLandscape) {
-            final hasFlowsCard = _hasDashboardFlowsCard(appState);
+            final preferences = appState.dashboardPreferences;
+            final hasFlowsCard =
+                preferences.showFlowsCard && _hasDashboardFlowsCard(appState);
             final landscapeContent = [
               const SizedBox(height: 16),
               _buildDashboardSummaryCards(appState),
-              const SizedBox(height: 12),
-              _buildNetworkPerformanceCard(appState: appState),
+              if (preferences.showNetworkPerformanceCard) ...[
+                const SizedBox(height: 12),
+                _buildNetworkPerformanceCard(appState: appState),
+              ],
               const SizedBox(height: 12),
               _buildSystemVitalsCard(appState),
               const SizedBox(height: 12),
@@ -2026,7 +2036,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             // squeezed into a height that causes internal overflows.
             return LayoutBuilder(
               builder: (context, constraints) {
-                final hasFlowsCard = _hasDashboardFlowsCard(appState);
+                final preferences = appState.dashboardPreferences;
+                final hasFlowsCard =
+                    preferences.showFlowsCard &&
+                    _hasDashboardFlowsCard(appState);
                 return RefreshIndicator(
                   onRefresh: () => appState.fetchDashboardData(),
                   child: SingleChildScrollView(
@@ -2044,8 +2057,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                             children: [
                               const SizedBox(height: 16),
                               _buildDashboardSummaryCards(appState),
-                              const SizedBox(height: 12),
-                              _buildNetworkPerformanceCard(appState: appState),
+                              if (preferences.showNetworkPerformanceCard) ...[
+                                const SizedBox(height: 12),
+                                _buildNetworkPerformanceCard(
+                                  appState: appState,
+                                ),
+                              ],
                               const SizedBox(height: 12),
                               _buildSystemVitalsCard(appState),
                               const SizedBox(height: 12),

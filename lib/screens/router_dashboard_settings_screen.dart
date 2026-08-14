@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -121,6 +123,35 @@ class _RouterDashboardSettingsScreenState
 
   void _onPreferenceChanged() => _scheduleAutoSave();
 
+  Widget _buildCardVisibilitySwitch({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return SwitchListTile.adaptive(
+      title: Text(
+        title,
+        style: LuciTextStyles.detailValue(
+          context,
+        ).copyWith(fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(subtitle, style: LuciTextStyles.cardSubtitle(context)),
+      secondary: Icon(
+        icon,
+        size: 22,
+        color: value
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+      value: value,
+      onChanged: onChanged,
+      activeTrackColor: Theme.of(context).colorScheme.primary,
+      activeThumbColor: Theme.of(context).colorScheme.onPrimary,
+    );
+  }
+
   Widget _buildSection({
     required String title,
     required String subtitle,
@@ -172,8 +203,9 @@ class _RouterDashboardSettingsScreenState
       children: [
         Container(
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest
-                .withValues(alpha: 0.3),
+            color: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
@@ -181,8 +213,9 @@ class _RouterDashboardSettingsScreenState
               SwitchListTile.adaptive(
                 title: Text(
                   'Show All Interfaces',
-                  style: LuciTextStyles.detailValue(context)
-                      .copyWith(fontWeight: FontWeight.w600),
+                  style: LuciTextStyles.detailValue(
+                    context,
+                  ).copyWith(fontWeight: FontWeight.w600),
                 ),
                 value: _preferences.showAllThroughput,
                 onChanged: (value) {
@@ -195,8 +228,9 @@ class _RouterDashboardSettingsScreenState
                     } else {
                       _preferences = _preferences.copyWith(
                         showAllThroughput: false,
-                        primaryThroughputInterface:
-                            interfaces.isNotEmpty ? interfaces.first : null,
+                        primaryThroughputInterface: interfaces.isNotEmpty
+                            ? interfaces.first
+                            : null,
                       );
                     }
                   });
@@ -221,8 +255,8 @@ class _RouterDashboardSettingsScreenState
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
                 value: iface,
-                groupValue: _preferences.primaryThroughputInterface, // ignore: deprecated_member_use
-                onChanged: (value) { // ignore: deprecated_member_use
+                groupValue: _preferences.primaryThroughputInterface,
+                onChanged: (value) {
                   setState(() {
                     _preferences = _preferences.copyWith(
                       showAllThroughput: false,
@@ -237,7 +271,82 @@ class _RouterDashboardSettingsScreenState
               ),
             );
           }),
-        ]
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDashboardCardsSection() {
+    return _buildSection(
+      title: 'Dashboard Cards',
+      subtitle: 'Choose which cards appear on the main dashboard',
+      icon: Icons.dashboard_customize_rounded,
+      initiallyExpanded: true,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: [
+              _buildCardVisibilitySwitch(
+                title: 'Network Performance',
+                subtitle: 'Show the latency timeline card',
+                icon: Icons.timeline_rounded,
+                value: _preferences.showNetworkPerformanceCard,
+                onChanged: (value) {
+                  setState(() {
+                    _preferences = _preferences.copyWith(
+                      showNetworkPerformanceCard: value,
+                    );
+                  });
+                  _onPreferenceChanged();
+                },
+              ),
+              _buildCardVisibilitySwitch(
+                title: 'Flows',
+                subtitle: 'Show Netify or conntrack flow summary',
+                icon: Icons.account_tree_rounded,
+                value: _preferences.showFlowsCard,
+                onChanged: (value) {
+                  setState(() {
+                    _preferences = _preferences.copyWith(showFlowsCard: value);
+                  });
+                  _onPreferenceChanged();
+                },
+              ),
+              _buildCardVisibilitySwitch(
+                title: 'Usage',
+                subtitle: 'Show the recent vnStat usage graph',
+                icon: Icons.bar_chart_rounded,
+                value: _preferences.showUsageCard,
+                onChanged: (value) {
+                  setState(() {
+                    _preferences = _preferences.copyWith(showUsageCard: value);
+                  });
+                  _onPreferenceChanged();
+                },
+              ),
+              _buildCardVisibilitySwitch(
+                title: 'Monthly Usage',
+                subtitle: 'Show the monthly usage progress card',
+                icon: Icons.calendar_month_rounded,
+                value: _preferences.showMonthlyUsageCard,
+                onChanged: (value) {
+                  setState(() {
+                    _preferences = _preferences.copyWith(
+                      showMonthlyUsageCard: value,
+                    );
+                  });
+                  _onPreferenceChanged();
+                },
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -252,8 +361,9 @@ class _RouterDashboardSettingsScreenState
       children: [
         Container(
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest
-                .withValues(alpha: 0.3),
+            color: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
@@ -261,8 +371,9 @@ class _RouterDashboardSettingsScreenState
               SwitchListTile.adaptive(
                 title: Text(
                   'Show All Networks',
-                  style: LuciTextStyles.detailValue(context)
-                      .copyWith(fontWeight: FontWeight.w600),
+                  style: LuciTextStyles.detailValue(
+                    context,
+                  ).copyWith(fontWeight: FontWeight.w600),
                 ),
                 value: _preferences.enabledWirelessInterfaces.isEmpty,
                 onChanged: (value) {
@@ -273,8 +384,9 @@ class _RouterDashboardSettingsScreenState
                       );
                     } else {
                       _preferences = _preferences.copyWith(
-                        enabledWirelessInterfaces:
-                            Set.from(_availableWirelessInterfaces),
+                        enabledWirelessInterfaces: Set.from(
+                          _availableWirelessInterfaces,
+                        ),
                       );
                     }
                   });
@@ -289,27 +401,31 @@ class _RouterDashboardSettingsScreenState
         if (_preferences.enabledWirelessInterfaces.isNotEmpty) ...[
           SizedBox(height: LuciSpacing.sm),
           ...sortedInterfaces.map((interface) {
-            final isEnabled =
-                _preferences.enabledWirelessInterfaces.contains(interface);
+            final isEnabled = _preferences.enabledWirelessInterfaces.contains(
+              interface,
+            );
             return Padding(
               padding: EdgeInsets.symmetric(vertical: LuciSpacing.xs),
               child: CheckboxListTile(
-                title: Text(interface, style: LuciTextStyles.detailValue(context)),
+                title: Text(
+                  interface,
+                  style: LuciTextStyles.detailValue(context),
+                ),
                 secondary: Icon(
                   Icons.wifi,
                   size: 20,
                   color: isEnabled
                       ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context)
-                          .colorScheme
-                          .onSurfaceVariant
-                          .withValues(alpha: 0.5),
+                      : Theme.of(
+                          context,
+                        ).colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                 ),
                 value: isEnabled,
                 onChanged: (value) {
                   setState(() {
-                    final newSet =
-                        Set<String>.from(_preferences.enabledWirelessInterfaces);
+                    final newSet = Set<String>.from(
+                      _preferences.enabledWirelessInterfaces,
+                    );
                     if (value ?? false) {
                       newSet.add(interface);
                     } else {
@@ -342,8 +458,9 @@ class _RouterDashboardSettingsScreenState
       children: [
         Container(
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest
-                .withValues(alpha: 0.3),
+            color: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
@@ -351,8 +468,9 @@ class _RouterDashboardSettingsScreenState
               SwitchListTile.adaptive(
                 title: Text(
                   'Show All Interfaces',
-                  style: LuciTextStyles.detailValue(context)
-                      .copyWith(fontWeight: FontWeight.w600),
+                  style: LuciTextStyles.detailValue(
+                    context,
+                  ).copyWith(fontWeight: FontWeight.w600),
                 ),
                 value: _preferences.enabledWiredInterfaces.isEmpty,
                 onChanged: (value) {
@@ -363,8 +481,9 @@ class _RouterDashboardSettingsScreenState
                       );
                     } else {
                       _preferences = _preferences.copyWith(
-                        enabledWiredInterfaces:
-                            Set.from(_availableWiredInterfaces),
+                        enabledWiredInterfaces: Set.from(
+                          _availableWiredInterfaces,
+                        ),
                       );
                     }
                   });
@@ -379,30 +498,33 @@ class _RouterDashboardSettingsScreenState
         if (_preferences.enabledWiredInterfaces.isNotEmpty) ...[
           SizedBox(height: LuciSpacing.sm),
           ...sortedInterfaces.map((interface) {
-            final isEnabled =
-                _preferences.enabledWiredInterfaces.contains(interface);
+            final isEnabled = _preferences.enabledWiredInterfaces.contains(
+              interface,
+            );
             final description = _getInterfaceDescription(interface);
             return Padding(
               padding: EdgeInsets.symmetric(vertical: LuciSpacing.xs),
               child: CheckboxListTile(
-                title: Text(interface.toUpperCase(),
-                    style: LuciTextStyles.detailValue(context)),
+                title: Text(
+                  interface.toUpperCase(),
+                  style: LuciTextStyles.detailValue(context),
+                ),
                 subtitle: description,
                 secondary: Icon(
                   Icons.cable,
                   size: 20,
                   color: isEnabled
                       ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context)
-                          .colorScheme
-                          .onSurfaceVariant
-                          .withValues(alpha: 0.5),
+                      : Theme.of(
+                          context,
+                        ).colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                 ),
                 value: isEnabled,
                 onChanged: (value) {
                   setState(() {
-                    final newSet =
-                        Set<String>.from(_preferences.enabledWiredInterfaces);
+                    final newSet = Set<String>.from(
+                      _preferences.enabledWiredInterfaces,
+                    );
                     if (value ?? false) {
                       newSet.add(interface);
                     } else {
@@ -428,19 +550,24 @@ class _RouterDashboardSettingsScreenState
   Widget? _getInterfaceDescription(String interface) {
     final lower = interface.toLowerCase();
     if (lower.startsWith('wan')) {
-      return Text('Wide Area Network',
-          style: LuciTextStyles.cardSubtitle(context));
+      return Text(
+        'Wide Area Network',
+        style: LuciTextStyles.cardSubtitle(context),
+      );
     } else if (lower.startsWith('lan')) {
-      return Text('Local Area Network',
-          style: LuciTextStyles.cardSubtitle(context));
+      return Text(
+        'Local Area Network',
+        style: LuciTextStyles.cardSubtitle(context),
+      );
     } else if (lower.contains('wireguard') || lower.startsWith('wg')) {
-      return Text('WireGuard VPN',
-          style: LuciTextStyles.cardSubtitle(context));
+      return Text('WireGuard VPN', style: LuciTextStyles.cardSubtitle(context));
     } else if (lower.contains('openvpn')) {
       return Text('OpenVPN', style: LuciTextStyles.cardSubtitle(context));
     } else if (lower.contains('pppoe')) {
-      return Text('PPPoE Connection',
-          style: LuciTextStyles.cardSubtitle(context));
+      return Text(
+        'PPPoE Connection',
+        style: LuciTextStyles.cardSubtitle(context),
+      );
     }
     return null;
   }
@@ -469,6 +596,7 @@ class _RouterDashboardSettingsScreenState
             staggerDelay: const Duration(milliseconds: 50),
             children: [
               _buildThroughputSection(),
+              _buildDashboardCardsSection(),
               _buildWirelessInterfacesSection(),
               _buildWiredInterfacesSection(),
               SizedBox(height: LuciSpacing.lg),

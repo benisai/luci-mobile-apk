@@ -3,12 +3,20 @@ class DashboardPreferences {
   final Set<String> enabledWiredInterfaces;
   final String? primaryThroughputInterface;
   final bool showAllThroughput;
+  final bool showNetworkPerformanceCard;
+  final bool showFlowsCard;
+  final bool showUsageCard;
+  final bool showMonthlyUsageCard;
 
   DashboardPreferences({
     Set<String>? enabledWirelessInterfaces,
     Set<String>? enabledWiredInterfaces,
     this.primaryThroughputInterface,
     this.showAllThroughput = true,
+    this.showNetworkPerformanceCard = true,
+    this.showFlowsCard = true,
+    this.showUsageCard = true,
+    this.showMonthlyUsageCard = true,
   }) : enabledWirelessInterfaces = enabledWirelessInterfaces ?? {},
        enabledWiredInterfaces = enabledWiredInterfaces ?? {};
 
@@ -17,6 +25,10 @@ class DashboardPreferences {
     Set<String>? enabledWiredInterfaces,
     String? primaryThroughputInterface,
     bool? showAllThroughput,
+    bool? showNetworkPerformanceCard,
+    bool? showFlowsCard,
+    bool? showUsageCard,
+    bool? showMonthlyUsageCard,
   }) {
     return DashboardPreferences(
       enabledWirelessInterfaces:
@@ -26,6 +38,11 @@ class DashboardPreferences {
       primaryThroughputInterface:
           primaryThroughputInterface ?? this.primaryThroughputInterface,
       showAllThroughput: showAllThroughput ?? this.showAllThroughput,
+      showNetworkPerformanceCard:
+          showNetworkPerformanceCard ?? this.showNetworkPerformanceCard,
+      showFlowsCard: showFlowsCard ?? this.showFlowsCard,
+      showUsageCard: showUsageCard ?? this.showUsageCard,
+      showMonthlyUsageCard: showMonthlyUsageCard ?? this.showMonthlyUsageCard,
     );
   }
 
@@ -34,6 +51,10 @@ class DashboardPreferences {
     'enabledWiredInterfaces': enabledWiredInterfaces.toList(),
     'primaryThroughputInterface': primaryThroughputInterface,
     'showAllThroughput': showAllThroughput,
+    'showNetworkPerformanceCard': showNetworkPerformanceCard,
+    'showFlowsCard': showFlowsCard,
+    'showUsageCard': showUsageCard,
+    'showMonthlyUsageCard': showMonthlyUsageCard,
   };
 
   factory DashboardPreferences.fromJson(Map<String, dynamic> json) {
@@ -46,6 +67,10 @@ class DashboardPreferences {
       ),
       primaryThroughputInterface: json['primaryThroughputInterface'],
       showAllThroughput: json['showAllThroughput'] ?? true,
+      showNetworkPerformanceCard: json['showNetworkPerformanceCard'] ?? true,
+      showFlowsCard: json['showFlowsCard'] ?? true,
+      showUsageCard: json['showUsageCard'] ?? true,
+      showMonthlyUsageCard: json['showMonthlyUsageCard'] ?? true,
     );
   }
 
