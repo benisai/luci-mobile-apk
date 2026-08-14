@@ -1336,6 +1336,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   String _formatUsageTotal(int bytes) {
     if (bytes <= 0) return '0 B';
+    if (bytes < 1024) return '$bytes B';
+    final kb = bytes / 1024;
+    if (kb < 1024) return '${kb.toStringAsFixed(kb >= 10 ? 0 : 1)} KB';
     final mb = bytes / (1024 * 1024);
     if (mb < 1024) return '${mb.toStringAsFixed(mb >= 10 ? 0 : 1)} MB';
     final gb = mb / 1024;
@@ -1352,108 +1355,149 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final maxTotal = samples
         .map((sample) => sample.downloadBytes + sample.uploadBytes)
         .fold<int>(0, (max, total) => total > max ? total : max);
+    final totalDownload = samples.fold<int>(
+      0,
+      (sum, sample) => sum + sample.downloadBytes,
+    );
+    final totalUpload = samples.fold<int>(
+      0,
+      (sum, sample) => sum + sample.uploadBytes,
+    );
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: List.generate(samples.length, (index) {
-        final sample = samples[index];
-        final total = sample.downloadBytes + sample.uploadBytes;
-        final totalFactor = maxTotal > 0
-            ? (total / maxTotal).clamp(0.12, 1.0)
-            : 0.12;
-        final downloadFactor = total > 0 ? sample.downloadBytes / total : 0.0;
-        final uploadFactor = total > 0 ? sample.uploadBytes / total : 0.0;
-        final barHeight = 154 * totalFactor;
-        final downloadHeight = (barHeight * downloadFactor).clamp(
-          6.0,
-          barHeight,
-        );
-        final uploadHeight = (barHeight * uploadFactor).clamp(
-          sample.uploadBytes > 0 ? 6.0 : 0.0,
-          barHeight,
-        );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _usageTotalSummary(totalDownload, totalUpload),
+        const SizedBox(height: 16),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: List.generate(samples.length, (index) {
+            final sample = samples[index];
+            final total = sample.downloadBytes + sample.uploadBytes;
+            final totalFactor = maxTotal > 0
+                ? (total / maxTotal).clamp(0.12, 1.0)
+                : 0.12;
+            final downloadFactor = total > 0
+                ? sample.downloadBytes / total
+                : 0.0;
+            final uploadFactor = total > 0 ? sample.uploadBytes / total : 0.0;
+            final barHeight = 154 * totalFactor;
+            final downloadHeight = (barHeight * downloadFactor).clamp(
+              6.0,
+              barHeight,
+            );
+            final uploadHeight = (barHeight * uploadFactor).clamp(
+              sample.uploadBytes > 0 ? 6.0 : 0.0,
+              barHeight,
+            );
+            final tooltipMessage =
+                '${sample.label}\n'
+                'Download: ${_formatUsageTotal(sample.downloadBytes)}\n'
+                'Upload: ${_formatUsageTotal(sample.uploadBytes)}\n'
+                'Total: ${_formatUsageTotal(total)}';
 
-        return Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: Column(
-              children: [
-                SizedBox(
-                  height: 28,
-                  child: Center(
-                    child: FittedBox(
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: 156,
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Tooltip(
+                          message: tooltipMessage,
+                          triggerMode: TooltipTriggerMode.tap,
+                          showDuration: const Duration(seconds: 3),
+                          preferBelow: false,
+                          child: Container(
+                            width: 32,
+                            height: 156,
+                            alignment: Alignment.bottomCenter,
+                            decoration: BoxDecoration(
+                              color: colorScheme.surfaceContainerHighest
+                                  .withValues(alpha: 0.42),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                if (sample.hasData) ...[
+                                  Container(
+                                    height: uploadHeight,
+                                    color: _openwallaOrange,
+                                  ),
+                                  Container(
+                                    height: downloadHeight,
+                                    color: _openwallaCyan,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        _formatUsageTotal(total),
+                        sample.label,
                         textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: index == samples.length - 1
                               ? colorScheme.onSurface
                               : colorScheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: index == samples.length - 1
+                              ? FontWeight.w900
+                              : FontWeight.w700,
                           letterSpacing: 0,
                         ),
+                        maxLines: 1,
                       ),
                     ),
-                  ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 156,
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Container(
-                      width: 32,
-                      height: 156,
-                      alignment: Alignment.bottomCenter,
-                      decoration: BoxDecoration(
-                        color: colorScheme.surfaceContainerHighest.withValues(
-                          alpha: 0.42,
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          if (sample.hasData) ...[
-                            Container(
-                              height: uploadHeight,
-                              color: _openwallaOrange,
-                            ),
-                            Container(
-                              height: downloadHeight,
-                              color: _openwallaCyan,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    sample.label,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: index == samples.length - 1
-                          ? colorScheme.onSurface
-                          : colorScheme.onSurfaceVariant,
-                      fontWeight: index == samples.length - 1
-                          ? FontWeight.w900
-                          : FontWeight.w700,
-                      letterSpacing: 0,
-                    ),
-                    maxLines: 1,
-                  ),
-                ),
-              ],
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+
+  Widget _usageTotalSummary(int downloadBytes, int uploadBytes) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final total = downloadBytes + uploadBytes;
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            'Total ${_formatUsageTotal(total)}',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
             ),
           ),
-        );
-      }),
+        ),
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerRight,
+            child: Text(
+              'Down ${_formatUsageTotal(downloadBytes)}  Up ${_formatUsageTotal(uploadBytes)}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
