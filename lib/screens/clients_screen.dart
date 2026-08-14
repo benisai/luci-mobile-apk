@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/models/client.dart';
 import 'package:luci_mobile/main.dart';
-import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/design/luci_design_system.dart';
+import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/widgets/luci_loading_states.dart';
 import 'package:luci_mobile/widgets/luci_refresh_components.dart';
 import 'package:luci_mobile/widgets/luci_animation_system.dart';
@@ -64,8 +64,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
     final watchedAppState = ref.watch(appStateProvider);
     // Recompute future only when selected router changes
     Future<List<Client>>? future = _clientsFuture;
@@ -80,7 +78,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
       builder: (context, snapshot) {
         final aggregatedClients = snapshot.data ?? [];
         return Scaffold(
-          appBar: const LuciAppBar(title: 'Clients'),
           body: Stack(
             children: [
               LuciPullToRefresh(
@@ -100,36 +97,76 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                     final dashboardError = appState.dashboardError;
 
                     if (isLoading) {
-                      return Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: LuciSpacing.md,
-                        ),
-                        child: Column(
-                          children: [
-                            SizedBox(height: LuciSpacing.md),
-                            // Search bar skeleton
-                            LuciSkeleton(
-                              width: double.infinity,
-                              height: 56,
-                              borderRadius: BorderRadius.circular(
-                                LuciSpacing.sm,
+                      return SafeArea(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: LuciSpacing.md,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(height: LuciSpacing.lg),
+                              LuciSkeleton(
+                                width: 230,
+                                height: 34,
+                                borderRadius: BorderRadius.circular(
+                                  LuciSpacing.sm,
+                                ),
                               ),
-                            ),
-                            SizedBox(height: LuciSpacing.md),
-                            // Client list skeletons
-                            Expanded(
-                              child: ListView.separated(
-                                itemCount: 6,
-                                separatorBuilder: (context, index) =>
-                                    SizedBox(height: LuciSpacing.sm),
-                                itemBuilder: (context, index) =>
-                                    LuciListItemSkeleton(
-                                      showLeading: true,
-                                      showTrailing: true,
+                              SizedBox(height: LuciSpacing.sm),
+                              LuciSkeleton(
+                                width: 210,
+                                height: 18,
+                                borderRadius: BorderRadius.circular(
+                                  LuciSpacing.xs,
+                                ),
+                              ),
+                              SizedBox(height: LuciSpacing.lg),
+                              LuciSkeleton(
+                                width: double.infinity,
+                                height: 56,
+                                borderRadius: BorderRadius.circular(
+                                  LuciSpacing.sm,
+                                ),
+                              ),
+                              SizedBox(height: LuciSpacing.md),
+                              Row(
+                                children: List.generate(
+                                  3,
+                                  (index) => Expanded(
+                                    child: Padding(
+                                      padding: EdgeInsets.only(
+                                        right: index == 2 ? 0 : LuciSpacing.md,
+                                      ),
+                                      child: AspectRatio(
+                                        aspectRatio: 1,
+                                        child: LuciSkeleton(
+                                          width: double.infinity,
+                                          height: double.infinity,
+                                          borderRadius: BorderRadius.circular(
+                                            LuciSpacing.sm,
+                                          ),
+                                        ),
+                                      ),
                                     ),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ],
+                              SizedBox(height: LuciSpacing.md),
+                              Expanded(
+                                child: ListView.separated(
+                                  itemCount: 6,
+                                  separatorBuilder: (context, index) =>
+                                      SizedBox(height: LuciSpacing.sm),
+                                  itemBuilder: (context, index) =>
+                                      LuciListItemSkeleton(
+                                        showLeading: true,
+                                        showTrailing: true,
+                                      ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       );
                     }
@@ -148,6 +185,9 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                     }
 
                     final clients = aggregatedClients;
+                    final onlineCount = clients.length;
+                    const blockedCount = 0;
+                    const offlineCount = 0;
 
                     final filteredClients = clients.where((client) {
                       final query = _searchQuery.toLowerCase();
@@ -162,84 +202,13 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
 
                     return Column(
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16.0,
-                            vertical: 8.0,
-                          ),
-                          child: TextField(
-                            autofocus: false,
-                            onChanged: (value) {
-                              // No need to setState here, listener handles it
-                            },
-                            controller: _searchController,
-                            decoration: InputDecoration(
-                              hintText: 'Search by name, IP, MAC, vendor...',
-                              prefixIcon: const Icon(Icons.search),
-                              suffixIcon: _searchQuery.isNotEmpty
-                                  ? IconButton(
-                                      icon: const Icon(Icons.clear),
-                                      onPressed: () {
-                                        setState(() {
-                                          _searchController.clear();
-                                        });
-                                      },
-                                      tooltip: 'Clear search',
-                                    )
-                                  : null,
-                              filled: true,
-                              fillColor: colorScheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.8),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(24.0),
-                                borderSide: BorderSide.none,
-                              ),
-                              hintStyle: TextStyle(
-                                color: colorScheme.onSurfaceVariant.withValues(
-                                  alpha: 0.7,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16.0,
-                            vertical: 4.0,
-                          ),
-                          child: SegmentedButton<bool>(
-                            segments: const [
-                              ButtonSegment<bool>(
-                                value: true,
-                                label: Text('All'),
-                                icon: Icon(Icons.apartment),
-                              ),
-                              ButtonSegment<bool>(
-                                value: false,
-                                label: Text('Selected'),
-                                icon: Icon(Icons.router),
-                              ),
-                            ],
-                            selected: {_aggregateAllRouters},
-                            showSelectedIcon: false,
-                            style: SegmentedButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                            ),
-                            onSelectionChanged: (s) {
-                              setState(() {
-                                _aggregateAllRouters = s.first;
-                                _computeClientsFuture();
-                              });
-                              // Persist selection
-                              ref
-                                  .read(appStateProvider)
-                                  .setClientsAggregateAllRouters(
-                                    _aggregateAllRouters,
-                                  );
-                            },
+                        SafeArea(
+                          bottom: false,
+                          child: _buildClientsHeader(
+                            context,
+                            onlineCount: onlineCount,
+                            blockedCount: blockedCount,
+                            offlineCount: offlineCount,
                           ),
                         ),
                         Expanded(
@@ -307,6 +276,238 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
   }
 
   String normalizeMac(String mac) => mac.toUpperCase().replaceAll('-', ':');
+
+  Widget _buildClientsHeader(
+    BuildContext context, {
+    required int onlineCount,
+    required int blockedCount,
+    required int offlineCount,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 22, 16, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Connected Clients',
+            style: theme.textTheme.headlineMedium?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+              height: 1.05,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Manage device access & bandwidth',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 24),
+          _buildSearchField(context),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _buildClientStatCard(
+                  context,
+                  icon: Icons.wifi_rounded,
+                  count: onlineCount,
+                  label: 'Online',
+                  color: const Color(0xFF22C55E),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildClientStatCard(
+                  context,
+                  icon: Icons.block_rounded,
+                  count: blockedCount,
+                  label: 'Blocked',
+                  color: const Color(0xFFFF4D5A),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildClientStatCard(
+                  context,
+                  icon: Icons.cloud_off_outlined,
+                  count: offlineCount,
+                  label: 'Offline',
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment<bool>(
+                  value: true,
+                  label: Text('All routers'),
+                  icon: Icon(Icons.apartment_rounded),
+                ),
+                ButtonSegment<bool>(
+                  value: false,
+                  label: Text('Selected'),
+                  icon: Icon(Icons.router_rounded),
+                ),
+              ],
+              selected: {_aggregateAllRouters},
+              showSelectedIcon: false,
+              style: SegmentedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                textStyle: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              onSelectionChanged: (selection) {
+                setState(() {
+                  _aggregateAllRouters = selection.first;
+                  _computeClientsFuture();
+                });
+                ref
+                    .read(appStateProvider)
+                    .setClientsAggregateAllRouters(_aggregateAllRouters);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchField(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return TextField(
+      autofocus: false,
+      controller: _searchController,
+      decoration: InputDecoration(
+        hintText: 'Search by name, IP, or MAC',
+        prefixIcon: const Icon(Icons.search_rounded, size: 28),
+        suffixIcon: _searchQuery.isNotEmpty
+            ? IconButton(
+                icon: const Icon(Icons.clear_rounded),
+                onPressed: () {
+                  setState(() {
+                    _searchController.clear();
+                  });
+                },
+                tooltip: 'Clear search',
+              )
+            : null,
+        filled: true,
+        fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.42),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 18,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+            color: colorScheme.primary.withValues(alpha: 0.7),
+            width: 1.4,
+          ),
+        ),
+        hintStyle: TextStyle(
+          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.58),
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClientStatCard(
+    BuildContext context, {
+    required IconData icon,
+    required int count,
+    required String label,
+    required Color color,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return AspectRatio(
+      aspectRatio: 1,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.34),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.24),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Icon(icon, color: color, size: 28),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    count.toString(),
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0,
+                      height: 1,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _UnifiedClientCard extends StatefulWidget {
