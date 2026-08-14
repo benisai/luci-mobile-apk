@@ -84,6 +84,17 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
     return '${ssidTrimmed.toLowerCase()}__${radio.toLowerCase()}';
   }
 
+  bool _isLoopbackInterface(Map<String, dynamic> iface) {
+    final names = [
+      iface['interface'],
+      iface['device'],
+      iface['l3_device'],
+      iface['ifname'],
+    ].map((value) => value?.toString().toLowerCase().trim());
+
+    return names.any((name) => name == 'loopback' || name == 'lo');
+  }
+
   @override
   void initState() {
     super.initState();
@@ -141,6 +152,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
           if (wiredInterfaces != null) {
             for (int i = 0; i < wiredInterfaces.length; i++) {
               final iface = wiredInterfaces[i] as Map<String, dynamic>;
+              if (_isLoopbackInterface(iface)) continue;
               final name = iface['interface'] as String? ?? '';
               final keyStr = _interfaceKey(name: name);
               // Use exact matching only
@@ -443,23 +455,28 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
           ? Map<String, dynamic>.from(statsDataSource)
           : <String, dynamic>{};
 
-      interfacesList = interfaceDataList.whereType<Map<String, dynamic>>().map((
-        detailedInterfaceMap,
-      ) {
-        final stats = detailedInterfaceMap['stats'];
-        if (stats == null || (stats is Map && stats.isEmpty)) {
-          final String? deviceName =
-              detailedInterfaceMap['l3_device'] ??
-              detailedInterfaceMap['device'];
-          if (deviceName != null) {
-            final statsContainer = networkStatsMap[deviceName];
-            if (statsContainer is Map && statsContainer['stats'] is Map) {
-              detailedInterfaceMap['stats'] = statsContainer['stats'];
+      interfacesList = interfaceDataList
+          .whereType<Map<String, dynamic>>()
+          .where(
+            (detailedInterfaceMap) =>
+                !_isLoopbackInterface(detailedInterfaceMap),
+          )
+          .map((detailedInterfaceMap) {
+            final stats = detailedInterfaceMap['stats'];
+            if (stats == null || (stats is Map && stats.isEmpty)) {
+              final String? deviceName =
+                  detailedInterfaceMap['l3_device'] ??
+                  detailedInterfaceMap['device'];
+              if (deviceName != null) {
+                final statsContainer = networkStatsMap[deviceName];
+                if (statsContainer is Map && statsContainer['stats'] is Map) {
+                  detailedInterfaceMap['stats'] = statsContainer['stats'];
+                }
+              }
             }
-          }
-        }
-        return NetworkInterface.fromJson(detailedInterfaceMap);
-      }).toList();
+            return NetworkInterface.fromJson(detailedInterfaceMap);
+          })
+          .toList();
     }
 
     final interfaces = interfacesList;
