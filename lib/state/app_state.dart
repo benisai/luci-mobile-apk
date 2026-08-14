@@ -1577,6 +1577,10 @@ class AppState extends ChangeNotifier {
     return r'$(uci -q get openwalla.notifications.db_path 2>/dev/null || echo /tmp/openwalla-notifications.sqlite)';
   }
 
+  String _devicesDbExpression() {
+    return r'$(uci -q get openwalla.devices.db_path 2>/dev/null || echo /tmp/openwalla-devices.sqlite)';
+  }
+
   Future<String> _sqliteQueryOutput({
     required String dbExpression,
     required String sql,
@@ -1590,6 +1594,31 @@ class AppState extends ChangeNotifier {
       router.ipAddress,
       sysauth,
       router.useHttps,
+      object: 'file',
+      method: 'exec',
+      params: {
+        'command': '/bin/sh',
+        'params': ['-c', _sqliteCommand(dbExpression, sql)],
+      },
+      context: context,
+    );
+    return _commandOutput(result);
+  }
+
+  Future<String> _sqliteQueryOutputForRouter({
+    required model.Router router,
+    required String sysauth,
+    required bool useHttps,
+    required String dbExpression,
+    required String sql,
+    BuildContext? context,
+  }) async {
+    if (_apiService == null) return '';
+
+    final result = await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      useHttps,
       object: 'file',
       method: 'exec',
       params: {
@@ -3576,6 +3605,13 @@ class AppState extends ChangeNotifier {
 
     final router = _routerService!.selectedRouter!;
     try {
+      final dbMacs = await _fetchQuarantinedMacsFromDevicesDbForRouter(
+        router: router,
+        sysauth: _authService!.sysauth!,
+        useHttps: router.useHttps,
+      );
+      if (dbMacs.isNotEmpty) return dbMacs;
+
       final result = await _apiService!.call(
         router.ipAddress,
         _authService!.sysauth!,
@@ -3616,6 +3652,13 @@ class AppState extends ChangeNotifier {
           token = _authService?.sysauth;
         }
         if (token == null) return <String>{};
+        final dbMacs = await _fetchQuarantinedMacsFromDevicesDbForRouter(
+          router: router,
+          sysauth: token,
+          useHttps: useHttps,
+        );
+        if (dbMacs.isNotEmpty) return dbMacs;
+
         final result = await _apiService!.call(
           router.ipAddress,
           token,
@@ -3637,6 +3680,40 @@ class AppState extends ChangeNotifier {
       acc.addAll(macs.map(_normalizeMacAddress));
       return acc;
     });
+  }
+
+  Future<Set<String>> _fetchQuarantinedMacsFromDevicesDbForRouter({
+    required model.Router router,
+    required String sysauth,
+    required bool useHttps,
+    BuildContext? context,
+  }) async {
+    try {
+      final output = await _sqliteQueryOutputForRouter(
+        router: router,
+        sysauth: sysauth,
+        useHttps: useHttps,
+        dbExpression: _devicesDbExpression(),
+        sql:
+            "SELECT mac FROM devices WHERE quarantined = 1 OR status = 'blocked';",
+        context: context,
+      );
+      final macs = output
+          .split('\n')
+          .map((line) => line.trim())
+          .where(
+            (line) => RegExp(
+              r'^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$',
+            ).hasMatch(line),
+          )
+          .map(_normalizeMacAddress)
+          .toSet();
+      return macs;
+    } catch (e, stack) {
+      Logger.debug('Optional devices DB quarantine read failed: $e');
+      Logger.debug('Optional devices DB quarantine stack: $stack');
+      return {};
+    }
   }
 
   Set<String> _extractQuarantinedMacs(dynamic result) {

@@ -233,10 +233,12 @@ require_file "$FILES_DIR/openwalla-speedtest-monitor.sh"
 require_file "$FILES_DIR/openwalla-notifications-db.sh"
 require_file "$FILES_DIR/openwalla-state-sync.sh"
 require_file "$FILES_DIR/openwalla-device-quarantine.sh"
+require_file "$FILES_DIR/openwalla-devices-collector.sh"
 require_file "$FILES_DIR/openwalla-device-bandwidth-collector.sh"
 require_file "$FILES_DIR/openwalla-device-traffic-summary.sh"
 require_file "$FILES_DIR/openwalla-paternal-pause.sh"
 require_file "$FILES_DIR/openwalla-connection-flows-collector.init"
+require_file "$FILES_DIR/openwalla-devices-collector.init"
 require_file "$FILES_DIR/openwalla-device-bandwidth-collector.init"
 require_file "$FILES_DIR/openwalla-ping-monitor.init"
 require_file "$FILES_DIR/openwalla-dns-monitor.init"
@@ -319,10 +321,12 @@ install_file "$FILES_DIR/openwalla-speedtest-monitor.sh" /usr/bin/openwalla-spee
 install_file "$FILES_DIR/openwalla-notifications-db.sh" /usr/bin/openwalla-notifications-db 0755
 install_file "$FILES_DIR/openwalla-state-sync.sh" /usr/bin/openwalla-state-sync 0755
 install_file "$FILES_DIR/openwalla-device-quarantine.sh" /usr/bin/openwalla-device-quarantine 0755
+install_file "$FILES_DIR/openwalla-devices-collector.sh" /usr/bin/openwalla-devices-collector 0755
 install_file "$FILES_DIR/openwalla-device-bandwidth-collector.sh" /usr/bin/openwalla-device-bandwidth-collector 0755
 install_file "$FILES_DIR/openwalla-device-traffic-summary.sh" /usr/bin/openwalla-device-traffic-summary 0755
 install_file "$FILES_DIR/openwalla-paternal-pause.sh" /usr/bin/openwalla-paternal-pause 0755
 install_file "$FILES_DIR/openwalla-connection-flows-collector.init" /etc/init.d/openwalla-connection-flows-collector 0755
+install_file "$FILES_DIR/openwalla-devices-collector.init" /etc/init.d/openwalla-devices-collector 0755
 install_file "$FILES_DIR/openwalla-device-bandwidth-collector.init" /etc/init.d/openwalla-device-bandwidth-collector 0755
 install_file "$FILES_DIR/openwalla-ping-monitor.init" /etc/init.d/openwalla-ping-monitor 0755
 install_file "$FILES_DIR/openwalla-dns-monitor.init" /etc/init.d/openwalla-dns-monitor 0755
@@ -371,6 +375,10 @@ set_uci openwalla.device_bandwidth.db_path "/tmp/openwalla-device-bandwidth.sqli
 set_uci openwalla.device_bandwidth.poll_seconds "60"
 set_uci openwalla.device_bandwidth.bucket_seconds "900"
 set_uci openwalla.device_bandwidth.retention_seconds "86400"
+set_uci openwalla.devices.enabled "1"
+set_uci openwalla.devices.db_path "/tmp/openwalla-devices.sqlite"
+set_uci openwalla.devices.poll_seconds "60"
+set_uci openwalla.devices.offline_after_seconds "300"
 set_uci openwalla.ping_monitor.enabled "1"
 set_uci openwalla.ping_monitor.target "1.1.1.1"
 set_uci openwalla.ping_monitor.interval "60"
@@ -434,6 +442,8 @@ if [ "$INSTALL_NETIFY" = "1" ] && [ -x /usr/bin/openwalla-netify-collector ]; th
 	/usr/bin/openwalla-netify-collector --init-db || true
 fi
 /usr/bin/openwalla-connection-flow-collector --init-db || true
+/usr/bin/openwalla-devices-collector --init-db || true
+/usr/bin/openwalla-devices-collector --once || true
 /usr/bin/openwalla-device-bandwidth-collector --init-db || true
 /usr/bin/openwalla-device-bandwidth-collector --once || true
 /usr/bin/openwalla-ping-monitor --once || true
@@ -520,9 +530,9 @@ uci commit firewall 2>/dev/null || true
 uci commit openwalla 2>/dev/null || true
 /bin/sh -c '/etc/init.d/cron reload 2>/dev/null || /etc/init.d/cron restart 2>/dev/null || /etc/init.d/crond reload 2>/dev/null || /etc/init.d/crond restart 2>/dev/null || killall -HUP crond 2>/dev/null || true'
 
-SERVICES="vnstat nlbwmon openwalla-connection-flows-collector openwalla-device-bandwidth-collector openwalla-ping-monitor openwalla-dns-monitor openwalla-state-sync openwalla-device-quarantine"
+SERVICES="vnstat nlbwmon openwalla-connection-flows-collector openwalla-devices-collector openwalla-device-bandwidth-collector openwalla-ping-monitor openwalla-dns-monitor openwalla-state-sync openwalla-device-quarantine"
 if [ "$INSTALL_NETIFY" = "1" ]; then
-	SERVICES="vnstat nlbwmon netifyd openwalla-netify-collector openwalla-connection-flows-collector openwalla-device-bandwidth-collector openwalla-ping-monitor openwalla-dns-monitor openwalla-state-sync openwalla-device-quarantine"
+	SERVICES="vnstat nlbwmon netifyd openwalla-netify-collector openwalla-connection-flows-collector openwalla-devices-collector openwalla-device-bandwidth-collector openwalla-ping-monitor openwalla-dns-monitor openwalla-state-sync openwalla-device-quarantine"
 fi
 if [ "$INSTALL_ADBLOCK" = "1" ]; then
 	SERVICES="$SERVICES adblock"

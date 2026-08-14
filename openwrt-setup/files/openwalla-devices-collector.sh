@@ -1,0 +1,329 @@
+#!/bin/sh
+
+# Openwalla devices collector for OpenWrt.
+# Maintains a device inventory SQLite DB keyed by MAC address.
+
+set -u
+
+PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+DEFAULT_DB="/tmp/openwalla-devices.sqlite"
+DEFAULT_POLL_SECONDS="60"
+DEFAULT_OFFLINE_AFTER_SECONDS="300"
+DEFAULT_LAN_NETWORK="lan"
+DEFAULT_LAN_DEVICE="br-lan"
+DEFAULT_RULE_PREFIX="openwalla_quarantine_"
+LOG_FILE="/tmp/openwalla-devices-collector.log"
+
+DB_PATH="$DEFAULT_DB"
+POLL_SECONDS="$DEFAULT_POLL_SECONDS"
+OFFLINE_AFTER_SECONDS="$DEFAULT_OFFLINE_AFTER_SECONDS"
+LAN_NETWORK="$DEFAULT_LAN_NETWORK"
+LAN_DEVICE="$DEFAULT_LAN_DEVICE"
+RULE_PREFIX="$DEFAULT_RULE_PREFIX"
+SQLITE_BIN=""
+
+log() {
+	printf "%s %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+
+init_logging() {
+	local dir
+	dir="$(dirname "$LOG_FILE")"
+	mkdir -p "$dir"
+	touch "$LOG_FILE"
+	exec >>"$LOG_FILE" 2>&1
+}
+
+sanitize_text() {
+	local value
+	value="${1:-}"
+	value="${value#\'}"
+	value="${value%\'}"
+	value="${value#\"}"
+	value="${value%\"}"
+	printf "%s" "$value"
+}
+
+sanitize_int() {
+	case "${1:-}" in
+	'' | *[!0-9]*) echo "$2" ;;
+	*) echo "$1" ;;
+	esac
+}
+
+uci_get() {
+	uci -q get "$1" 2>/dev/null || true
+}
+
+find_sqlite_bin() {
+	if command -v sqlite3 >/dev/null 2>&1; then
+		SQLITE_BIN="$(command -v sqlite3)"
+		return 0
+	fi
+	if command -v sqlite3-cli >/dev/null 2>&1; then
+		SQLITE_BIN="$(command -v sqlite3-cli)"
+		return 0
+	fi
+	return 1
+}
+
+sql_escape() {
+	printf "%s" "$1" | sed "s/'/''/g"
+}
+
+sql_exec() {
+	local query output
+	query="$1"
+	if ! output="$("$SQLITE_BIN" "$DB_PATH" "PRAGMA busy_timeout=3000; $query" 2>&1)"; then
+		log "sqlite error: $output"
+		return 1
+	fi
+	[ -n "$output" ] && log "sqlite: $output"
+	return 0
+}
+
+load_config() {
+	local value
+
+	value="$(uci_get openwalla.devices.db_path)"
+	value="$(sanitize_text "$value")"
+	[ -n "$value" ] && DB_PATH="$value"
+
+	value="$(uci_get openwalla.devices.poll_seconds)"
+	value="$(sanitize_text "$value")"
+	[ -n "$value" ] && POLL_SECONDS="$value"
+
+	value="$(uci_get openwalla.devices.offline_after_seconds)"
+	value="$(sanitize_text "$value")"
+	[ -n "$value" ] && OFFLINE_AFTER_SECONDS="$value"
+
+	value="$(uci_get openwalla.quarantine.rule_prefix)"
+	value="$(sanitize_text "$value")"
+	[ -n "$value" ] && RULE_PREFIX="$value"
+
+	value="$(uci_get openwalla.quarantine.lan_network)"
+	value="$(sanitize_text "$value")"
+	[ -n "$value" ] && LAN_NETWORK="$value"
+
+	value="$(uci_get openwalla.quarantine.lan_device)"
+	value="$(sanitize_text "$value")"
+	[ -n "$value" ] && LAN_DEVICE="$value"
+
+	value="$(uci_get network.lan.device)"
+	value="$(sanitize_text "$value")"
+	[ "$LAN_DEVICE" = "$DEFAULT_LAN_DEVICE" ] && [ -n "$value" ] && LAN_DEVICE="$value"
+
+	value="$(uci_get network.lan.ifname)"
+	value="$(sanitize_text "$value")"
+	[ "$LAN_DEVICE" = "$DEFAULT_LAN_DEVICE" ] && [ -n "$value" ] && LAN_DEVICE="$value"
+
+	POLL_SECONDS="$(sanitize_int "$POLL_SECONDS" "$DEFAULT_POLL_SECONDS")"
+	OFFLINE_AFTER_SECONDS="$(sanitize_int "$OFFLINE_AFTER_SECONDS" "$DEFAULT_OFFLINE_AFTER_SECONDS")"
+	[ "$POLL_SECONDS" -lt 10 ] && POLL_SECONDS=60
+	[ "$OFFLINE_AFTER_SECONDS" -lt "$POLL_SECONDS" ] && OFFLINE_AFTER_SECONDS=$((POLL_SECONDS * 5))
+}
+
+ensure_db_file() {
+	local dir
+	dir="$(dirname "$DB_PATH")"
+	mkdir -p "$dir"
+	[ -f "$DB_PATH" ] || : >"$DB_PATH"
+	init_db
+}
+
+init_db() {
+	sql_exec "PRAGMA journal_mode=WAL;" || return 1
+	sql_exec "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline');" || return 1
+	sql_exec "CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);" || return 1
+	sql_exec "CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON devices(last_seen);" || return 1
+	sql_exec "CREATE INDEX IF NOT EXISTS idx_devices_quarantined ON devices(quarantined);" || return 1
+}
+
+collect_dhcp() {
+	[ -f /tmp/dhcp.leases ] || return 0
+	awk '{
+		if ($2 ~ /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/) {
+			mac=tolower($2)
+			ip=$3
+			host=$4
+			if (host == "*") host=""
+			print mac "|" ip "|" host
+		}
+	}' /tmp/dhcp.leases
+}
+
+collect_arp() {
+	if [ -r /proc/net/arp ]; then
+		awk -v dev="$LAN_DEVICE" 'NR>1 {
+			ip=$1
+			mac=tolower($4)
+			ifname=$6
+			if (ifname == dev && mac ~ /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/ && mac != "00:00:00:00:00:00")
+				print mac "|" ip "|"
+		}' /proc/net/arp
+	fi
+}
+
+collect_ip_neigh() {
+	ip neigh show dev "$LAN_DEVICE" 2>/dev/null | awk '{
+		ip=$1
+		mac=""
+		for (i=1; i<=NF; i++) {
+			if ($i == "lladdr" && (i+1) <= NF) { mac=$(i+1); break }
+		}
+		if (mac ~ /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/)
+			print tolower(mac) "|" ip "|"
+	}'
+}
+
+collect_wireless() {
+	command -v jsonfilter >/dev/null 2>&1 || return 0
+	command -v ubus >/dev/null 2>&1 || return 0
+
+	local json
+	json="$(ubus call network.wireless status 2>/dev/null || true)"
+	[ -n "$json" ] || return 0
+	{
+		jsonfilter -s "$json" -e "@.*.interfaces[@.config.network='$LAN_NETWORK'].stations[*].mac" 2>/dev/null || true
+		jsonfilter -s "$json" -e "@.*.interfaces[@.config.network[0]='$LAN_NETWORK'].stations[*].mac" 2>/dev/null || true
+	} | tr ' ' '\n' | sed '/^$/d' | tr '[:upper:]' '[:lower:]' | sort -u | awk '{ print $1 "||" }'
+}
+
+collect_candidates() {
+	{
+		collect_dhcp
+		collect_arp
+		collect_ip_neigh
+		collect_wireless
+	} | awk -F'|' '
+		{
+			mac=tolower($1)
+			ip=$2
+			host=$3
+			if (mac ~ /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/) {
+				if (!(mac in seen)) {
+					seen[mac]=1
+					print mac "|" ip "|" host
+				} else {
+					if (ip != "" && ip_by_mac[mac] == "") ip_by_mac[mac]=ip
+					if (host != "" && host_by_mac[mac] == "") host_by_mac[mac]=host
+				}
+			}
+		}
+	'
+}
+
+collect_totals() {
+	command -v nlbw >/dev/null 2>&1 || return 0
+	nlbw -c csv -g mac -o mac -q 2>/dev/null | awk '
+		NR == 1 {
+			for (i = 1; i <= NF; i++) idx[$i] = i
+			next
+		}
+		NF > 0 {
+			mac = tolower($idx["mac"])
+			rx = $idx["rx_bytes"] + 0
+			tx = $idx["tx_bytes"] + 0
+			if (mac ~ /^([0-9a-f][0-9a-f]:){5}[0-9a-f][0-9a-f]$/ && mac != "00:00:00:00:00:00")
+				print mac "|" rx "|" tx
+		}
+	'
+}
+
+collect_quarantined() {
+	uci -q show firewall 2>/dev/null | awk -F'[.=]' -v prefix="$RULE_PREFIX" '
+		$1 == "firewall" && $3 == "name" && index($0, prefix) > 0 {
+			section=$2
+			quarantine[section]=1
+		}
+		$1 == "firewall" && $3 == "src_mac" {
+			section=$2
+			value=$0
+			sub(/^[^=]*=/, "", value)
+			gsub(/\047/, "", value)
+			gsub(/"/, "", value)
+			if (quarantine[section] && value ~ /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/)
+				print tolower(value)
+		}
+	' | sort -u
+}
+
+collect_once() {
+	local now cutoff candidates totals quarantined sql mac ip host rx tx is_quarantined esc_mac esc_ip esc_host
+	now="$(date +%s)"
+	cutoff=$((now - OFFLINE_AFTER_SECONDS))
+	candidates="/tmp/.openwalla-devices-candidates.$$"
+	totals="/tmp/.openwalla-devices-totals.$$"
+	quarantined="/tmp/.openwalla-devices-quarantined.$$"
+
+	collect_candidates >"$candidates"
+	collect_totals >"$totals"
+	collect_quarantined >"$quarantined"
+
+	while IFS='|' read -r mac ip host; do
+		[ -n "$mac" ] || continue
+		rx="$(awk -F'|' -v m="$mac" '$1 == m { print $2; found=1; exit } END { if (!found) print 0 }' "$totals")"
+		tx="$(awk -F'|' -v m="$mac" '$1 == m { print $3; found=1; exit } END { if (!found) print 0 }' "$totals")"
+		case "$rx" in '' | *[!0-9]*) rx=0 ;; esac
+		case "$tx" in '' | *[!0-9]*) tx=0 ;; esac
+		if grep -qx "$mac" "$quarantined" 2>/dev/null; then
+			is_quarantined=1
+		else
+			is_quarantined=0
+		fi
+
+		esc_mac="$(sql_escape "$mac")"
+		esc_ip="$(sql_escape "$ip")"
+		esc_host="$(sql_escape "$host")"
+		sql="INSERT INTO devices (mac, ip, hostname, vendor, quarantined, last_seen, total_up, total_down, status) VALUES ('$esc_mac', '$esc_ip', '$esc_host', '', $is_quarantined, $now, $tx, $rx, 'online') ON CONFLICT(mac) DO UPDATE SET ip=CASE WHEN excluded.ip != '' THEN excluded.ip ELSE devices.ip END, hostname=CASE WHEN excluded.hostname != '' THEN excluded.hostname ELSE devices.hostname END, quarantined=excluded.quarantined, last_seen=excluded.last_seen, total_up=excluded.total_up, total_down=excluded.total_down, status=excluded.status;"
+		sql_exec "$sql" || true
+	done <"$candidates"
+
+	while IFS= read -r mac; do
+		[ -n "$mac" ] || continue
+		esc_mac="$(sql_escape "$mac")"
+		sql_exec "UPDATE devices SET quarantined=1 WHERE mac='$esc_mac';" || true
+	done <"$quarantined"
+
+	sql_exec "UPDATE devices SET status='offline' WHERE last_seen < $cutoff AND quarantined = 0;"
+	sql_exec "UPDATE devices SET status='blocked' WHERE quarantined = 1;"
+
+	rm -f "$candidates" "$totals" "$quarantined"
+}
+
+run_daemon() {
+	log "starting devices collector db=$DB_PATH poll=${POLL_SECONDS}s offline_after=${OFFLINE_AFTER_SECONDS}s"
+	while true; do
+		load_config
+		collect_once || log "collector iteration failed"
+		sleep "$POLL_SECONDS"
+	done
+}
+
+load_config
+init_logging
+log "collector boot mode=${1:---daemon}"
+if ! find_sqlite_bin; then
+	log "sqlite3 not found; install sqlite3-cli"
+	exit 1
+fi
+
+case "${1:---daemon}" in
+--init-db)
+	ensure_db_file
+	;;
+--once)
+	ensure_db_file
+	collect_once
+	;;
+--daemon)
+	ensure_db_file
+	run_daemon
+	;;
+*)
+	echo "Usage: $0 [--init-db|--once|--daemon]"
+	exit 2
+	;;
+esac
