@@ -3463,7 +3463,6 @@ class AppState extends ChangeNotifier {
       final list = _applyQuarantineState(
         _applyDeviceDbNames(clients.values, deviceNameMaps),
         quarantinedMacs,
-        includeMockDevice: true,
       );
 
       // Sort: wireless > wired > unknown, then by hostname
@@ -3627,7 +3626,6 @@ class AppState extends ChangeNotifier {
       final markedClients = _applyQuarantineState(
         _applyDeviceDbNames(clients, deviceNameMaps),
         quarantinedMacs,
-        includeMockDevice: true,
       );
 
       // Sort similar to aggregated
