@@ -8,13 +8,17 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="${OPENWALLA_BUILD_DIR:-/tmp/openwalla-apk-build}"
 OUTPUT_DIR="${OPENWALLA_APK_OUTPUT_DIR:-$PROJECT_ROOT/dist/apk}"
 APK_TEST_DIR="${OPENWALLA_APK_TEST_DIR:-$PROJECT_ROOT/APK-TEST}"
+APK_TEST_ABI="${OPENWALLA_APK_TEST_ABI:-arm64-v8a}"
 BUILD_MODE="release"
 UPLOAD_RELEASE=false
 COPY_APK_TEST=false
+SPLIT_PER_ABI=false
 
 usage() {
-  echo "Usage: $0 [debug|profile|release] [--upload] [--apk-test]" >&2
+  echo "Usage: $0 [debug|profile|release] [--upload] [--apk-test] [--split-per-abi]" >&2
   echo "  --apk-test  Copy the verified APK into APK-TEST/ for committing to the repo." >&2
+  echo "  --split-per-abi  Build smaller ABI-specific APKs." >&2
+  echo "Set OPENWALLA_APK_TEST_ABI to choose which split APK goes into APK-TEST (default: arm64-v8a)." >&2
   echo "Set OPENWALLA_RELEASE_TAG, OPENWALLA_RELEASE_TITLE, or OPENWALLA_RELEASE_NOTES to override GitHub release metadata." >&2
 }
 
@@ -47,6 +51,9 @@ for arg in "$@"; do
       ;;
     --apk-test)
       COPY_APK_TEST=true
+      ;;
+    --split-per-abi)
+      SPLIT_PER_ABI=true
       ;;
     -h|--help)
       usage
@@ -98,12 +105,22 @@ flutter pub get --directory "$BUILD_DIR"
 echo "Building APK ($BUILD_MODE)"
 (
   cd "$BUILD_DIR"
-  flutter build apk "--$BUILD_MODE"
+  build_args=(apk "--$BUILD_MODE")
+  if [[ "$SPLIT_PER_ABI" == true ]]; then
+    build_args+=(--split-per-abi)
+  fi
+  flutter build "${build_args[@]}"
 )
 
-APK_PATH="$BUILD_DIR/build/app/outputs/flutter-apk/app-$BUILD_MODE.apk"
-if [[ ! -f "$APK_PATH" ]]; then
-  echo "Expected APK was not created: $APK_PATH" >&2
+APK_GLOB="$BUILD_DIR/build/app/outputs/flutter-apk/app-*-$BUILD_MODE.apk"
+if [[ "$SPLIT_PER_ABI" != true ]]; then
+  APK_GLOB="$BUILD_DIR/build/app/outputs/flutter-apk/app-$BUILD_MODE.apk"
+fi
+shopt -s nullglob
+APK_PATHS=($APK_GLOB)
+shopt -u nullglob
+if [[ "${#APK_PATHS[@]}" -eq 0 ]]; then
+  echo "Expected APK was not created: $APK_GLOB" >&2
   exit 1
 fi
 
@@ -113,28 +130,47 @@ if [[ -z "$APKSIGNER" ]]; then
   exit 1
 fi
 
-if ! "$APKSIGNER" verify --verbose "$APK_PATH" >/dev/null 2>&1; then
-  echo "APK was built but is not signed, so Android will reject it during install." >&2
-  echo "For local Pixel testing, run: $0 debug" >&2
-  echo "For release builds, create android/key.properties pointing to a release keystore, then rerun: $0 release" >&2
-  exit 1
-fi
-
 mkdir -p "$OUTPUT_DIR"
-OUTPUT_APK="$OUTPUT_DIR/openwalla-$BUILD_MODE.apk"
-cp "$APK_PATH" "$OUTPUT_APK"
+OUTPUT_APKS=()
+for apk_path in "${APK_PATHS[@]}"; do
+  if ! "$APKSIGNER" verify --verbose "$apk_path" >/dev/null 2>&1; then
+    echo "APK was built but is not signed, so Android will reject it during install: $apk_path" >&2
+    echo "For local Pixel testing, run: $0 debug --split-per-abi" >&2
+    echo "For release builds, create android/key.properties pointing to a release keystore, then rerun: $0 release" >&2
+    exit 1
+  fi
 
-echo "APK created: $OUTPUT_APK"
+  apk_name="$(basename "$apk_path")"
+  abi_name="${apk_name#app-}"
+  abi_name="${abi_name%-$BUILD_MODE.apk}"
+  if [[ "$SPLIT_PER_ABI" == true ]]; then
+    output_apk="$OUTPUT_DIR/openwalla-$BUILD_MODE-$abi_name.apk"
+  else
+    output_apk="$OUTPUT_DIR/openwalla-$BUILD_MODE.apk"
+  fi
+  cp "$apk_path" "$output_apk"
+  OUTPUT_APKS+=("$output_apk")
+  echo "APK created: $output_apk"
+done
+
 
 if [[ "$COPY_APK_TEST" == true ]]; then
   mkdir -p "$APK_TEST_DIR"
-  SHORT_SHA="$(git -C "$PROJECT_ROOT" rev-parse --short HEAD 2>/dev/null || echo local)"
-  TEST_APK="$APK_TEST_DIR/openwalla-test.apk"
-  VERSIONED_TEST_APK="$APK_TEST_DIR/openwalla-${BUILD_MODE}-${SHORT_SHA}.apk"
-  cp "$OUTPUT_APK" "$TEST_APK"
-  cp "$OUTPUT_APK" "$VERSIONED_TEST_APK"
-  echo "APK test copy created: $TEST_APK"
-  echo "APK test copy created: $VERSIONED_TEST_APK"
+  for output_apk in "${OUTPUT_APKS[@]}"; do
+    output_name="$(basename "$output_apk")"
+    suffix="${output_name#openwalla-$BUILD_MODE}"
+    suffix="${suffix%.apk}"
+    if [[ "$SPLIT_PER_ABI" == true && "$suffix" != "-$APK_TEST_ABI" ]]; then
+      continue
+    fi
+    if [[ -n "$suffix" ]]; then
+      test_apk="$APK_TEST_DIR/openwalla-test$suffix.apk"
+    else
+      test_apk="$APK_TEST_DIR/openwalla-test.apk"
+    fi
+    cp "$output_apk" "$test_apk"
+    echo "APK test copy created: $test_apk"
+  done
 fi
 
 if [[ "$UPLOAD_RELEASE" == true ]]; then
@@ -151,9 +187,9 @@ if [[ "$UPLOAD_RELEASE" == true ]]; then
 
   echo "Uploading APK to GitHub release: $RELEASE_TAG"
   if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-    gh release upload "$RELEASE_TAG" "$OUTPUT_APK" --clobber
+    gh release upload "$RELEASE_TAG" "${OUTPUT_APKS[@]}" --clobber
   else
-    gh release create "$RELEASE_TAG" "$OUTPUT_APK" \
+    gh release create "$RELEASE_TAG" "${OUTPUT_APKS[@]}" \
       --title "$RELEASE_TITLE" \
       --notes "$RELEASE_NOTES"
   fi
