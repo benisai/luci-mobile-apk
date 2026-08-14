@@ -1159,7 +1159,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 _usageRange,
                 snapshot.data ?? const [],
               );
-              return _usageStackedBars(samples);
+              return _usageLineGraph(samples);
             },
           ),
           const SizedBox(height: 18),
@@ -1213,10 +1213,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   String _usageSubtitle(_UsageRange range) {
     return switch (range) {
-      _UsageRange.minute => 'Last 35 minutes, 5 minute intervals',
-      _UsageRange.hour => 'Last 7 hours',
-      _UsageRange.day => 'Last 7 days',
-      _UsageRange.week => 'Last 4 weeks',
+      _UsageRange.minute => 'Last 2 hours, 5 minute intervals',
+      _UsageRange.hour => 'Last 24 hours',
+      _UsageRange.day => 'Last 14 days',
+      _UsageRange.week => 'Last 8 weeks',
     };
   }
 
@@ -1271,14 +1271,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final now = DateTime.now();
 
     return switch (range) {
-      _UsageRange.minute => List.generate(7, (index) {
+      _UsageRange.minute => List.generate(24, (index) {
         final slot = DateTime(
           now.year,
           now.month,
           now.day,
           now.hour,
           (now.minute ~/ 5) * 5,
-        ).subtract(Duration(minutes: (6 - index) * 5));
+        ).subtract(Duration(minutes: (23 - index) * 5));
         final slotEnd = slot.add(const Duration(minutes: 5));
         final matches = samples.where((sample) {
           final time = sample.timestamp.toLocal();
@@ -1299,20 +1299,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           hasData: matches.isNotEmpty,
         );
       }),
-      _UsageRange.hour => List.generate(7, (index) {
+      _UsageRange.hour => List.generate(24, (index) {
         final slot = DateTime(
           now.year,
           now.month,
           now.day,
           now.hour,
-        ).subtract(Duration(hours: 6 - index));
+        ).subtract(Duration(hours: 23 - index));
         final slotEnd = slot.add(const Duration(hours: 1));
         final matches = samples.where((sample) {
           final time = sample.timestamp.toLocal();
           return !time.isBefore(slot) && time.isBefore(slotEnd);
         }).toList();
         return (
-          label: index == 6 ? 'Now' : '${slot.hour}:00',
+          label: index == 23 ? 'Now' : '${slot.hour}:00',
           downloadBytes: matches.fold<int>(
             0,
             (sum, sample) => sum + sample.downloadBytes,
@@ -1324,8 +1324,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           hasData: matches.isNotEmpty,
         );
       }),
-      _UsageRange.day => List.generate(7, (index) {
-        final day = now.subtract(Duration(days: 6 - index));
+      _UsageRange.day => List.generate(14, (index) {
+        final day = now.subtract(Duration(days: 13 - index));
         final slot = DateTime(day.year, day.month, day.day);
         final slotEnd = slot.add(const Duration(days: 1));
         final matches = samples.where((sample) {
@@ -1333,7 +1333,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           return !time.isBefore(slot) && time.isBefore(slotEnd);
         }).toList();
         return (
-          label: index == 6 ? 'Today' : _weekdayShort(day.weekday),
+          label: index == 13 ? 'Today' : _weekdayShort(day.weekday),
           downloadBytes: matches.fold<int>(
             0,
             (sum, sample) => sum + sample.downloadBytes,
@@ -1345,12 +1345,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           hasData: matches.isNotEmpty,
         );
       }),
-      _UsageRange.week => List.generate(4, (index) {
+      _UsageRange.week => List.generate(8, (index) {
         final end = DateTime(
           now.year,
           now.month,
           now.day,
-        ).subtract(Duration(days: (3 - index) * 7));
+        ).subtract(Duration(days: (7 - index) * 7));
         final start = end.subtract(const Duration(days: 6));
         final slotEnd = end.add(const Duration(days: 1));
         final matches = samples.where((sample) {
@@ -1358,7 +1358,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           return !time.isBefore(start) && time.isBefore(slotEnd);
         }).toList();
         return (
-          label: index == 3 ? 'This Week' : 'W-${3 - index}',
+          label: index == 7 ? 'This Week' : 'W-${7 - index}',
           downloadBytes: matches.fold<int>(
             0,
             (sum, sample) => sum + sample.downloadBytes,
@@ -1391,14 +1391,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     return '${gb.toStringAsFixed(2)} GB';
   }
 
-  Widget _usageStackedBars(
+  Widget _usageLineGraph(
     List<({String label, int downloadBytes, int uploadBytes, bool hasData})>
     samples,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
-    final maxTotal = samples
-        .map((sample) => sample.downloadBytes + sample.uploadBytes)
-        .fold<int>(0, (max, total) => total > max ? total : max);
     final totalDownload = samples.fold<int>(
       0,
       (sum, sample) => sum + sample.downloadBytes,
@@ -1407,108 +1404,232 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       0,
       (sum, sample) => sum + sample.uploadBytes,
     );
+    final maxValue = samples
+        .expand((sample) => [sample.downloadBytes, sample.uploadBytes])
+        .fold<int>(0, (max, value) => value > max ? value : max);
+    final maxY = _niceUsageMax(maxValue);
+    final hasAnyData = samples.any((sample) => sample.hasData);
+    final labelIndexes = _usageBottomLabelIndexes(samples.length);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _usageTotalSummary(totalDownload, totalUpload),
-        const SizedBox(height: 16),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: List.generate(samples.length, (index) {
-            final sample = samples[index];
-            final total = sample.downloadBytes + sample.uploadBytes;
-            final totalFactor = maxTotal > 0
-                ? (total / maxTotal).clamp(0.12, 1.0)
-                : 0.12;
-            final downloadFactor = total > 0
-                ? sample.downloadBytes / total
-                : 0.0;
-            final uploadFactor = total > 0 ? sample.uploadBytes / total : 0.0;
-            final barHeight = 154 * totalFactor;
-            final downloadHeight = (barHeight * downloadFactor).clamp(
-              6.0,
-              barHeight,
-            );
-            final uploadHeight = (barHeight * uploadFactor).clamp(
-              sample.uploadBytes > 0 ? 6.0 : 0.0,
-              barHeight,
-            );
-            final tooltipMessage =
-                '${sample.label}\n'
-                'Download: ${_formatUsageTotal(sample.downloadBytes)}\n'
-                'Upload: ${_formatUsageTotal(sample.uploadBytes)}\n'
-                'Total: ${_formatUsageTotal(total)}';
-
-            return Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: Column(
-                  children: [
-                    SizedBox(
-                      height: 156,
-                      child: Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Tooltip(
-                          message: tooltipMessage,
-                          triggerMode: TooltipTriggerMode.tap,
-                          showDuration: const Duration(seconds: 3),
-                          preferBelow: false,
-                          child: Container(
-                            width: 32,
-                            height: 156,
-                            alignment: Alignment.bottomCenter,
-                            decoration: BoxDecoration(
-                              color: colorScheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.42),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                if (sample.hasData) ...[
-                                  Container(
-                                    height: uploadHeight,
-                                    color: _openwallaOrange,
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 188,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              LineChart(
+                LineChartData(
+                  minX: 0,
+                  maxX: (samples.length - 1)
+                      .clamp(1, samples.length)
+                      .toDouble(),
+                  minY: 0,
+                  maxY: maxY,
+                  gridData: FlGridData(
+                    drawVerticalLine: false,
+                    horizontalInterval: maxY / 4,
+                    getDrawingHorizontalLine: (value) => FlLine(
+                      color: colorScheme.outlineVariant.withValues(alpha: 0.22),
+                      strokeWidth: 1,
+                    ),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  titlesData: FlTitlesData(
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 42,
+                        interval: maxY / 4,
+                        getTitlesWidget: (value, meta) {
+                          if (value == 0) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: Text(
+                              _formatUsageAxisValue(value),
+                              textAlign: TextAlign.right,
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: colorScheme.onSurfaceVariant
+                                        .withValues(alpha: 0.74),
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0,
                                   ),
-                                  Container(
-                                    height: downloadHeight,
-                                    color: _openwallaCyan,
-                                  ),
-                                ],
-                              ],
                             ),
-                          ),
-                        ),
+                          );
+                        },
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        sample.label,
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: index == samples.length - 1
-                              ? colorScheme.onSurface
-                              : colorScheme.onSurfaceVariant,
-                          fontWeight: index == samples.length - 1
-                              ? FontWeight.w900
-                              : FontWeight.w700,
-                          letterSpacing: 0,
-                        ),
-                        maxLines: 1,
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 28,
+                        interval: 1,
+                        getTitlesWidget: (value, meta) {
+                          final index = value.round();
+                          if (!labelIndexes.contains(index) ||
+                              index < 0 ||
+                              index >= samples.length) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              samples[index].label,
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: index == samples.length - 1
+                                        ? colorScheme.onSurface
+                                        : colorScheme.onSurfaceVariant,
+                                    fontWeight: index == samples.length - 1
+                                        ? FontWeight.w900
+                                        : FontWeight.w700,
+                                    letterSpacing: 0,
+                                  ),
+                            ),
+                          );
+                        },
                       ),
+                    ),
+                  ),
+                  lineTouchData: LineTouchData(
+                    touchTooltipData: LineTouchTooltipData(
+                      fitInsideHorizontally: true,
+                      fitInsideVertically: true,
+                      getTooltipColor: (_) =>
+                          colorScheme.surface.withValues(alpha: 0.96),
+                      tooltipBorderRadius: BorderRadius.circular(8),
+                      tooltipPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      getTooltipItems: (spots) => spots.map((spot) {
+                        final index = spot.x.round().clamp(
+                          0,
+                          samples.length - 1,
+                        );
+                        final sample = samples[index];
+                        final total = sample.downloadBytes + sample.uploadBytes;
+                        final label = spot.barIndex == 0
+                            ? 'Download'
+                            : 'Upload';
+                        final value = spot.barIndex == 0
+                            ? sample.downloadBytes
+                            : sample.uploadBytes;
+                        final color = spot.barIndex == 0
+                            ? _openwallaCyan
+                            : _openwallaOrange;
+                        return LineTooltipItem(
+                          '${sample.label}\n'
+                          '$label ${_formatUsageTotal(value)}\n'
+                          'Total ${_formatUsageTotal(total)}',
+                          TextStyle(
+                            color: color,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  lineBarsData: [
+                    _usageLineChartBar(
+                      samples: samples,
+                      color: _openwallaCyan,
+                      selector: (sample) => sample.downloadBytes,
+                    ),
+                    _usageLineChartBar(
+                      samples: samples,
+                      color: _openwallaOrange,
+                      selector: (sample) => sample.uploadBytes,
                     ),
                   ],
                 ),
               ),
-            );
-          }),
+              if (!hasAnyData)
+                Text(
+                  'No usage data yet',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+                ),
+            ],
+          ),
         ),
       ],
     );
+  }
+
+  LineChartBarData _usageLineChartBar({
+    required List<
+      ({String label, int downloadBytes, int uploadBytes, bool hasData})
+    >
+    samples,
+    required Color color,
+    required int Function(
+      ({String label, int downloadBytes, int uploadBytes, bool hasData}) sample,
+    )
+    selector,
+  }) {
+    return LineChartBarData(
+      spots: List.generate(samples.length, (index) {
+        final sample = samples[index];
+        return FlSpot(
+          index.toDouble(),
+          sample.hasData ? selector(sample).toDouble() : 0,
+        );
+      }),
+      isCurved: true,
+      curveSmoothness: 0.28,
+      color: color,
+      barWidth: 3,
+      isStrokeCapRound: true,
+      dotData: FlDotData(show: false),
+      belowBarData: BarAreaData(
+        show: true,
+        color: color.withValues(alpha: 0.12),
+      ),
+    );
+  }
+
+  double _niceUsageMax(int maxBytes) {
+    if (maxBytes <= 0) return 1024;
+    final units = <int>[
+      1024,
+      10 * 1024,
+      100 * 1024,
+      1024 * 1024,
+      10 * 1024 * 1024,
+      100 * 1024 * 1024,
+      1024 * 1024 * 1024,
+      10 * 1024 * 1024 * 1024,
+      100 * 1024 * 1024 * 1024,
+    ];
+    for (final unit in units) {
+      if (maxBytes <= unit) return unit.toDouble();
+    }
+    return maxBytes * 1.15;
+  }
+
+  String _formatUsageAxisValue(double bytes) {
+    if (bytes <= 0) return '';
+    return _formatUsageTotal(bytes.round());
+  }
+
+  Set<int> _usageBottomLabelIndexes(int length) {
+    if (length <= 1) return {0};
+    return {0, (length / 3).floor(), ((length * 2) / 3).floor(), length - 1};
   }
 
   Widget _usageTotalSummary(int downloadBytes, int uploadBytes) {
