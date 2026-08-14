@@ -285,33 +285,13 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
     required int blockedCount,
     required int offlineCount,
   }) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 22, 16, 10),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Connected Clients',
-            style: theme.textTheme.headlineMedium?.copyWith(
-              color: colorScheme.onSurface,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0,
-              height: 1.05,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Manage device access & bandwidth',
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0,
-            ),
-          ),
-          const SizedBox(height: 24),
           _buildSearchField(context),
           const SizedBox(height: 18),
           Row(
@@ -346,43 +326,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerRight,
-            child: SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment<bool>(
-                  value: true,
-                  label: Text('All routers'),
-                  icon: Icon(Icons.apartment_rounded),
-                ),
-                ButtonSegment<bool>(
-                  value: false,
-                  label: Text('Selected'),
-                  icon: Icon(Icons.router_rounded),
-                ),
-              ],
-              selected: {_aggregateAllRouters},
-              showSelectedIcon: false,
-              style: SegmentedButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                textStyle: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0,
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-              ),
-              onSelectionChanged: (selection) {
-                setState(() {
-                  _aggregateAllRouters = selection.first;
-                  _computeClientsFuture();
-                });
-                ref
-                    .read(appStateProvider)
-                    .setClientsAggregateAllRouters(_aggregateAllRouters);
-              },
-            ),
           ),
         ],
       ),
