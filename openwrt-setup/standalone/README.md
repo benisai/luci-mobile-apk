@@ -1,0 +1,23 @@
+# Openwalla Standalone OpenWrt Installers
+
+These scripts install individual Openwalla router helpers without replacing the main all-in-one installer at `openwrt-setup/setup-openwrt-router.sh`.
+
+Run them from the repository root or from this folder on the router:
+
+```sh
+sh openwrt-setup/standalone/install-netify.sh
+```
+
+Available installers:
+
+- `install-netify.sh` - netifyd plus Openwalla Netify collector
+- `install-conntrack.sh` - connection flow collector backed by SQLite
+- `install-ping-monitor.sh` / `install-ping-test.sh` - ping monitor output for latency timeline
+- `install-dns-monitor.sh` / `install-dns-test.sh` - DNS monitor output
+- `install-speedtest-monitor.sh` - speedtest helper and cron schedule
+- `install-device-bandwidth.sh` - per-device bandwidth collector and summary helper
+- `install-quarantine.sh` - device quarantine helper service
+- `install-notifications-db.sh` - notifications SQLite helper
+- `install-state-sync.sh` - Openwalla state backup/restore helper
+
+Each installer keeps existing `/etc/config/openwalla` if present, installs the needed worker/init files, applies only that feature's UCI defaults, installs the shared rpcd ACL, and starts/enables only the relevant service.
