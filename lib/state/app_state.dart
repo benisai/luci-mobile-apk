@@ -3290,6 +3290,7 @@ class AppState extends ChangeNotifier {
   /// as wireless if their MAC appears in any router's associated stations list.
   Future<List<Client>> fetchAggregatedClients() async {
     try {
+      final quarantinedMacsFuture = fetchAggregatedQuarantinedMacs();
       // Build a union of wireless MACs across all routers
       final wirelessMacs = await fetchAllAssociatedWirelessMacsAggregated();
       final normalizedWireless = wirelessMacs
@@ -3325,9 +3326,16 @@ class AppState extends ChangeNotifier {
         }
       }
 
+      final quarantinedMacs = await quarantinedMacsFuture;
+      final list = _applyQuarantineState(
+        clients.values,
+        quarantinedMacs,
+        includeMockDevice: true,
+      );
+
       // Sort: wireless > wired > unknown, then by hostname
-      final list = clients.values.toList();
       list.sort((a, b) {
+        if (a.isBlocked != b.isBlocked) return a.isBlocked ? -1 : 1;
         int typeOrder(ConnectionType t) {
           switch (t) {
             case ConnectionType.wireless:
@@ -3356,6 +3364,7 @@ class AppState extends ChangeNotifier {
   Future<List<Client>> fetchClientsForSelectedRouter() async {
     try {
       if (_reviewerModeEnabled) {
+        final quarantinedMacs = await fetchQuarantinedMacsForSelectedRouter();
         final stationsMap = await _apiService!.fetchAssociatedStations();
         final macs = <String>{};
         stationsMap.forEach((_, stations) {
@@ -3393,8 +3402,13 @@ class AppState extends ChangeNotifier {
             clientMap[mac] = Client.fromWirelessStation(mac);
           }
         }
-        final reviewerClients = clientMap.values.toList();
+        final reviewerClients = _applyQuarantineState(
+          clientMap.values,
+          quarantinedMacs,
+          includeMockDevice: true,
+        );
         reviewerClients.sort((a, b) {
+          if (a.isBlocked != b.isBlocked) return a.isBlocked ? -1 : 1;
           int typeOrder(ConnectionType t) {
             switch (t) {
               case ConnectionType.wireless:
@@ -3474,9 +3488,16 @@ class AppState extends ChangeNotifier {
       }
 
       final clients = clientMap.values.toList();
+      final quarantinedMacs = await fetchQuarantinedMacsForSelectedRouter();
+      final markedClients = _applyQuarantineState(
+        clients,
+        quarantinedMacs,
+        includeMockDevice: true,
+      );
 
       // Sort similar to aggregated
-      clients.sort((a, b) {
+      markedClients.sort((a, b) {
+        if (a.isBlocked != b.isBlocked) return a.isBlocked ? -1 : 1;
         int typeOrder(ConnectionType t) {
           switch (t) {
             case ConnectionType.wireless:
@@ -3494,11 +3515,153 @@ class AppState extends ChangeNotifier {
         if (cmpType != 0) return cmpType;
         return a.hostname.toLowerCase().compareTo(b.hostname.toLowerCase());
       });
-      return clients;
+      return markedClients;
     } catch (e, stack) {
       Logger.exception('Failed to fetch clients for selected router', e, stack);
       return [];
     }
+  }
+
+  String _normalizeMacAddress(String mac) =>
+      mac.trim().toUpperCase().replaceAll('-', ':');
+
+  static const String _mockQuarantineMac = 'AA:BB:CC:DD:EE:FF';
+
+  Client _mockQuarantinedClient() {
+    return Client(
+      ipAddress: '10.0.0.250',
+      macAddress: _mockQuarantineMac,
+      hostname: 'Mock Quarantined Device',
+      vendor: 'Openwalla Demo',
+      dnsName: 'mock-quarantine.local',
+      connectionType: ConnectionType.wireless,
+      isBlocked: true,
+    );
+  }
+
+  List<Client> _applyQuarantineState(
+    Iterable<Client> clients,
+    Set<String> quarantinedMacs, {
+    bool includeMockDevice = false,
+  }) {
+    final normalizedBlocked = quarantinedMacs.map(_normalizeMacAddress).toSet();
+    if (includeMockDevice) normalizedBlocked.add(_mockQuarantineMac);
+
+    final clientMap = <String, Client>{};
+    for (final client in clients) {
+      final mac = _normalizeMacAddress(client.macAddress);
+      if (mac.isEmpty || mac == 'N/A') {
+        clientMap[mac] = client;
+        continue;
+      }
+      clientMap[mac] = client.copyWith(
+        isBlocked: normalizedBlocked.contains(mac),
+      );
+    }
+
+    if (includeMockDevice && !clientMap.containsKey(_mockQuarantineMac)) {
+      clientMap[_mockQuarantineMac] = _mockQuarantinedClient();
+    }
+
+    return clientMap.values.toList();
+  }
+
+  Future<Set<String>> fetchQuarantinedMacsForSelectedRouter() async {
+    if (_reviewerModeEnabled) return {_mockQuarantineMac};
+    if (_routerService?.selectedRouter == null ||
+        _authService?.sysauth == null ||
+        _apiService == null) {
+      return {};
+    }
+
+    final router = _routerService!.selectedRouter!;
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        _authService!.sysauth!,
+        router.useHttps,
+        object: 'uci',
+        method: 'get',
+        params: {'config': 'firewall'},
+      );
+      return _extractQuarantinedMacs(result);
+    } catch (e, stack) {
+      Logger.warning('Optional quarantine firewall read failed: $e');
+      Logger.debug('Optional quarantine firewall stack: $stack');
+      return {};
+    }
+  }
+
+  Future<Set<String>> fetchAggregatedQuarantinedMacs() async {
+    if (_reviewerModeEnabled) return {_mockQuarantineMac};
+
+    final routers = _routerService?.routers ?? const <model.Router>[];
+    if (routers.isEmpty || _apiService == null) return {};
+
+    final tasks = routers.map((router) async {
+      try {
+        String? token;
+        var useHttps = router.useHttps;
+        if (_apiService is RealApiService) {
+          final real = _apiService as RealApiService;
+          final login = await real.loginWithProtocolDetection(
+            router.ipAddress,
+            router.username,
+            router.password,
+            router.useHttps,
+          );
+          token = login.token;
+          useHttps = login.actualUseHttps;
+        } else {
+          token = _authService?.sysauth;
+        }
+        if (token == null) return <String>{};
+        final result = await _apiService!.call(
+          router.ipAddress,
+          token,
+          useHttps,
+          object: 'uci',
+          method: 'get',
+          params: {'config': 'firewall'},
+        );
+        return _extractQuarantinedMacs(result);
+      } catch (e, stack) {
+        Logger.warning('Optional aggregated quarantine read failed: $e');
+        Logger.debug('Optional aggregated quarantine stack: $stack');
+        return <String>{};
+      }
+    }).toList();
+
+    final results = await Future.wait(tasks);
+    return results.fold<Set<String>>(<String>{}, (acc, macs) {
+      acc.addAll(macs.map(_normalizeMacAddress));
+      return acc;
+    });
+  }
+
+  Set<String> _extractQuarantinedMacs(dynamic result) {
+    dynamic data = result;
+    if (result is List && result.length > 1 && result[0] == 0) {
+      data = result[1];
+    }
+
+    final values = data is Map ? data['values'] : null;
+    final rules = values is Map
+        ? values.values
+        : data is Map
+        ? data.values
+        : const [];
+    final macs = <String>{};
+    for (final rule in rules) {
+      if (rule is! Map) continue;
+      final name = rule['name']?.toString() ?? '';
+      if (!name.startsWith('openwalla_quarantine_')) continue;
+      final srcMac = rule['src_mac']?.toString() ?? '';
+      if (RegExp(r'^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$').hasMatch(srcMac)) {
+        macs.add(_normalizeMacAddress(srcMac));
+      }
+    }
+    return macs;
   }
 
   /// Returns a union set of associated wireless MAC addresses across all routers

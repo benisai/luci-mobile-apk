@@ -13,6 +13,7 @@ class Client {
   final int? expiresAt; // timestamp in seconds
   final ConnectionType connectionType;
   final List<String>? ipv6Addresses;
+  final bool isBlocked;
 
   Client({
     required this.ipAddress,
@@ -27,6 +28,7 @@ class Client {
     this.expiresAt,
     this.connectionType = ConnectionType.unknown,
     this.ipv6Addresses,
+    this.isBlocked = false,
   });
 
   // Helper function to determine connection type from MAC address or other data
@@ -190,6 +192,7 @@ class Client {
       macAddress: macAddress,
       hostname: 'Unknown',
       connectionType: ConnectionType.wireless,
+      isBlocked: false,
     );
   }
 
@@ -244,6 +247,7 @@ class Client {
     int? expiresAt,
     ConnectionType? connectionType,
     List<String>? ipv6Addresses,
+    bool? isBlocked,
   }) {
     return Client(
       ipAddress: ipAddress ?? this.ipAddress,
@@ -258,6 +262,7 @@ class Client {
       expiresAt: expiresAt ?? this.expiresAt,
       connectionType: connectionType ?? this.connectionType,
       ipv6Addresses: ipv6Addresses ?? this.ipv6Addresses,
+      isBlocked: isBlocked ?? this.isBlocked,
     );
   }
 }

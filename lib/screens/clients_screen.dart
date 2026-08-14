@@ -185,8 +185,10 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                     }
 
                     final clients = aggregatedClients;
-                    final onlineCount = clients.length;
-                    const blockedCount = 0;
+                    final blockedCount = clients
+                        .where((client) => client.isBlocked)
+                        .length;
+                    final onlineCount = clients.length - blockedCount;
                     const offlineCount = 0;
 
                     final filteredClients = clients.where((client) {
@@ -564,17 +566,22 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    final isBlocked = widget.client.isBlocked;
+    final borderColor = isBlocked
+        ? const Color(0xFFFF4D5A).withValues(alpha: 0.45)
+        : colorScheme.surfaceContainerHighest.withValues(alpha: 0.10);
+
     return Card(
       elevation: widget.isExpanded ? 6 : 2,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18.0),
-        side: BorderSide(
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.10),
-          width: 1,
-        ),
+        side: BorderSide(color: borderColor, width: isBlocked ? 1.3 : 1),
       ),
       clipBehavior: Clip.antiAlias,
+      color: isBlocked
+          ? colorScheme.errorContainer.withValues(alpha: 0.08)
+          : null,
       child: AnimatedScale(
         scale: widget.isExpanded ? 1.02 : 1.0,
         duration: const Duration(milliseconds: 300),
@@ -627,11 +634,12 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
                               width: 10,
                               height: 10,
                               decoration: BoxDecoration(
-                                color:
-                                    widget.client.connectionType ==
-                                            ConnectionType.wireless ||
-                                        widget.client.connectionType ==
-                                            ConnectionType.wired
+                                color: widget.client.isBlocked
+                                    ? const Color(0xFFFF4D5A)
+                                    : widget.client.connectionType ==
+                                              ConnectionType.wireless ||
+                                          widget.client.connectionType ==
+                                              ConnectionType.wired
                                     ? Colors.green
                                     : Colors.amber,
                                 shape: BoxShape.circle,
@@ -690,10 +698,13 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
                         ],
                       ),
                     ),
-                    _buildConnectionTypeChip(
-                      context,
-                      widget.client.connectionType,
-                    ),
+                    if (widget.client.isBlocked)
+                      _buildBlockedChip(context)
+                    else
+                      _buildConnectionTypeChip(
+                        context,
+                        widget.client.connectionType,
+                      ),
                     const SizedBox(width: 8),
                     Icon(
                       widget.isExpanded ? Icons.expand_less : Icons.expand_more,
@@ -754,6 +765,22 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
       avatar: Icon(icon, size: 16, color: fgColor),
       backgroundColor: bgColor,
       labelStyle: theme.textTheme.labelSmall?.copyWith(color: fgColor),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
+  Widget _buildBlockedChip(BuildContext context) {
+    return Chip(
+      label: const Text('Blocked'),
+      avatar: const Icon(Icons.block_rounded, size: 16),
+      backgroundColor: Theme.of(
+        context,
+      ).colorScheme.errorContainer.withValues(alpha: 0.62),
+      labelStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: Theme.of(context).colorScheme.onErrorContainer,
+        fontWeight: FontWeight.w800,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
@@ -825,6 +852,15 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
       ),
       child: Column(
         children: [
+          if (client.isBlocked) ...[
+            detailRow(
+              'Quarantine',
+              'Blocked from LAN and Internet',
+              valueColor: theme.colorScheme.error,
+              semanticsLabel: 'Quarantine: blocked from LAN and Internet',
+            ),
+            const Divider(height: 1, indent: 16, endIndent: 16),
+          ],
           detailRow(
             'IP Address',
             client.ipAddress,
