@@ -13,12 +13,17 @@ BUILD_MODE="release"
 UPLOAD_RELEASE=false
 COPY_APK_TEST=false
 SPLIT_PER_ABI=false
+GIT_APK_TEST=false
+APK_TEST_COMMIT_MESSAGE="${OPENWALLA_APK_TEST_COMMIT_MESSAGE:-Update APK test build}"
 
 usage() {
-  echo "Usage: $0 [debug|profile|release] [--upload] [--apk-test] [--split-per-abi]" >&2
+  echo "Usage: $0 [debug|profile|release] [--upload] [--apk-test] [--split-per-abi] [--apk-test-git] [--pixel-test]" >&2
   echo "  --apk-test  Copy the verified APK into APK-TEST/ for committing to the repo." >&2
   echo "  --split-per-abi  Build smaller ABI-specific APKs." >&2
+  echo "  --apk-test-git  After --apk-test, git add/commit/push copied APK test artifacts." >&2
+  echo "  --pixel-test  Shortcut for: debug --split-per-abi --apk-test --apk-test-git." >&2
   echo "Set OPENWALLA_APK_TEST_ABI to choose which split APK goes into APK-TEST (default: arm64-v8a)." >&2
+  echo "Set OPENWALLA_APK_TEST_COMMIT_MESSAGE to override the APK test commit message." >&2
   echo "Set OPENWALLA_RELEASE_TAG, OPENWALLA_RELEASE_TITLE, or OPENWALLA_RELEASE_NOTES to override GitHub release metadata." >&2
 }
 
@@ -54,6 +59,16 @@ for arg in "$@"; do
       ;;
     --split-per-abi)
       SPLIT_PER_ABI=true
+      ;;
+    --apk-test-git)
+      GIT_APK_TEST=true
+      COPY_APK_TEST=true
+      ;;
+    --pixel-test)
+      BUILD_MODE="debug"
+      SPLIT_PER_ABI=true
+      COPY_APK_TEST=true
+      GIT_APK_TEST=true
       ;;
     -h|--help)
       usage
@@ -132,6 +147,7 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_APKS=()
+APK_TEST_PATHS=()
 for apk_path in "${APK_PATHS[@]}"; do
   if ! "$APKSIGNER" verify --verbose "$apk_path" >/dev/null 2>&1; then
     echo "APK was built but is not signed, so Android will reject it during install: $apk_path" >&2
@@ -169,8 +185,32 @@ if [[ "$COPY_APK_TEST" == true ]]; then
       test_apk="$APK_TEST_DIR/openwalla-test.apk"
     fi
     cp "$output_apk" "$test_apk"
+    APK_TEST_PATHS+=("$test_apk")
     echo "APK test copy created: $test_apk"
   done
+fi
+
+if [[ "$GIT_APK_TEST" == true ]]; then
+  if [[ "$COPY_APK_TEST" != true ]]; then
+    echo "--apk-test-git requires --apk-test." >&2
+    exit 2
+  fi
+  if [[ "${#APK_TEST_PATHS[@]}" -eq 0 ]]; then
+    echo "No APK test artifact was copied; nothing to commit." >&2
+    exit 1
+  fi
+
+  echo "Staging APK test artifacts"
+  git -C "$PROJECT_ROOT" add -- "${APK_TEST_PATHS[@]}"
+
+  if git -C "$PROJECT_ROOT" diff --cached --quiet -- "${APK_TEST_PATHS[@]}"; then
+    echo "APK test artifacts are unchanged; skipping commit and push."
+  else
+    echo "Committing APK test artifacts"
+    git -C "$PROJECT_ROOT" commit -m "$APK_TEST_COMMIT_MESSAGE"
+    echo "Pushing APK test commit"
+    git -C "$PROJECT_ROOT" push
+  fi
 fi
 
 if [[ "$UPLOAD_RELEASE" == true ]]; then
