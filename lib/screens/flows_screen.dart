@@ -33,6 +33,8 @@ class _FlowItem {
   final String duration;
   final String downloaded;
   final String uploaded;
+  final String status;
+  final String transfer;
 
   const _FlowItem({
     required this.time,
@@ -56,6 +58,8 @@ class _FlowItem {
     required this.duration,
     required this.downloaded,
     required this.uploaded,
+    required this.status,
+    required this.transfer,
   });
 
   factory _FlowItem.fromNetify(
@@ -99,7 +103,63 @@ class _FlowItem {
       duration: '-',
       downloaded: _formatBytes(flow.downloadedBytes),
       uploaded: _formatBytes(flow.uploadedBytes),
+      status: 'Active',
+      transfer: _formatBytes(flow.totalBytes),
     );
+  }
+
+  factory _FlowItem.fromConnectionFlow(
+    NetifyFlow flow, {
+    Map<String, String> hostnameByIp = const {},
+  }) {
+    final parts = flow.rawJson.split('|');
+    final source = parts.length > 3 ? parts[3].trim() : flow.localIp;
+    final destination = parts.length > 4 ? parts[4].trim() : flow.destination;
+    final transfer = parts.length > 5
+        ? parts[5].trim()
+        : _formatBytes(flow.totalBytes);
+    final status = parts.length > 6 ? parts[6].trim() : '-';
+    final sourceIp = _endpointIp(source);
+    final sourceLabel = hostnameByIp[sourceIp] ?? source;
+
+    return _FlowItem(
+      time: _formatClock(flow.timestamp.toLocal()),
+      destination: destination.isEmpty ? '-' : destination,
+      country: flow.protocol,
+      blocked: false,
+      deviceName: sourceLabel.isEmpty ? '-' : sourceLabel,
+      deviceGroup: '-',
+      deviceIp: source.isEmpty ? '-' : source,
+      devicePort: flow.protocol,
+      macAddress: '-',
+      vendor: '-',
+      destinationIp: destination.isEmpty ? '-' : destination,
+      destinationPort: flow.destinationPort.isEmpty
+          ? flow.protocol
+          : '${flow.protocol} ${flow.destinationPort}',
+      destinationService: flow.protocol,
+      region: '-',
+      timestamp: _formatDateTime(flow.timestamp.toLocal()),
+      direction: '-',
+      outboundInterface: '-',
+      flowCount: '1',
+      duration: '-',
+      downloaded: transfer,
+      uploaded: '-',
+      status: status.isEmpty ? '-' : status,
+      transfer: transfer,
+    );
+  }
+
+  static String _endpointIp(String endpoint) {
+    final trimmed = endpoint.trim();
+    final bracketMatch = RegExp(r'^\[([^\]]+)\]').firstMatch(trimmed);
+    if (bracketMatch != null) return bracketMatch.group(1) ?? '';
+    final colon = trimmed.lastIndexOf(':');
+    if (colon > 0 && trimmed.indexOf(':') == colon) {
+      return trimmed.substring(0, colon);
+    }
+    return trimmed;
   }
 
   static String _formatClock(DateTime time) {
@@ -148,6 +208,7 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
   bool _hasMoreFlows = true;
   String? _error;
   String? _selectedProtocolFilter;
+  OpenwallaFlowProvider _provider = OpenwallaFlowProvider.none;
   int _flowCount = 0;
   List<_FlowItem> _flows = const [];
   final ScrollController _scrollController = ScrollController();
@@ -193,50 +254,76 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
     try {
       final appState = ref.read(appStateProvider);
       final hostnames = _hostnameMaps(appState);
-      final results = await Future.wait([
-        appState.fetchNetifyFlowCount(
-          protocolFilter: _selectedProtocolFilter,
-          context: context,
-        ),
-        appState.fetchNetifyFlows(
-          limit: _pageSize,
-          protocolFilter: _selectedProtocolFilter,
-          context: context,
-        ),
-      ]);
+      final summary = await appState.fetchOpenwallaFlowSummary(
+        protocolFilter: _selectedProtocolFilter,
+        context: context,
+      );
+      if (summary.provider == OpenwallaFlowProvider.none) {
+        if (!mounted) return;
+        setState(() {
+          _provider = summary.provider;
+          _flowCount = 0;
+          _flows = const [];
+          _hasMoreFlows = false;
+          _isLoading = false;
+        });
+        return;
+      }
+      final flows = summary.provider == OpenwallaFlowProvider.netify
+          ? await appState.fetchNetifyFlows(
+              limit: _pageSize,
+              protocolFilter: _selectedProtocolFilter,
+            )
+          : await appState.fetchConnectionFlows(
+              limit: _pageSize,
+              protocolFilter: _selectedProtocolFilter,
+            );
       if (!mounted) return;
-      final flows = results[1] as List<NetifyFlow>;
       setState(() {
-        _flowCount = results[0] as int;
-        _flows = _mapFlowItems(flows, hostnames);
+        _provider = summary.provider;
+        _flowCount = summary.count;
+        _flows = _mapFlowItems(flows, hostnames, summary.provider);
         _hasMoreFlows = flows.length == _pageSize && _flows.length < _flowCount;
         _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = 'Unable to load Netify flows.';
+        _error = 'Unable to load flow data.';
         _isLoading = false;
       });
     }
   }
 
   Future<void> _loadMoreFlows() async {
-    if (!mounted || _isLoading || _isLoadingMore || !_hasMoreFlows) return;
+    if (!mounted ||
+        _isLoading ||
+        _isLoadingMore ||
+        !_hasMoreFlows ||
+        _provider == OpenwallaFlowProvider.none) {
+      return;
+    }
 
     setState(() => _isLoadingMore = true);
 
     try {
       final appState = ref.read(appStateProvider);
       final hostnames = _hostnameMaps(appState);
-      final flows = await appState.fetchNetifyFlows(
-        limit: _pageSize,
-        offset: _flows.length,
-        protocolFilter: _selectedProtocolFilter,
-        context: context,
-      );
+      final flows = _provider == OpenwallaFlowProvider.netify
+          ? await appState.fetchNetifyFlows(
+              limit: _pageSize,
+              offset: _flows.length,
+              protocolFilter: _selectedProtocolFilter,
+              context: context,
+            )
+          : await appState.fetchConnectionFlows(
+              limit: _pageSize,
+              offset: _flows.length,
+              protocolFilter: _selectedProtocolFilter,
+              context: context,
+            );
       if (!mounted) return;
-      final items = _mapFlowItems(flows, hostnames);
+      final items = _mapFlowItems(flows, hostnames, _provider);
       setState(() {
         _flows = [..._flows, ...items];
         _hasMoreFlows = flows.length == _pageSize && _flows.length < _flowCount;
@@ -254,16 +341,18 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
   List<_FlowItem> _mapFlowItems(
     List<NetifyFlow> flows,
     (Map<String, String>, Map<String, String>) hostnames,
+    OpenwallaFlowProvider provider,
   ) {
-    return flows
-        .map(
-          (flow) => _FlowItem.fromNetify(
-            flow,
-            hostnameByMac: hostnames.$1,
-            hostnameByIp: hostnames.$2,
-          ),
-        )
-        .toList();
+    return flows.map((flow) {
+      if (provider == OpenwallaFlowProvider.conntrack) {
+        return _FlowItem.fromConnectionFlow(flow, hostnameByIp: hostnames.$2);
+      }
+      return _FlowItem.fromNetify(
+        flow,
+        hostnameByMac: hostnames.$1,
+        hostnameByIp: hostnames.$2,
+      );
+    }).toList();
   }
 
   (Map<String, String>, Map<String, String>) _hostnameMaps(AppState appState) {
@@ -315,16 +404,21 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
   void _showFlowDetails(_FlowItem flow) {
     showDialog<void>(
       context: context,
-      builder: (context) => _FlowDetailsDialog(flow: flow),
+      builder: (context) => _provider == OpenwallaFlowProvider.conntrack
+          ? _ConntrackFlowDetailsDialog(flow: flow)
+          : _FlowDetailsDialog(flow: flow),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isConntrack = _provider == OpenwallaFlowProvider.conntrack;
+    final pageTitle = isConntrack ? 'Connection Flows' : 'Network Flows';
+    final countLabel = isConntrack ? 'Conntrack Flows' : 'All Flows';
 
     return Scaffold(
-      appBar: const LuciAppBar(title: 'Network Flows', showBack: true),
+      appBar: LuciAppBar(title: pageTitle, showBack: true),
       body: SafeArea(
         top: false,
         child: RefreshIndicator(
@@ -348,18 +442,30 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
                     color: colorScheme.onSurfaceVariant,
                   ),
                   const Spacer(),
-                  TextButton(
-                    onPressed: () {},
-                    child: const Text(
-                      'View Blocked',
-                      style: TextStyle(fontWeight: FontWeight.w900),
+                  if (!isConntrack)
+                    TextButton(
+                      onPressed: () {},
+                      child: const Text(
+                        'View Blocked',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
                     ),
-                  ),
                 ],
               ),
+              if (isConntrack) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Netify data was not found. Showing the simpler conntrack connection database instead.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
               const SizedBox(height: 20),
               Text(
-                'All Flows',
+                countLabel,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w800,
@@ -398,8 +504,15 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
                 _FlowEmptyCard(message: _error!, action: _loadFlows)
               else if (_flows.isEmpty)
                 _FlowEmptyCard(
-                  message: 'No Netify flow data yet.',
+                  message: isConntrack
+                      ? 'No conntrack flow data yet.'
+                      : 'No Netify flow data yet.',
                   action: _loadFlows,
+                )
+              else if (isConntrack)
+                _ConntrackFlowListCard(
+                  flows: _flows,
+                  onTapFlow: _showFlowDetails,
                 )
               else
                 _FlowListCard(flows: _flows, onTapFlow: _showFlowDetails),
@@ -599,6 +712,218 @@ class _FlowRow extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ConntrackFlowListCard extends StatelessWidget {
+  final List<_FlowItem> flows;
+  final ValueChanged<_FlowItem> onTapFlow;
+
+  const _ConntrackFlowListCard({required this.flows, required this.onTapFlow});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+        ),
+      ),
+      child: Column(
+        children: flows
+            .map(
+              (flow) =>
+                  _ConntrackFlowRow(flow: flow, onTap: () => onTapFlow(flow)),
+            )
+            .toList(),
+      ),
+    );
+  }
+}
+
+class _ConntrackFlowRow extends StatelessWidget {
+  final _FlowItem flow;
+  final VoidCallback onTap;
+
+  const _ConntrackFlowRow({required this.flow, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  flow.time,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _MiniBadge(flow.destinationService),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    flow.status,
+                    textAlign: TextAlign.right,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 7),
+            Text(
+              flow.deviceIp,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 3),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    flow.destination,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  flow.transfer,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniBadge extends StatelessWidget {
+  final String label;
+
+  const _MiniBadge(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0,
+        ),
+      ),
+    );
+  }
+}
+
+class _ConntrackFlowDetailsDialog extends StatelessWidget {
+  final _FlowItem flow;
+
+  const _ConntrackFlowDetailsDialog({required this.flow});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Dialog.fullscreen(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      child: Scaffold(
+        appBar: LuciAppBar(
+          title: 'Connection Flow',
+          showBack: true,
+          actions: [
+            IconButton(
+              tooltip: 'Close',
+              icon: const Icon(Icons.close_rounded),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ],
+        ),
+        body: SafeArea(
+          top: false,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+            children: [
+              Text(
+                'Conntrack provides connection-level data only. Netify metadata such as app, device MAC, vendor, region, and duration is not available here.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _DetailSection(
+                title: 'Connection',
+                rows: [
+                  _DetailRow(label: 'Timestamp', value: flow.timestamp),
+                  _DetailRow(label: 'Protocol', value: flow.destinationService),
+                  _DetailRow(label: 'Status', value: flow.status),
+                  _DetailRow(label: 'Transfer', value: flow.transfer),
+                ],
+              ),
+              const SizedBox(height: 18),
+              _DetailSection(
+                title: 'Endpoints',
+                rows: [
+                  _DetailRow(label: 'Source', value: flow.deviceIp),
+                  _DetailRow(label: 'Destination', value: flow.destination),
+                  _DetailRow(
+                    label: 'Destination Port',
+                    value: flow.destinationPort,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

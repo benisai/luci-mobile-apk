@@ -287,7 +287,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   Widget _buildDashboardFlowsCard(AppState appState) {
     final colorScheme = Theme.of(context).colorScheme;
     const flowColor = Color(0xFF8B5CF6);
-    final flowCount = appState.dashboardData?['netifyFlowCount'] as int? ?? 0;
+    final flowSummary = appState.dashboardData?['flowSummary'];
+    final provider = flowSummary is OpenwallaFlowSummary
+        ? flowSummary.provider
+        : appState.dashboardData?['flowProvider'];
+    if (provider == OpenwallaFlowProvider.none) {
+      return const SizedBox.shrink();
+    }
+    final flowCount = flowSummary is OpenwallaFlowSummary
+        ? flowSummary.count
+        : appState.dashboardData?['netifyFlowCount'] as int? ?? 0;
+    final sourceLabel = provider == OpenwallaFlowProvider.conntrack
+        ? 'Conntrack'
+        : 'Netify';
 
     return _buildOpenwallaCard(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
@@ -326,14 +338,32 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                   ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  _formatCompactCount(flowCount),
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0,
-                    height: 1,
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      _formatCompactCount(flowCount),
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(
+                            color: colorScheme.onSurface,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0,
+                            height: 1,
+                          ),
+                    ),
+                    const SizedBox(width: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(
+                        sourceLabel,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -346,6 +376,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         ],
       ),
     );
+  }
+
+  bool _hasDashboardFlowsCard(AppState appState) {
+    final flowSummary = appState.dashboardData?['flowSummary'];
+    final provider = flowSummary is OpenwallaFlowSummary
+        ? flowSummary.provider
+        : appState.dashboardData?['flowProvider'];
+    return provider != OpenwallaFlowProvider.none;
   }
 
   String _formatTimelineHour(DateTime time) {
@@ -1949,6 +1987,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
           // Split layout handling to avoid Expanded widget conflicts with staggered animations
           if (isLandscape) {
+            final hasFlowsCard = _hasDashboardFlowsCard(appState);
             final landscapeContent = [
               const SizedBox(height: 16),
               _buildDashboardSummaryCards(appState),
@@ -1961,8 +2000,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 height: 240,
                 child: _buildRealtimeThroughputCard(appState),
               ),
-              const SizedBox(height: 12),
-              _buildDashboardFlowsCard(appState),
+              if (hasFlowsCard) ...[
+                const SizedBox(height: 12),
+                _buildDashboardFlowsCard(appState),
+              ],
               const SizedBox(height: 12),
               _buildDashboardBottomCards(appState),
               const SizedBox(height: 12),
@@ -1985,6 +2026,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             // squeezed into a height that causes internal overflows.
             return LayoutBuilder(
               builder: (context, constraints) {
+                final hasFlowsCard = _hasDashboardFlowsCard(appState);
                 return RefreshIndicator(
                   onRefresh: () => appState.fetchDashboardData(),
                   child: SingleChildScrollView(
@@ -2011,8 +2053,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                                 height: 220,
                                 child: _buildRealtimeThroughputCard(appState),
                               ),
-                              const SizedBox(height: 12),
-                              _buildDashboardFlowsCard(appState),
+                              if (hasFlowsCard) ...[
+                                const SizedBox(height: 12),
+                                _buildDashboardFlowsCard(appState),
+                              ],
                               const SizedBox(height: 12),
                               _buildDashboardBottomCards(appState),
                               const SizedBox(height: 24),

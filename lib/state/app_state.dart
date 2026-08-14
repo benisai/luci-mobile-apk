@@ -207,6 +207,22 @@ class SystemStorageDetails {
   );
 }
 
+enum OpenwallaFlowProvider { none, netify, conntrack }
+
+class OpenwallaFlowSummary {
+  final OpenwallaFlowProvider provider;
+  final int count;
+
+  const OpenwallaFlowSummary({required this.provider, required this.count});
+
+  static const none = OpenwallaFlowSummary(
+    provider: OpenwallaFlowProvider.none,
+    count: 0,
+  );
+
+  bool get isAvailable => provider != OpenwallaFlowProvider.none;
+}
+
 class NetifyFlow {
   final DateTime timestamp;
   final String deviceMac;
@@ -955,6 +971,11 @@ class AppState extends ChangeNotifier {
           'wireguard': <String, dynamic>{}, // Empty for reviewer mode
           'conntrack': {'count': 142, 'max': 1000},
           'pingSamples': await fetchPingMonitorSamples(limit: 144),
+          'flowProvider': OpenwallaFlowProvider.netify,
+          'flowSummary': const OpenwallaFlowSummary(
+            provider: OpenwallaFlowProvider.netify,
+            count: 315188,
+          ),
           'netifyFlowCount': 315188,
           'notificationCount': 2,
           'deviceCount': _countRouterDevices(processedDhcpData, associatedMacs),
@@ -1061,7 +1082,7 @@ class AppState extends ChangeNotifier {
 
       final conntrackFuture = _fetchConntrackData(ip, useHttps);
       final pingSamplesFuture = fetchPingMonitorSamples(limit: 144);
-      final netifyFlowCountFuture = fetchNetifyFlowCount();
+      final flowSummaryFuture = fetchOpenwallaFlowSummary();
       final notificationCountFuture = fetchNotificationCount();
       final associatedMacsFuture = _apiService!
           .fetchAllAssociatedWirelessMacsWithContext(
@@ -1156,7 +1177,7 @@ class AppState extends ChangeNotifier {
         uciWirelessFuture,
         conntrackFuture,
         pingSamplesFuture,
-        netifyFlowCountFuture,
+        flowSummaryFuture,
         notificationCountFuture,
         associatedMacsFuture,
       ]);
@@ -1164,7 +1185,7 @@ class AppState extends ChangeNotifier {
       final uciWirelessRaw = optionalResults[1];
       final conntrackData = optionalResults[2] as Map<String, int>;
       final pingSamples = optionalResults[3] as List<PingMonitorSample>;
-      final netifyFlowCount = optionalResults[4] as int;
+      final flowSummary = optionalResults[4] as OpenwallaFlowSummary;
       final notificationCount = optionalResults[5] as int;
       final associatedMacs = optionalResults[6] as Map<String, Set<String>>;
 
@@ -1279,7 +1300,9 @@ class AppState extends ChangeNotifier {
         'wireguard': wireguardData,
         'conntrack': conntrackData,
         'pingSamples': pingSamples,
-        'netifyFlowCount': netifyFlowCount,
+        'flowProvider': flowSummary.provider,
+        'flowSummary': flowSummary,
+        'netifyFlowCount': flowSummary.count,
         'notificationCount': notificationCount,
         'deviceCount': _countRouterDevices(dhcpLeases, associatedMacs),
         'rulesCount': 0,
@@ -1530,6 +1553,18 @@ class AppState extends ChangeNotifier {
         'else echo "sqlite3 not installed" >&2; exit 127; fi';
   }
 
+  String _sqliteTableExistsCommand(String dbExpression, String tableName) {
+    final escapedTable = tableName
+        .replaceAll('"', r'\"')
+        .replaceAll(r'$', r'\$');
+    return 'db="$dbExpression"; '
+        '[ -f "\$db" ] || exit 0; '
+        'statement="SELECT name FROM sqlite_master WHERE type = \'table\' AND name = \'$escapedTable\' LIMIT 1;"; '
+        'if command -v sqlite3 >/dev/null 2>&1; then sqlite3 -batch -noheader "\$db" "\$statement"; '
+        'elif command -v sqlite3-cli >/dev/null 2>&1; then sqlite3-cli -batch -noheader "\$db" "\$statement"; '
+        'else echo "sqlite3 not installed" >&2; exit 127; fi';
+  }
+
   String _connectionFlowsDbExpression() {
     return r'$(uci -q get openwalla.connection_flows.db_path 2>/dev/null || echo /tmp/openwalla-connection-flows.sqlite)';
   }
@@ -1564,6 +1599,38 @@ class AppState extends ChangeNotifier {
       context: context,
     );
     return _commandOutput(result);
+  }
+
+  Future<bool> _sqliteTableExists({
+    required String dbExpression,
+    required String tableName,
+    BuildContext? context,
+  }) async {
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return false;
+    }
+
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'file',
+        method: 'exec',
+        params: {
+          'command': '/bin/sh',
+          'params': ['-c', _sqliteTableExistsCommand(dbExpression, tableName)],
+        },
+        context: context,
+      );
+      return _commandOutput(result).trim() == tableName;
+    } catch (e, stack) {
+      Logger.debug('Optional sqlite table check failed: $e');
+      Logger.debug('Optional sqlite table check stack: $stack');
+      return false;
+    }
   }
 
   String _connectionFlowWhereClause(String? protocolFilter) {
@@ -1610,12 +1677,55 @@ class AppState extends ChangeNotifier {
         context: context,
       );
       final netifyCount = _parseSqliteCount(output);
-      if (netifyCount > 0) return netifyCount;
-      return await _fetchConnectionFlowCount(protocolFilter: protocolFilter);
+      return netifyCount;
     } catch (e, stack) {
       Logger.warning('Optional Netify raw flow count fetch failed: $e');
       Logger.debug('Optional Netify raw flow count stack: $stack');
-      return await _fetchConnectionFlowCount(protocolFilter: protocolFilter);
+      return 0;
+    }
+  }
+
+  Future<OpenwallaFlowProvider> detectFlowProvider({
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) return OpenwallaFlowProvider.netify;
+
+    final hasNetify = await _sqliteTableExists(
+      dbExpression: _netifyDbExpression(),
+      tableName: 'flow_raw',
+      context: context,
+    );
+    if (hasNetify) return OpenwallaFlowProvider.netify;
+
+    final hasConntrack = await _sqliteTableExists(
+      dbExpression: _connectionFlowsDbExpression(),
+      tableName: 'connection_flows',
+    );
+    if (hasConntrack) return OpenwallaFlowProvider.conntrack;
+
+    return OpenwallaFlowProvider.none;
+  }
+
+  Future<OpenwallaFlowSummary> fetchOpenwallaFlowSummary({
+    String? protocolFilter,
+    BuildContext? context,
+  }) async {
+    final provider = await detectFlowProvider(context: context);
+    switch (provider) {
+      case OpenwallaFlowProvider.netify:
+        return OpenwallaFlowSummary(
+          provider: provider,
+          count: await fetchNetifyFlowCount(protocolFilter: protocolFilter),
+        );
+      case OpenwallaFlowProvider.conntrack:
+        return OpenwallaFlowSummary(
+          provider: provider,
+          count: await _fetchConnectionFlowCount(
+            protocolFilter: protocolFilter,
+          ),
+        );
+      case OpenwallaFlowProvider.none:
+        return OpenwallaFlowSummary.none;
     }
   }
 
@@ -1892,11 +2002,21 @@ class AppState extends ChangeNotifier {
       protocolFilter: protocolFilter,
       context: context,
     );
-    if (netifyFlows.isNotEmpty) return netifyFlows;
+    return netifyFlows;
+  }
+
+  Future<List<NetifyFlow>> fetchConnectionFlows({
+    int limit = 50,
+    int offset = 0,
+    String? protocolFilter,
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) return const [];
     return await _fetchConnectionFlows(
-      limit: safeLimit,
-      offset: safeOffset,
+      limit: limit.clamp(1, 500).toInt(),
+      offset: offset < 0 ? 0 : offset,
       protocolFilter: protocolFilter,
+      context: context,
     );
   }
 
