@@ -1169,8 +1169,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   String _usageSubtitle(_UsageRange range) {
     return switch (range) {
-      _UsageRange.minute => 'Last 60 minutes, 5 minute intervals',
-      _UsageRange.hour => 'Last 12 hours',
+      _UsageRange.minute => 'Last 35 minutes, 5 minute intervals',
+      _UsageRange.hour => 'Last 7 hours',
       _UsageRange.day => 'Last 7 days',
       _UsageRange.week => 'Last 4 weeks',
     };
@@ -1227,14 +1227,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final now = DateTime.now();
 
     return switch (range) {
-      _UsageRange.minute => List.generate(12, (index) {
+      _UsageRange.minute => List.generate(7, (index) {
         final slot = DateTime(
           now.year,
           now.month,
           now.day,
           now.hour,
           (now.minute ~/ 5) * 5,
-        ).subtract(Duration(minutes: (11 - index) * 5));
+        ).subtract(Duration(minutes: (6 - index) * 5));
         final slotEnd = slot.add(const Duration(minutes: 5));
         final matches = samples.where((sample) {
           final time = sample.timestamp.toLocal();
@@ -1255,20 +1255,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           hasData: matches.isNotEmpty,
         );
       }),
-      _UsageRange.hour => List.generate(12, (index) {
+      _UsageRange.hour => List.generate(7, (index) {
         final slot = DateTime(
           now.year,
           now.month,
           now.day,
           now.hour,
-        ).subtract(Duration(hours: 11 - index));
+        ).subtract(Duration(hours: 6 - index));
         final slotEnd = slot.add(const Duration(hours: 1));
         final matches = samples.where((sample) {
           final time = sample.timestamp.toLocal();
           return !time.isBefore(slot) && time.isBefore(slotEnd);
         }).toList();
         return (
-          label: index == 11 ? 'Now' : '${slot.hour}:00',
+          label: index == 6 ? 'Now' : '${slot.hour}:00',
           downloadBytes: matches.fold<int>(
             0,
             (sum, sample) => sum + sample.downloadBytes,
