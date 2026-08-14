@@ -1630,6 +1630,106 @@ class AppState extends ChangeNotifier {
     return _commandOutput(result);
   }
 
+  (Map<String, String>, Map<String, String>) _parseDeviceNameMapsOutput(
+    String output,
+  ) {
+    final byMac = <String, String>{};
+    final byIp = <String, String>{};
+
+    for (final line in output.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+      final parts = trimmed.split('|');
+      if (parts.length < 3) continue;
+
+      final mac = _normalizeMacAddress(parts[0]);
+      final ip = parts[1].trim();
+      final hostname = parts.sublist(2).join('|').trim();
+      if (hostname.isEmpty || hostname == '*') continue;
+      if (mac.isNotEmpty && mac != 'N/A') byMac[mac] = hostname;
+      if (ip.isNotEmpty) byIp[ip] = hostname;
+    }
+
+    return (byMac, byIp);
+  }
+
+  Future<(Map<String, String>, Map<String, String>)> fetchDeviceNameMaps({
+    bool aggregateAllRouters = false,
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      return (
+        {_mockQuarantineMac: 'Mock Quarantined Device'},
+        {'10.0.0.250': 'Mock Quarantined Device'},
+      );
+    }
+
+    const sql =
+        "SELECT mac, ip, hostname FROM devices WHERE hostname != '' ORDER BY last_seen DESC;";
+
+    if (!aggregateAllRouters) {
+      try {
+        final output = await _sqliteQueryOutput(
+          dbExpression: _devicesDbExpression(),
+          sql: sql,
+          context: context,
+        );
+        return _parseDeviceNameMapsOutput(output);
+      } catch (e, stack) {
+        Logger.debug('Optional devices DB name map read failed: $e');
+        Logger.debug('Optional devices DB name map stack: $stack');
+        return (<String, String>{}, <String, String>{});
+      }
+    }
+
+    final routers = _routerService?.routers ?? const <model.Router>[];
+    if (routers.isEmpty || _apiService == null) {
+      return (<String, String>{}, <String, String>{});
+    }
+
+    final byMac = <String, String>{};
+    final byIp = <String, String>{};
+    final tasks = routers.map((router) async {
+      try {
+        String? token;
+        var useHttps = router.useHttps;
+        if (_apiService is RealApiService) {
+          final real = _apiService as RealApiService;
+          final login = await real.loginWithProtocolDetection(
+            router.ipAddress,
+            router.username,
+            router.password,
+            router.useHttps,
+          );
+          token = login.token;
+          useHttps = login.actualUseHttps;
+        } else {
+          token = _authService?.sysauth;
+        }
+        if (token == null) return (<String, String>{}, <String, String>{});
+        final output = await _sqliteQueryOutputForRouter(
+          router: router,
+          sysauth: token,
+          useHttps: useHttps,
+          dbExpression: _devicesDbExpression(),
+          sql: sql,
+        );
+        return _parseDeviceNameMapsOutput(output);
+      } catch (e, stack) {
+        Logger.debug('Optional aggregated devices DB name map failed: $e');
+        Logger.debug('Optional aggregated devices DB name map stack: $stack');
+        return (<String, String>{}, <String, String>{});
+      }
+    }).toList();
+
+    final results = await Future.wait(tasks);
+    for (final maps in results) {
+      byMac.addAll(maps.$1);
+      byIp.addAll(maps.$2);
+    }
+    return (byMac, byIp);
+  }
+
   Future<bool> _sqliteTableExists({
     required String dbExpression,
     required String tableName,
@@ -3320,6 +3420,9 @@ class AppState extends ChangeNotifier {
   Future<List<Client>> fetchAggregatedClients() async {
     try {
       final quarantinedMacsFuture = fetchAggregatedQuarantinedMacs();
+      final deviceNameMapsFuture = fetchDeviceNameMaps(
+        aggregateAllRouters: true,
+      );
       // Build a union of wireless MACs across all routers
       final wirelessMacs = await fetchAllAssociatedWirelessMacsAggregated();
       final normalizedWireless = wirelessMacs
@@ -3356,8 +3459,9 @@ class AppState extends ChangeNotifier {
       }
 
       final quarantinedMacs = await quarantinedMacsFuture;
+      final deviceNameMaps = await deviceNameMapsFuture;
       final list = _applyQuarantineState(
-        clients.values,
+        _applyDeviceDbNames(clients.values, deviceNameMaps),
         quarantinedMacs,
         includeMockDevice: true,
       );
@@ -3394,6 +3498,7 @@ class AppState extends ChangeNotifier {
     try {
       if (_reviewerModeEnabled) {
         final quarantinedMacs = await fetchQuarantinedMacsForSelectedRouter();
+        final deviceNameMaps = await fetchDeviceNameMaps();
         final stationsMap = await _apiService!.fetchAssociatedStations();
         final macs = <String>{};
         stationsMap.forEach((_, stations) {
@@ -3432,7 +3537,7 @@ class AppState extends ChangeNotifier {
           }
         }
         final reviewerClients = _applyQuarantineState(
-          clientMap.values,
+          _applyDeviceDbNames(clientMap.values, deviceNameMaps),
           quarantinedMacs,
           includeMockDevice: true,
         );
@@ -3517,9 +3622,10 @@ class AppState extends ChangeNotifier {
       }
 
       final clients = clientMap.values.toList();
+      final deviceNameMaps = await fetchDeviceNameMaps();
       final quarantinedMacs = await fetchQuarantinedMacsForSelectedRouter();
       final markedClients = _applyQuarantineState(
-        clients,
+        _applyDeviceDbNames(clients, deviceNameMaps),
         quarantinedMacs,
         includeMockDevice: true,
       );
@@ -3593,6 +3699,23 @@ class AppState extends ChangeNotifier {
     }
 
     return clientMap.values.toList();
+  }
+
+  Iterable<Client> _applyDeviceDbNames(
+    Iterable<Client> clients,
+    (Map<String, String>, Map<String, String>) deviceNameMaps,
+  ) sync* {
+    final byMac = deviceNameMaps.$1;
+    final byIp = deviceNameMaps.$2;
+    for (final client in clients) {
+      final mac = _normalizeMacAddress(client.macAddress);
+      final dbName = byMac[mac] ?? byIp[client.ipAddress];
+      if (dbName == null || dbName.trim().isEmpty) {
+        yield client;
+      } else {
+        yield client.copyWith(hostname: dbName.trim());
+      }
+    }
   }
 
   Future<Set<String>> fetchQuarantinedMacsForSelectedRouter() async {

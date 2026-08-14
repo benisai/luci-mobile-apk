@@ -253,10 +253,9 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
 
     try {
       final appState = ref.read(appStateProvider);
-      final hostnames = _hostnameMaps(appState);
+      final hostnames = await _hostnameMaps(appState);
       final summary = await appState.fetchOpenwallaFlowSummary(
         protocolFilter: _selectedProtocolFilter,
-        context: context,
       );
       if (summary.provider == OpenwallaFlowProvider.none) {
         if (!mounted) return;
@@ -308,19 +307,17 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
 
     try {
       final appState = ref.read(appStateProvider);
-      final hostnames = _hostnameMaps(appState);
+      final hostnames = await _hostnameMaps(appState);
       final flows = _provider == OpenwallaFlowProvider.netify
           ? await appState.fetchNetifyFlows(
               limit: _pageSize,
               offset: _flows.length,
               protocolFilter: _selectedProtocolFilter,
-              context: context,
             )
           : await appState.fetchConnectionFlows(
               limit: _pageSize,
               offset: _flows.length,
               protocolFilter: _selectedProtocolFilter,
-              context: context,
             );
       if (!mounted) return;
       final items = _mapFlowItems(flows, hostnames, _provider);
@@ -355,9 +352,12 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
     }).toList();
   }
 
-  (Map<String, String>, Map<String, String>) _hostnameMaps(AppState appState) {
-    final byMac = <String, String>{};
-    final byIp = <String, String>{};
+  Future<(Map<String, String>, Map<String, String>)> _hostnameMaps(
+    AppState appState,
+  ) async {
+    final deviceDbNames = await appState.fetchDeviceNameMaps();
+    final byMac = <String, String>{...deviceDbNames.$1};
+    final byIp = <String, String>{...deviceDbNames.$2};
     final dhcpLeases =
         appState.dashboardData?['dhcpLeases']?['dhcp_leases']
             as List<dynamic>? ??
@@ -371,10 +371,10 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
       final mac = lease['macaddr']?.toString().trim().toUpperCase();
       final ip = lease['ipaddr']?.toString().trim();
       if (mac != null && mac.isNotEmpty) {
-        byMac[mac.replaceAll('-', ':')] = hostname;
+        byMac.putIfAbsent(mac.replaceAll('-', ':'), () => hostname);
       }
       if (ip != null && ip.isNotEmpty) {
-        byIp[ip] = hostname;
+        byIp.putIfAbsent(ip, () => hostname);
       }
     }
 

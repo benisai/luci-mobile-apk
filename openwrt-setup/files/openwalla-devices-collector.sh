@@ -277,7 +277,7 @@ collect_once() {
 		esc_mac="$(sql_escape "$mac")"
 		esc_ip="$(sql_escape "$ip")"
 		esc_host="$(sql_escape "$host")"
-		sql="INSERT INTO devices (mac, ip, hostname, vendor, quarantined, last_seen, total_up, total_down, status) VALUES ('$esc_mac', '$esc_ip', '$esc_host', '', $is_quarantined, $now, $tx, $rx, 'online') ON CONFLICT(mac) DO UPDATE SET ip=CASE WHEN excluded.ip != '' THEN excluded.ip ELSE devices.ip END, hostname=CASE WHEN excluded.hostname != '' THEN excluded.hostname ELSE devices.hostname END, quarantined=excluded.quarantined, last_seen=excluded.last_seen, total_up=excluded.total_up, total_down=excluded.total_down, status=excluded.status;"
+		sql="INSERT INTO devices (mac, ip, hostname, vendor, quarantined, last_seen, total_up, total_down, status) VALUES ('$esc_mac', '$esc_ip', '$esc_host', '', $is_quarantined, $now, $tx, $rx, 'online') ON CONFLICT(mac) DO UPDATE SET ip=CASE WHEN excluded.ip != '' THEN excluded.ip ELSE devices.ip END, hostname=CASE WHEN devices.hostname = '' AND excluded.hostname != '' THEN excluded.hostname ELSE devices.hostname END, quarantined=excluded.quarantined, last_seen=excluded.last_seen, total_up=excluded.total_up, total_down=excluded.total_down, status=excluded.status;"
 		sql_exec "$sql" || true
 	done <"$candidates"
 
