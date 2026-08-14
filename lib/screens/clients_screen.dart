@@ -397,9 +397,9 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
     final colorScheme = theme.colorScheme;
 
     return AspectRatio(
-      aspectRatio: 1.28,
+      aspectRatio: 1.24,
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.34),
           borderRadius: BorderRadius.circular(8),
@@ -418,7 +418,7 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Icon(icon, color: color, size: 24),
+            Icon(icon, color: color, size: 22),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -435,7 +435,7 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                     ),
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 3),
                 Text(
                   label,
                   style: theme.textTheme.bodySmall?.copyWith(
