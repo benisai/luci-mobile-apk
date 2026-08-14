@@ -1620,43 +1620,27 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final values = _conntrackValues(appState);
     final max = values.max <= 0 ? 1000 : values.max;
     final progress = (values.count / max).clamp(0.0, 1.0);
-    final percentText = (progress * 100).toStringAsFixed(
-      progress > 0 && progress < 0.1 ? 1 : 0,
-    );
 
     return _buildOpenwallaCard(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _metricCardTitle('Conntrack'),
-          const SizedBox(height: 20),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '${values.count} / $max',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0,
-                  height: 0.95,
-                ),
+          _metricCardTitle(
+            'Conntrack',
+            trailing: Text(
+              '${values.count} / $max connections',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurface,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0,
               ),
-              const SizedBox(width: 8),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 3),
-                child: Text('connections', style: _metricMutedTextStyle()),
-              ),
-            ],
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 16),
           _metricProgressBar(value: progress, fillColor: _openwallaCyan),
-          const SizedBox(height: 10),
-          Text(
-            '$percentText% of maximum table size',
-            style: _metricMutedTextStyle(),
-          ),
         ],
       ),
     );
