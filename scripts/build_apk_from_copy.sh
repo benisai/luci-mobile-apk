@@ -7,11 +7,14 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 BUILD_DIR="${OPENWALLA_BUILD_DIR:-/tmp/openwalla-apk-build}"
 OUTPUT_DIR="${OPENWALLA_APK_OUTPUT_DIR:-$PROJECT_ROOT/dist/apk}"
+APK_TEST_DIR="${OPENWALLA_APK_TEST_DIR:-$PROJECT_ROOT/APK-TEST}"
 BUILD_MODE="release"
 UPLOAD_RELEASE=false
+COPY_APK_TEST=false
 
 usage() {
-  echo "Usage: $0 [debug|profile|release] [--upload]" >&2
+  echo "Usage: $0 [debug|profile|release] [--upload] [--apk-test]" >&2
+  echo "  --apk-test  Copy the verified APK into APK-TEST/ for committing to the repo." >&2
   echo "Set OPENWALLA_RELEASE_TAG, OPENWALLA_RELEASE_TITLE, or OPENWALLA_RELEASE_NOTES to override GitHub release metadata." >&2
 }
 
@@ -41,6 +44,9 @@ for arg in "$@"; do
       ;;
     --upload)
       UPLOAD_RELEASE=true
+      ;;
+    --apk-test)
+      COPY_APK_TEST=true
       ;;
     -h|--help)
       usage
@@ -119,6 +125,17 @@ OUTPUT_APK="$OUTPUT_DIR/openwalla-$BUILD_MODE.apk"
 cp "$APK_PATH" "$OUTPUT_APK"
 
 echo "APK created: $OUTPUT_APK"
+
+if [[ "$COPY_APK_TEST" == true ]]; then
+  mkdir -p "$APK_TEST_DIR"
+  SHORT_SHA="$(git -C "$PROJECT_ROOT" rev-parse --short HEAD 2>/dev/null || echo local)"
+  TEST_APK="$APK_TEST_DIR/openwalla-test.apk"
+  VERSIONED_TEST_APK="$APK_TEST_DIR/openwalla-${BUILD_MODE}-${SHORT_SHA}.apk"
+  cp "$OUTPUT_APK" "$TEST_APK"
+  cp "$OUTPUT_APK" "$VERSIONED_TEST_APK"
+  echo "APK test copy created: $TEST_APK"
+  echo "APK test copy created: $VERSIONED_TEST_APK"
+fi
 
 if [[ "$UPLOAD_RELEASE" == true ]]; then
   if ! command -v gh >/dev/null 2>&1; then
