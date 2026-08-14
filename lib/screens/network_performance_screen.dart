@@ -92,10 +92,7 @@ class _NetworkPerformanceScreenState
   Future<void> _refreshSamples() async {
     final appState = ref.read(appStateProvider);
     final results = await Future.wait([
-      appState.fetchPingMonitorSamples(
-        limit: 144,
-        context: mounted ? context : null,
-      ),
+      appState.fetchPingMonitorSamples(context: mounted ? context : null),
       appState.fetchSpeedtestMonitorSamples(
         limit: 30,
         context: mounted ? context : null,

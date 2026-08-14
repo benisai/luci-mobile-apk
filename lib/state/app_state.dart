@@ -19,6 +19,8 @@ import 'package:luci_mobile/config/app_config.dart';
 import 'package:luci_mobile/utils/http_client_manager.dart';
 import 'package:luci_mobile/utils/logger.dart';
 
+const int kOpenwallaPingTimelineSampleLimit = 420;
+
 class PingMonitorSettings {
   final String target;
   final int thresholdMs;
@@ -970,7 +972,7 @@ class AppState extends ChangeNotifier {
           'wan': _extractWanData(interfaceDump),
           'wireguard': <String, dynamic>{}, // Empty for reviewer mode
           'conntrack': {'count': 142, 'max': 1000},
-          'pingSamples': await fetchPingMonitorSamples(limit: 144),
+          'pingSamples': await fetchPingMonitorSamples(),
           'flowProvider': OpenwallaFlowProvider.netify,
           'flowSummary': const OpenwallaFlowSummary(
             provider: OpenwallaFlowProvider.netify,
@@ -1081,7 +1083,7 @@ class AppState extends ChangeNotifier {
       );
 
       final conntrackFuture = _fetchConntrackData(ip, useHttps);
-      final pingSamplesFuture = fetchPingMonitorSamples(limit: 144);
+      final pingSamplesFuture = fetchPingMonitorSamples();
       final flowSummaryFuture = fetchOpenwallaFlowSummary();
       final notificationCountFuture = fetchNotificationCount();
       final associatedMacsFuture = _apiService!
@@ -2377,15 +2379,16 @@ class AppState extends ChangeNotifier {
   }
 
   Future<List<PingMonitorSample>> fetchPingMonitorSamples({
-    int limit = 144,
+    int limit = kOpenwallaPingTimelineSampleLimit,
     BuildContext? context,
   }) async {
+    final safeLimit = limit.clamp(1, 2000).toInt();
     if (_reviewerModeEnabled) {
       final now = DateTime.now().toUtc();
-      return List<PingMonitorSample>.generate(12, (index) {
+      return List<PingMonitorSample>.generate(safeLimit, (index) {
         final latency = 18.0 + ((index * 7) % 12);
         return PingMonitorSample(
-          timestamp: now.subtract(Duration(minutes: (11 - index) * 5)),
+          timestamp: now.subtract(Duration(minutes: safeLimit - 1 - index)),
           target: '1.1.1.1',
           status: 'OK',
           latencyMs: latency,
@@ -2401,7 +2404,6 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      final safeLimit = limit.clamp(1, 2000).toInt();
       final result = await _apiService!.call(
         router.ipAddress,
         sysauth,
