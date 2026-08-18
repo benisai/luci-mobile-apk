@@ -47,6 +47,77 @@ class _RulesScreenState extends ConsumerState<RulesScreen> {
     }
   }
 
+  Future<void> _setRuleEnabled(OpenwrtFirewallRule rule, bool enabled) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(appStateProvider).setFirewallRuleEnabled(rule, enabled);
+      if (!mounted) return;
+      await _loadRules();
+      messenger.showSnackBar(
+        SnackBar(content: Text(enabled ? 'Rule enabled.' : 'Rule disabled.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed to update rule: $e')),
+      );
+    }
+  }
+
+  Future<void> _deleteRule(OpenwrtFirewallRule rule) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Rule?'),
+        content: Text('Delete "${rule.name}" from firewall rules?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(appStateProvider).deleteFirewallRule(rule);
+      if (!mounted) return;
+      await _loadRules();
+      messenger.showSnackBar(const SnackBar(content: Text('Rule deleted.')));
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed to delete rule: $e')),
+      );
+    }
+  }
+
+  void _showRuleDetails(OpenwrtFirewallRule rule) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => _RuleDetailsSheet(
+        rule: rule,
+        onToggleEnabled: (enabled) {
+          Navigator.of(sheetContext).pop();
+          _setRuleEnabled(rule, enabled);
+        },
+        onDelete: () {
+          Navigator.of(sheetContext).pop();
+          _deleteRule(rule);
+        },
+      ),
+    );
+  }
+
   String _formatCount(int value) {
     final text = value.toString();
     final buffer = StringBuffer();
@@ -101,7 +172,12 @@ class _RulesScreenState extends ConsumerState<RulesScreen> {
                   action: _loadRules,
                 )
               else
-                ..._rules.map((rule) => _RuleCard(rule: rule)),
+                ..._rules.map(
+                  (rule) => _RuleCard(
+                    rule: rule,
+                    onTap: () => _showRuleDetails(rule),
+                  ),
+                ),
             ],
           ),
         ),
@@ -152,8 +228,9 @@ class _RulesEmptyCard extends StatelessWidget {
 
 class _RuleCard extends StatelessWidget {
   final OpenwrtFirewallRule rule;
+  final VoidCallback onTap;
 
-  const _RuleCard({required this.rule});
+  const _RuleCard({required this.rule, required this.onTap});
 
   Color _targetColor(BuildContext context) {
     final action = rule.action.toUpperCase();
@@ -172,63 +249,72 @@ class _RuleCard extends StatelessWidget {
         ? colorScheme.error.withValues(alpha: 0.045)
         : colorScheme.surface;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: rule.isOpenwallaRule
-              ? colorScheme.primary.withValues(alpha: 0.35)
-              : colorScheme.outlineVariant.withValues(alpha: 0.42),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  rule.name,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 10),
-              _RuleBadge(label: rule.action, color: targetColor),
-            ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: rule.isOpenwallaRule
+                ? colorScheme.primary.withValues(alpha: 0.35)
+                : colorScheme.outlineVariant.withValues(alpha: 0.42),
           ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (rule.isOpenwallaRule)
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    rule.name,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _RuleBadge(label: rule.action, color: targetColor),
+                const SizedBox(width: 6),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (rule.isOpenwallaRule)
+                  _RuleBadge(
+                    label: 'Openwalla',
+                    color: colorScheme.primary,
+                    filled: false,
+                  ),
                 _RuleBadge(
-                  label: 'Openwalla',
-                  color: colorScheme.primary,
+                  label: rule.enabled ? 'Enabled' : 'Disabled',
+                  color: rule.enabled
+                      ? const Color(0xFF20CF70)
+                      : colorScheme.onSurfaceVariant,
                   filled: false,
                 ),
-              _RuleBadge(
-                label: rule.enabled ? 'Enabled' : 'Disabled',
-                color: rule.enabled
-                    ? const Color(0xFF20CF70)
-                    : colorScheme.onSurfaceVariant,
-                filled: false,
-              ),
-              _RuleBadge(label: rule.protocol, color: colorScheme.secondary),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _RuleDetailGrid(rule: rule),
-        ],
+                _RuleBadge(label: rule.protocol, color: colorScheme.secondary),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _RuleDetailGrid(rule: rule),
+          ],
+        ),
       ),
     );
   }
@@ -279,7 +365,6 @@ class _RuleDetailGrid extends StatelessWidget {
         _RuleDetailRow(label: 'Source IP', value: rule.sourceIp),
         _RuleDetailRow(label: 'Destination', value: rule.destination),
         _RuleDetailRow(label: 'Port', value: rule.port),
-        _RuleDetailRow(label: 'Section', value: rule.section),
       ],
     );
   }
@@ -324,6 +409,122 @@ class _RuleDetailRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RuleDetailsSheet extends StatelessWidget {
+  final OpenwrtFirewallRule rule;
+  final ValueChanged<bool> onToggleEnabled;
+  final VoidCallback onDelete;
+
+  const _RuleDetailsSheet({
+    required this.rule,
+    required this.onToggleEnabled,
+    required this.onDelete,
+  });
+
+  Color _targetColor(BuildContext context) {
+    final action = rule.action.toUpperCase();
+    if (action == 'ACCEPT') return const Color(0xFF20CF70);
+    if (action == 'REJECT' || action == 'DROP') {
+      return Theme.of(context).colorScheme.error;
+    }
+    return Theme.of(context).colorScheme.primary;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final targetColor = _targetColor(context);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              rule.name,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _RuleBadge(label: rule.action, color: targetColor),
+                _RuleBadge(
+                  label: rule.enabled ? 'Enabled' : 'Disabled',
+                  color: rule.enabled
+                      ? const Color(0xFF20CF70)
+                      : colorScheme.onSurfaceVariant,
+                  filled: false,
+                ),
+                if (rule.isOpenwallaRule)
+                  _RuleBadge(
+                    label: 'Openwalla',
+                    color: colorScheme.primary,
+                    filled: false,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+                ),
+              ),
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  _RuleDetailRow(label: 'Source', value: rule.source),
+                  _RuleDetailRow(label: 'Source IP', value: rule.sourceIp),
+                  _RuleDetailRow(label: 'Destination', value: rule.destination),
+                  _RuleDetailRow(label: 'Protocol', value: rule.protocol),
+                  _RuleDetailRow(label: 'Port', value: rule.port),
+                  _RuleDetailRow(label: 'Action', value: rule.action),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => onToggleEnabled(!rule.enabled),
+                    icon: Icon(
+                      rule.enabled
+                          ? Icons.pause_circle_outline_rounded
+                          : Icons.play_circle_outline_rounded,
+                    ),
+                    label: Text(rule.enabled ? 'Disable' : 'Enable'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onDelete,
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    label: const Text('Delete'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: colorScheme.error,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

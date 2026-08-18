@@ -109,36 +109,14 @@ class SettingsScreen extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildSectionTitle(context, 'Theme'),
-                  Card(
-                    margin: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    elevation: 2,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: RadioGroup<ThemeMode>(
-                      groupValue: appState.themeMode,
-                      onChanged: (mode) {
-                        if (mode != null) appState.setThemeMode(mode);
-                      },
-                      child: const Column(
-                        children: [
-                          RadioListTile<ThemeMode>(
-                            title: Text('System Default'),
-                            value: ThemeMode.system,
-                          ),
-                          RadioListTile<ThemeMode>(
-                            title: Text('Light'),
-                            value: ThemeMode.light,
-                          ),
-                          RadioListTile<ThemeMode>(
-                            title: Text('Dark'),
-                            value: ThemeMode.dark,
-                          ),
-                        ],
-                      ),
+                  _buildSettingsCard(
+                    context: context,
+                    icon: Icons.palette_outlined,
+                    title: 'Theme',
+                    subtitle: _themeModeLabel(appState.themeMode),
+                    onTap: () => _openSettingsPage(
+                      context,
+                      const _ThemeSettingsScreen(),
                     ),
                   ),
                   const Divider(height: 32),
@@ -245,6 +223,96 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+String _themeModeLabel(ThemeMode mode) {
+  return switch (mode) {
+    ThemeMode.system => 'System default',
+    ThemeMode.light => 'Light',
+    ThemeMode.dark => 'Dark',
+  };
+}
+
+class _ThemeSettingsScreen extends ConsumerWidget {
+  const _ThemeSettingsScreen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final appState = ref.watch(appStateProvider);
+    return Scaffold(
+      appBar: const LuciAppBar(title: 'Theme', showBack: true),
+      body: SafeArea(
+        top: false,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+          children: [
+            _SettingsFormCard(
+              children: [
+                _ThemeOptionTile(
+                  icon: Icons.brightness_auto_rounded,
+                  title: 'System Default',
+                  subtitle: 'Follow your device setting',
+                  selected: appState.themeMode == ThemeMode.system,
+                  onTap: () => appState.setThemeMode(ThemeMode.system),
+                ),
+                const Divider(height: 1),
+                _ThemeOptionTile(
+                  icon: Icons.light_mode_outlined,
+                  title: 'Light',
+                  subtitle: 'Use the light Openwalla theme',
+                  selected: appState.themeMode == ThemeMode.light,
+                  onTap: () => appState.setThemeMode(ThemeMode.light),
+                ),
+                const Divider(height: 1),
+                _ThemeOptionTile(
+                  icon: Icons.dark_mode_outlined,
+                  title: 'Dark',
+                  subtitle: 'Use the dark Openwalla theme',
+                  selected: appState.themeMode == ThemeMode.dark,
+                  onTap: () => appState.setThemeMode(ThemeMode.dark),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemeOptionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ThemeOptionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        icon,
+        color: selected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+      subtitle: Text(subtitle),
+      trailing: Icon(
+        selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+        color: selected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+      ),
+      onTap: onTap,
     );
   }
 }

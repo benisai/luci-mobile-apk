@@ -2116,6 +2116,79 @@ class AppState extends ChangeNotifier {
     return rules.length;
   }
 
+  Future<void> setFirewallRuleEnabled(
+    OpenwrtFirewallRule rule,
+    bool enabled,
+  ) async {
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'firewall',
+      section: rule.section,
+      values: {'enabled': enabled ? '1' : '0'},
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'firewall',
+    );
+    await _reloadFirewall(router, sysauth);
+    notifyListeners();
+  }
+
+  Future<void> deleteFirewallRule(OpenwrtFirewallRule rule) async {
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'uci',
+      method: 'delete',
+      params: {'config': 'firewall', 'section': rule.section},
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'firewall',
+    );
+    await _reloadFirewall(router, sysauth);
+    notifyListeners();
+  }
+
+  Future<void> _reloadFirewall(model.Router router, String sysauth) async {
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command:
+          '/etc/init.d/firewall reload 2>/dev/null || /etc/init.d/firewall restart 2>/dev/null || true',
+    );
+  }
+
   Future<int> fetchNotificationCount({BuildContext? context}) async {
     if (_reviewerModeEnabled) return 2;
 
