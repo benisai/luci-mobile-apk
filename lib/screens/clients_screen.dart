@@ -25,6 +25,7 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
   bool _aggregateAllRouters = true;
   Future<List<Client>>? _clientsFuture;
   String? _lastSelectedRouterId;
+  final Set<String> _blockingMacs = {};
 
   @override
   void initState() {
@@ -246,6 +247,17 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                                         child: _UnifiedClientCard(
                                           client: client,
                                           isExpanded: isExpanded,
+                                          isBlockingActionRunning: _blockingMacs
+                                              .contains(
+                                                _normalizeMac(
+                                                  client.macAddress,
+                                                ),
+                                              ),
+                                          onToggleInternetBlock: (blocked) =>
+                                              _setClientInternetBlocked(
+                                                client,
+                                                blocked,
+                                              ),
                                           onTap: () {
                                             setState(() {
                                               if (isExpanded) {
@@ -386,6 +398,48 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
     );
   }
 
+  String _normalizeMac(String mac) =>
+      mac.trim().toUpperCase().replaceAll('-', ':');
+
+  Future<void> _setClientInternetBlocked(Client client, bool blocked) async {
+    final mac = _normalizeMac(client.macAddress);
+    if (mac.isEmpty || mac == 'N/A') return;
+
+    setState(() {
+      _blockingMacs.add(mac);
+    });
+
+    try {
+      await ref
+          .read(appStateProvider)
+          .setClientInternetBlocked(client, blocked);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            blocked
+                ? 'Internet blocked for ${client.hostname}'
+                : 'Device unblocked',
+          ),
+        ),
+      );
+      setState(() {
+        _computeClientsFuture();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update device block: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _blockingMacs.remove(mac);
+        });
+      }
+    }
+  }
+
   Widget _buildClientStatCard(
     BuildContext context, {
     required IconData icon,
@@ -457,11 +511,15 @@ class _UnifiedClientCard extends StatefulWidget {
   final Client client;
   final bool isExpanded;
   final VoidCallback onTap;
+  final ValueChanged<bool> onToggleInternetBlock;
+  final bool isBlockingActionRunning;
 
   const _UnifiedClientCard({
     required this.client,
     required this.isExpanded,
     required this.onTap,
+    required this.onToggleInternetBlock,
+    required this.isBlockingActionRunning,
   });
 
   @override
@@ -795,10 +853,10 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
         children: [
           if (client.isBlocked) ...[
             detailRow(
-              'Quarantine',
-              'Blocked from LAN and Internet',
+              'Access',
+              'Blocked',
               valueColor: theme.colorScheme.error,
-              semanticsLabel: 'Quarantine: blocked from LAN and Internet',
+              semanticsLabel: 'Access: blocked',
             ),
             const Divider(height: 1, indent: 16, endIndent: 16),
           ],
@@ -837,6 +895,54 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
               client.dnsName!,
               semanticsLabel: 'DNS Name: ${client.dnsName}',
             ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              LuciSpacing.md,
+              LuciSpacing.sm,
+              LuciSpacing.md,
+              LuciSpacing.sm,
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: widget.isBlockingActionRunning
+                    ? null
+                    : () => widget.onToggleInternetBlock(!client.isBlocked),
+                icon: widget.isBlockingActionRunning
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: theme.colorScheme.onPrimary.withValues(
+                            alpha: 0.9,
+                          ),
+                        ),
+                      )
+                    : Icon(
+                        client.isBlocked
+                            ? Icons.lock_open_rounded
+                            : Icons.block_rounded,
+                      ),
+                label: Text(
+                  widget.isBlockingActionRunning
+                      ? 'Updating...'
+                      : client.isBlocked
+                      ? 'Unblock Device'
+                      : 'Block Internet Access',
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: client.isBlocked
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.error,
+                  foregroundColor: client.isBlocked
+                      ? theme.colorScheme.onPrimary
+                      : theme.colorScheme.onError,
+                ),
+              ),
+            ),
+          ),
           const Divider(height: 1, indent: 16, endIndent: 16),
           const SizedBox(height: 8),
           detailRow(

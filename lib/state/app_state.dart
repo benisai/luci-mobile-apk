@@ -3900,6 +3900,14 @@ class AppState extends ChangeNotifier {
   String _normalizeMacAddress(String mac) =>
       mac.trim().toUpperCase().replaceAll('-', ':');
 
+  static const String _openwallaParentalRulePrefix = 'owrt_parental_';
+  static const List<String> _blockedFirewallRulePrefixes = [
+    _openwallaParentalRulePrefix,
+    'openwalla_parental_',
+    'moci_parental_',
+    'openwalla_quarantine_',
+  ];
+
   static const String _mockQuarantineMac = 'AA:BB:CC:DD:EE:FF';
 
   Client _mockQuarantinedClient() {
@@ -3973,7 +3981,6 @@ class AppState extends ChangeNotifier {
         sysauth: _authService!.sysauth!,
         useHttps: router.useHttps,
       );
-      if (dbMacs.isNotEmpty) return dbMacs;
 
       final result = await _apiService!.call(
         router.ipAddress,
@@ -3983,7 +3990,7 @@ class AppState extends ChangeNotifier {
         method: 'get',
         params: {'config': 'firewall'},
       );
-      return _extractQuarantinedMacs(result);
+      return {...dbMacs, ..._extractQuarantinedMacs(result)};
     } catch (e, stack) {
       Logger.warning('Optional quarantine firewall read failed: $e');
       Logger.debug('Optional quarantine firewall stack: $stack');
@@ -4020,7 +4027,6 @@ class AppState extends ChangeNotifier {
           sysauth: token,
           useHttps: useHttps,
         );
-        if (dbMacs.isNotEmpty) return dbMacs;
 
         final result = await _apiService!.call(
           router.ipAddress,
@@ -4030,7 +4036,7 @@ class AppState extends ChangeNotifier {
           method: 'get',
           params: {'config': 'firewall'},
         );
-        return _extractQuarantinedMacs(result);
+        return {...dbMacs, ..._extractQuarantinedMacs(result)};
       } catch (e, stack) {
         Logger.warning('Optional aggregated quarantine read failed: $e');
         Logger.debug('Optional aggregated quarantine stack: $stack');
@@ -4095,13 +4101,227 @@ class AppState extends ChangeNotifier {
     for (final rule in rules) {
       if (rule is! Map) continue;
       final name = rule['name']?.toString() ?? '';
-      if (!name.startsWith('openwalla_quarantine_')) continue;
+      final matchesOpenwallaBlock = _blockedFirewallRulePrefixes.any(
+        name.startsWith,
+      );
+      if (!matchesOpenwallaBlock) continue;
+      if ((rule['enabled']?.toString() ?? '1') == '0') continue;
       final srcMac = rule['src_mac']?.toString() ?? '';
       if (RegExp(r'^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$').hasMatch(srcMac)) {
         macs.add(_normalizeMacAddress(srcMac));
       }
     }
     return macs;
+  }
+
+  Future<void> setClientInternetBlocked(Client client, bool blocked) async {
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    final normalizedMac = _normalizeMacAddress(client.macAddress);
+    if (!RegExp(r'^([0-9A-F]{2}:){5}[0-9A-F]{2}$').hasMatch(normalizedMac)) {
+      throw ArgumentError('A valid device MAC address is required');
+    }
+
+    final firewall = await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'uci',
+      method: 'get',
+      params: {'config': 'firewall'},
+    );
+    final values = _extractUciValues(firewall);
+    final sectionsForMac = _blockedFirewallSectionsForMac(
+      values,
+      normalizedMac,
+    );
+
+    if (blocked) {
+      final parentalSections = sectionsForMac
+          .where((entry) => entry.name.startsWith(_openwallaParentalRulePrefix))
+          .toList();
+      if (parentalSections.isEmpty) {
+        final addResult = await _apiService!.call(
+          router.ipAddress,
+          sysauth,
+          router.useHttps,
+          object: 'uci',
+          method: 'add',
+          params: {'config': 'firewall', 'type': 'rule'},
+        );
+        final section = _extractAddedSection(addResult);
+        if (section == null || section.isEmpty) {
+          throw StateError('Unable to create firewall rule section');
+        }
+        await _apiService!.uciSet(
+          router.ipAddress,
+          sysauth,
+          router.useHttps,
+          config: 'firewall',
+          section: section,
+          values: {
+            'name': _buildParentalRuleName(client, normalizedMac),
+            'src': 'lan',
+            'dest': 'wan',
+            'src_mac': normalizedMac,
+            'proto': 'all',
+            'target': 'REJECT',
+            'family': 'any',
+            'enabled': '1',
+          },
+        );
+      } else {
+        for (final entry in parentalSections) {
+          await _apiService!.uciSet(
+            router.ipAddress,
+            sysauth,
+            router.useHttps,
+            config: 'firewall',
+            section: entry.section,
+            values: {
+              'src': 'lan',
+              'dest': 'wan',
+              'src_mac': normalizedMac,
+              'proto': 'all',
+              'target': 'REJECT',
+              'family': 'any',
+              'enabled': '1',
+            },
+          );
+        }
+      }
+      await _updateDeviceDbBlockedState(
+        router: router,
+        sysauth: sysauth,
+        useHttps: router.useHttps,
+        mac: normalizedMac,
+        blocked: true,
+      );
+    } else {
+      for (final entry in sectionsForMac) {
+        await _apiService!.call(
+          router.ipAddress,
+          sysauth,
+          router.useHttps,
+          object: 'uci',
+          method: 'delete',
+          params: {'config': 'firewall', 'section': entry.section},
+        );
+      }
+      await _updateDeviceDbBlockedState(
+        router: router,
+        sysauth: sysauth,
+        useHttps: router.useHttps,
+        mac: normalizedMac,
+        blocked: false,
+      );
+    }
+
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'firewall',
+    );
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command:
+          '/etc/init.d/firewall reload 2>/dev/null || /etc/init.d/firewall restart 2>/dev/null || true',
+    );
+    notifyListeners();
+  }
+
+  Map<String, Map<String, dynamic>> _extractUciValues(dynamic result) {
+    final data = _extractRpcData(result);
+    final rawValues = data is Map && data['values'] is Map
+        ? data['values'] as Map
+        : data is Map
+        ? data
+        : const {};
+    final values = <String, Map<String, dynamic>>{};
+    rawValues.forEach((key, value) {
+      if (value is Map) {
+        values[key.toString()] = Map<String, dynamic>.from(value);
+      }
+    });
+    return values;
+  }
+
+  List<({String section, String name})> _blockedFirewallSectionsForMac(
+    Map<String, Map<String, dynamic>> values,
+    String mac,
+  ) {
+    final matches = <({String section, String name})>[];
+    values.forEach((section, cfg) {
+      if (cfg['.type']?.toString() != 'rule') return;
+      final name = cfg['name']?.toString().trim() ?? '';
+      if (!_blockedFirewallRulePrefixes.any(name.startsWith)) return;
+      final srcMac = _normalizeMacAddress(
+        cfg['src_mac']?.toString() ?? cfg['src_mac_address']?.toString() ?? '',
+      );
+      if (srcMac == mac) matches.add((section: section, name: name));
+    });
+    return matches;
+  }
+
+  String? _extractAddedSection(dynamic result) {
+    final data = _extractRpcData(result);
+    if (data is Map) {
+      return (data['section'] ?? data['name'])?.toString();
+    }
+    if (data is String) return data;
+    return null;
+  }
+
+  String _buildParentalRuleName(Client client, String mac) {
+    final sanitizedHost = client.hostname
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '_')
+        .replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '')
+        .toLowerCase();
+    if (sanitizedHost.isNotEmpty && sanitizedHost != 'unknown') {
+      final end = sanitizedHost.length > 32 ? 32 : sanitizedHost.length;
+      return '$_openwallaParentalRulePrefix${sanitizedHost.substring(0, end)}';
+    }
+    return '$_openwallaParentalRulePrefix${mac.replaceAll(':', '')}';
+  }
+
+  Future<void> _updateDeviceDbBlockedState({
+    required model.Router router,
+    required String sysauth,
+    required bool useHttps,
+    required String mac,
+    required bool blocked,
+    BuildContext? context,
+  }) async {
+    final escMac = mac.replaceAll("'", "''");
+    final sql = blocked
+        ? "UPDATE devices SET status = 'blocked' WHERE mac = '$escMac';"
+        : "UPDATE devices SET quarantined = 0, status = CASE WHEN status = 'blocked' THEN 'online' ELSE status END WHERE mac = '$escMac';";
+    try {
+      await _sqliteQueryOutputForRouter(
+        router: router,
+        sysauth: sysauth,
+        useHttps: useHttps,
+        dbExpression: _devicesDbExpression(),
+        sql: sql,
+        context: context,
+      );
+    } catch (e, stack) {
+      Logger.debug('Optional devices DB blocked-state update failed: $e');
+      Logger.debug('Optional devices DB blocked-state update stack: $stack');
+    }
   }
 
   /// Returns a union set of associated wireless MAC addresses across all routers
