@@ -16,6 +16,12 @@ enum _FlowTimeRange {
   const _FlowTimeRange(this.label, this.hours);
 }
 
+enum _FlowBlockType { domain, ip }
+
+enum _FlowDomainScope { exact, root }
+
+enum _FlowIpScope { device, network }
+
 class FlowsScreen extends ConsumerStatefulWidget {
   const FlowsScreen({super.key});
 
@@ -753,7 +759,7 @@ class _FlowDetailsDialog extends StatelessWidget {
                     ),
                     Expanded(
                       child: TextButton.icon(
-                        onPressed: () {},
+                        onPressed: () => _showFlowBlockSheet(context, flow),
                         icon: const Icon(Icons.block_rounded),
                         label: const Text('Block'),
                         style: TextButton.styleFrom(
@@ -767,6 +773,423 @@ class _FlowDetailsDialog extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _showFlowBlockSheet(BuildContext context, _FlowItem flow) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _FlowBlockSheet(flow: flow),
+    );
+  }
+}
+
+class _FlowBlockSheet extends ConsumerStatefulWidget {
+  final _FlowItem flow;
+
+  const _FlowBlockSheet({required this.flow});
+
+  @override
+  ConsumerState<_FlowBlockSheet> createState() => _FlowBlockSheetState();
+}
+
+class _FlowBlockSheetState extends ConsumerState<_FlowBlockSheet> {
+  late _FlowBlockType _blockType;
+  late _FlowDomainScope _domainScope;
+  late _FlowIpScope _ipScope;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final domain = _sanitizeDomain(widget.flow.destination);
+    _blockType = domain.isEmpty ? _FlowBlockType.ip : _FlowBlockType.domain;
+    final root = _extractRootDomain(domain);
+    _domainScope = root.isNotEmpty && root != domain
+        ? _FlowDomainScope.exact
+        : _FlowDomainScope.root;
+    _ipScope = _isValidIp(widget.flow.deviceIp)
+        ? _FlowIpScope.device
+        : _FlowIpScope.network;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final domain = _sanitizeDomain(widget.flow.destination);
+    final rootDomain = _extractRootDomain(domain);
+    final canBlockDomain = domain.isNotEmpty;
+    final canBlockIp = _isValidIp(widget.flow.destinationIp);
+    final canBlockDeviceIp = _isValidIp(widget.flow.deviceIp);
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          18,
+          0,
+          18,
+          18 + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Block Flow',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              widget.flow.destination,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 18),
+            SegmentedButton<_FlowBlockType>(
+              segments: const [
+                ButtonSegment(
+                  value: _FlowBlockType.domain,
+                  icon: Icon(Icons.language_rounded),
+                  label: Text('Domain'),
+                ),
+                ButtonSegment(
+                  value: _FlowBlockType.ip,
+                  icon: Icon(Icons.public_off_rounded),
+                  label: Text('IP'),
+                ),
+              ],
+              selected: {_blockType},
+              onSelectionChanged: (selection) {
+                setState(() => _blockType = selection.first);
+              },
+            ),
+            const SizedBox(height: 14),
+            if (_blockType == _FlowBlockType.domain)
+              _buildDomainOptions(context, domain, rootDomain, canBlockDomain)
+            else
+              _buildIpOptions(context, canBlockIp, canBlockDeviceIp),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed:
+                    _isSaving ||
+                        (_blockType == _FlowBlockType.domain &&
+                            !canBlockDomain) ||
+                        (_blockType == _FlowBlockType.ip && !canBlockIp)
+                    ? null
+                    : _save,
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.block_rounded),
+                label: Text(_isSaving ? 'Saving...' : 'Save Block Rule'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDomainOptions(
+    BuildContext context,
+    String domain,
+    String rootDomain,
+    bool canBlockDomain,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    if (!canBlockDomain) {
+      return _FlowActionNotice(
+        icon: Icons.info_outline_rounded,
+        message: 'This flow does not include a valid domain.',
+      );
+    }
+    return Column(
+      children: [
+        _FlowOptionTile(
+          selected: _domainScope == _FlowDomainScope.exact,
+          onTap: () => setState(() => _domainScope = _FlowDomainScope.exact),
+          title: const Text('Exact domain'),
+          subtitle: domain,
+        ),
+        _FlowOptionTile(
+          selected: _domainScope == _FlowDomainScope.root,
+          onTap: rootDomain.isEmpty
+              ? null
+              : () => setState(() => _domainScope = _FlowDomainScope.root),
+          title: const Text('Root domain'),
+          subtitle: rootDomain.isEmpty ? domain : rootDomain,
+        ),
+        _FlowActionNotice(
+          icon: Icons.dns_rounded,
+          message: 'Adds a DHCP custom domain pointing to 127.0.0.1.',
+          color: colorScheme.primary,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIpOptions(
+    BuildContext context,
+    bool canBlockIp,
+    bool canBlockDeviceIp,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    if (!canBlockIp) {
+      return _FlowActionNotice(
+        icon: Icons.info_outline_rounded,
+        message: 'This flow does not include a valid destination IP.',
+      );
+    }
+    return Column(
+      children: [
+        _FlowOptionTile(
+          selected: _ipScope == _FlowIpScope.device,
+          onTap: canBlockDeviceIp
+              ? () => setState(() => _ipScope = _FlowIpScope.device)
+              : null,
+          title: const Text('This device only'),
+          subtitle: canBlockDeviceIp
+              ? '${widget.flow.deviceIp} -> ${widget.flow.destinationIp}'
+              : 'Source device IP is missing for this flow.',
+        ),
+        _FlowOptionTile(
+          selected: _ipScope == _FlowIpScope.network,
+          onTap: () => setState(() => _ipScope = _FlowIpScope.network),
+          title: const Text('Whole network'),
+          subtitle: 'Any LAN device -> ${widget.flow.destinationIp}',
+        ),
+        _FlowActionNotice(
+          icon: Icons.security_rounded,
+          message: 'Adds a firewall reject rule for the destination IP.',
+          color: colorScheme.error,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _save() async {
+    setState(() => _isSaving = true);
+    try {
+      final appState = ref.read(appStateProvider);
+      final messenger = ScaffoldMessenger.of(context);
+      if (_blockType == _FlowBlockType.domain) {
+        final blockedDomain = await appState.blockNetifyFlowDomain(
+          domain: widget.flow.destination,
+          rootDomain: _domainScope == _FlowDomainScope.root,
+        );
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        messenger.showSnackBar(
+          SnackBar(content: Text('Blocked DNS for $blockedDomain')),
+        );
+      } else {
+        await appState.blockNetifyFlowDestinationIp(
+          destinationIp: widget.flow.destinationIp,
+          sourceIp: widget.flow.deviceIp,
+          wholeNetwork: _ipScope == _FlowIpScope.network,
+        );
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              _ipScope == _FlowIpScope.network
+                  ? 'Blocked ${widget.flow.destinationIp} for the network'
+                  : 'Blocked ${widget.flow.destinationIp} for this device',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save block: $e')));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  static String _sanitizeDomain(String value) {
+    final domain = value.trim().toLowerCase().replaceFirst(RegExp(r'\.$'), '');
+    if (domain.isEmpty ||
+        domain.length > 253 ||
+        domain.startsWith('.') ||
+        domain.endsWith('.') ||
+        domain.contains('..') ||
+        !RegExp(r'^[a-z0-9.-]+$').hasMatch(domain) ||
+        _isValidIp(domain)) {
+      return '';
+    }
+    return domain;
+  }
+
+  static String _extractRootDomain(String domain) {
+    final sanitized = _sanitizeDomain(domain);
+    if (sanitized.isEmpty) return '';
+    final parts = sanitized
+        .split('.')
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.length < 2) return sanitized;
+    const secondLevelTlds = {
+      'co.uk',
+      'org.uk',
+      'ac.uk',
+      'gov.uk',
+      'co.jp',
+      'com.au',
+      'net.au',
+      'org.au',
+      'co.nz',
+    };
+    final lastTwo = parts.sublist(parts.length - 2).join('.');
+    if (parts.length >= 3 && secondLevelTlds.contains(lastTwo)) {
+      return parts.sublist(parts.length - 3).join('.');
+    }
+    return lastTwo;
+  }
+
+  static bool _isValidIp(String value) =>
+      RegExp(
+        r'^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.|$)){4}$',
+      ).hasMatch(value.trim()) ||
+      value.trim().contains(':');
+}
+
+class _FlowOptionTile extends StatelessWidget {
+  final bool selected;
+  final VoidCallback? onTap;
+  final Widget title;
+  final String subtitle;
+
+  const _FlowOptionTile({
+    required this.selected,
+    required this.onTap,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isEnabled = onTap != null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: selected
+                ? colorScheme.primary.withValues(alpha: 0.12)
+                : colorScheme.surfaceContainerHighest.withValues(alpha: 0.28),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected
+                  ? colorScheme.primary.withValues(alpha: 0.42)
+                  : colorScheme.outlineVariant.withValues(alpha: 0.28),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                selected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: selected
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant.withValues(alpha: 0.72),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DefaultTextStyle(
+                      style: Theme.of(context).textTheme.bodyLarge!.copyWith(
+                        color: isEnabled
+                            ? colorScheme.onSurface
+                            : colorScheme.onSurfaceVariant.withValues(
+                                alpha: 0.55,
+                              ),
+                        fontWeight: FontWeight.w800,
+                      ),
+                      child: title,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FlowActionNotice extends StatelessWidget {
+  final IconData icon;
+  final String message;
+  final Color? color;
+
+  const _FlowActionNotice({
+    required this.icon,
+    required this.message,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final resolvedColor = color ?? colorScheme.onSurfaceVariant;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: resolvedColor.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: resolvedColor.withValues(alpha: 0.20)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: resolvedColor, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -2390,6 +2390,151 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  Future<String> blockNetifyFlowDomain({
+    required String domain,
+    required bool rootDomain,
+  }) async {
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    final exactDomain = _sanitizeDomain(domain);
+    if (exactDomain.isEmpty) {
+      throw ArgumentError('A valid domain is required');
+    }
+    final targetDomain = rootDomain
+        ? (_extractRootDomain(exactDomain).isEmpty
+              ? exactDomain
+              : _extractRootDomain(exactDomain))
+        : exactDomain;
+
+    final dhcp = await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'uci',
+      method: 'get',
+      params: {'config': 'dhcp'},
+    );
+    final values = _extractUciValues(dhcp);
+    String? targetSection;
+    values.forEach((section, cfg) {
+      if (targetSection != null) return;
+      if (cfg['.type']?.toString() != 'domain') return;
+      if ((cfg['name']?.toString().trim().toLowerCase() ?? '') ==
+          targetDomain) {
+        targetSection = section;
+      }
+    });
+
+    if (targetSection == null) {
+      final addResult = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'add',
+        params: {'config': 'dhcp', 'type': 'domain'},
+      );
+      targetSection = _extractAddedSection(addResult);
+    }
+    if (targetSection == null || targetSection!.isEmpty) {
+      throw StateError('Unable to create custom DNS entry');
+    }
+
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'dhcp',
+      section: targetSection!,
+      values: {'name': targetDomain, 'ip': '127.0.0.1'},
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'dhcp',
+    );
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command: '/etc/init.d/dnsmasq restart',
+    );
+    return targetDomain;
+  }
+
+  Future<void> blockNetifyFlowDestinationIp({
+    required String destinationIp,
+    String? sourceIp,
+    required bool wholeNetwork,
+  }) async {
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    final destIp = destinationIp.trim();
+    if (!_isValidIpAddress(destIp)) {
+      throw ArgumentError('A valid destination IP address is required');
+    }
+    final srcIp = sourceIp?.trim() ?? '';
+    if (!wholeNetwork && !_isValidIpAddress(srcIp)) {
+      throw ArgumentError('A valid source device IP address is required');
+    }
+
+    final addResult = await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'uci',
+      method: 'add',
+      params: {'config': 'firewall', 'type': 'rule'},
+    );
+    final section = _extractAddedSection(addResult);
+    if (section == null || section.isEmpty) {
+      throw StateError('Unable to create firewall rule section');
+    }
+
+    final values = {
+      'name': _buildFlowBlockRuleName(destIp),
+      'src': 'lan',
+      'dest': 'wan',
+      'proto': 'all',
+      'dest_ip': destIp,
+      'target': 'REJECT',
+      'enabled': '1',
+      'family': _isIpv6Address(destIp) ? 'ipv6' : 'ipv4',
+    };
+    if (!wholeNetwork) values['src_ip'] = srcIp;
+
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'firewall',
+      section: section,
+      values: values,
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'firewall',
+    );
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command:
+          '/etc/init.d/firewall reload 2>/dev/null || /etc/init.d/firewall restart 2>/dev/null || true',
+    );
+  }
+
   Future<List<NetifyFlow>> _fetchConnectionFlows({
     required int limit,
     required int offset,
@@ -4296,6 +4441,62 @@ class AppState extends ChangeNotifier {
     }
     return '$_openwallaParentalRulePrefix${mac.replaceAll(':', '')}';
   }
+
+  String _buildFlowBlockRuleName(String destinationIp) {
+    final hint = destinationIp
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9.:-]+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    return 'owrt_flow_block_${hint.isEmpty ? 'ip' : hint}_$stamp';
+  }
+
+  String _sanitizeDomain(String value) {
+    final domain = value.trim().toLowerCase().replaceFirst(RegExp(r'\.$'), '');
+    if (domain.isEmpty) return '';
+    if (domain.length > 253 ||
+        domain.startsWith('.') ||
+        domain.endsWith('.') ||
+        domain.contains('..')) {
+      return '';
+    }
+    if (!RegExp(r'^[a-z0-9.-]+$').hasMatch(domain)) return '';
+    if (_isValidIpAddress(domain)) return '';
+    return domain;
+  }
+
+  String _extractRootDomain(String domain) {
+    final sanitized = _sanitizeDomain(domain);
+    if (sanitized.isEmpty) return '';
+    final parts = sanitized
+        .split('.')
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.length < 2) return sanitized;
+
+    const secondLevelTlds = {
+      'co.uk',
+      'org.uk',
+      'ac.uk',
+      'gov.uk',
+      'co.jp',
+      'com.au',
+      'net.au',
+      'org.au',
+      'co.nz',
+    };
+    final lastTwo = parts.sublist(parts.length - 2).join('.');
+    if (parts.length >= 3 && secondLevelTlds.contains(lastTwo)) {
+      return parts.sublist(parts.length - 3).join('.');
+    }
+    return lastTwo;
+  }
+
+  bool _isValidIpAddress(String value) =>
+      InternetAddress.tryParse(value.trim()) != null;
+
+  bool _isIpv6Address(String value) =>
+      InternetAddress.tryParse(value.trim())?.type == InternetAddressType.IPv6;
 
   Future<void> _updateDeviceDbBlockedState({
     required model.Router router,
