@@ -308,7 +308,7 @@ class _RouterDashboardSettingsScreenState
               ),
               _buildCardVisibilitySwitch(
                 title: 'Flows',
-                subtitle: 'Show Netify or conntrack flow summary',
+                subtitle: 'Show the selected flow summary card',
                 icon: Icons.account_tree_rounded,
                 value: _preferences.showFlowsCard,
                 onChanged: (value) {
@@ -318,6 +318,69 @@ class _RouterDashboardSettingsScreenState
                   _onPreferenceChanged();
                 },
               ),
+              if (_preferences.showFlowsCard) ...[
+                const Divider(height: 1),
+                RadioListTile<DashboardFlowMode>(
+                  title: Text(
+                    'Detailed Flow',
+                    style: LuciTextStyles.detailValue(
+                      context,
+                    ).copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    'Use Netify flow data when available',
+                    style: LuciTextStyles.cardSubtitle(context),
+                  ),
+                  secondary: Icon(
+                    Icons.account_tree_rounded,
+                    size: 22,
+                    color: _preferences.flowMode == DashboardFlowMode.detailed
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  value: DashboardFlowMode.detailed,
+                  groupValue: _preferences.flowMode,
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _preferences = _preferences.copyWith(flowMode: value);
+                    });
+                    _onPreferenceChanged();
+                  },
+                  activeColor: Theme.of(context).colorScheme.primary,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+                RadioListTile<DashboardFlowMode>(
+                  title: Text(
+                    'Simple Flow',
+                    style: LuciTextStyles.detailValue(
+                      context,
+                    ).copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    'Use Conntrack connection flow data',
+                    style: LuciTextStyles.cardSubtitle(context),
+                  ),
+                  secondary: Icon(
+                    Icons.route_rounded,
+                    size: 22,
+                    color: _preferences.flowMode == DashboardFlowMode.simple
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  value: DashboardFlowMode.simple,
+                  groupValue: _preferences.flowMode,
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _preferences = _preferences.copyWith(flowMode: value);
+                    });
+                    _onPreferenceChanged();
+                  },
+                  activeColor: Theme.of(context).colorScheme.primary,
+                  controlAffinity: ListTileControlAffinity.leading,
+                ),
+              ],
               _buildCardVisibilitySwitch(
                 title: 'Usage',
                 subtitle: 'Show the recent vnStat usage graph',

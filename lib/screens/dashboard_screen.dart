@@ -7,10 +7,12 @@ import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/widgets/luci_animation_system.dart';
+import 'package:luci_mobile/models/dashboard_preferences.dart';
 import 'package:luci_mobile/screens/flows_screen.dart';
 import 'package:luci_mobile/screens/monthly_usage_screen.dart';
 import 'package:luci_mobile/screens/network_performance_screen.dart';
 import 'package:luci_mobile/screens/notifications_screen.dart';
+import 'package:luci_mobile/screens/simple_flows_screen.dart';
 import 'package:luci_mobile/screens/system_resources_screen.dart';
 import 'package:luci_mobile/models/router.dart' as model;
 
@@ -288,6 +290,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final colorScheme = Theme.of(context).colorScheme;
     const flowColor = Color(0xFF8B5CF6);
     final flowSummary = appState.dashboardData?['flowSummary'];
+    final flowMode = appState.dashboardPreferences.flowMode;
     final provider = flowSummary is OpenwallaFlowSummary
         ? flowSummary.provider
         : appState.dashboardData?['flowProvider'];
@@ -297,16 +300,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final flowCount = flowSummary is OpenwallaFlowSummary
         ? flowSummary.count
         : appState.dashboardData?['netifyFlowCount'] as int? ?? 0;
-    final sourceLabel = provider == OpenwallaFlowProvider.conntrack
+    final title = flowMode == DashboardFlowMode.simple
+        ? 'Simple Flow'
+        : 'Detailed Flow';
+    final sourceLabel = flowMode == DashboardFlowMode.simple
         ? 'Conntrack'
         : 'Netify';
 
     return _buildOpenwallaCard(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
       onTap: () {
-        Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (context) => const FlowsScreen()));
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => flowMode == DashboardFlowMode.simple
+                ? const SimpleFlowsScreen()
+                : const FlowsScreen(),
+          ),
+        );
       },
       child: Row(
         children: [
@@ -330,7 +340,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Flows',
+                  title,
                   style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w800,

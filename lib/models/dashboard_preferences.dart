@@ -1,3 +1,5 @@
+enum DashboardFlowMode { detailed, simple }
+
 class DashboardPreferences {
   final Set<String> enabledWirelessInterfaces;
   final Set<String> enabledWiredInterfaces;
@@ -7,6 +9,7 @@ class DashboardPreferences {
   final bool showFlowsCard;
   final bool showUsageCard;
   final bool showMonthlyUsageCard;
+  final DashboardFlowMode flowMode;
 
   DashboardPreferences({
     Set<String>? enabledWirelessInterfaces,
@@ -17,6 +20,7 @@ class DashboardPreferences {
     this.showFlowsCard = true,
     this.showUsageCard = true,
     this.showMonthlyUsageCard = true,
+    this.flowMode = DashboardFlowMode.detailed,
   }) : enabledWirelessInterfaces = enabledWirelessInterfaces ?? {},
        enabledWiredInterfaces = enabledWiredInterfaces ?? {};
 
@@ -29,6 +33,7 @@ class DashboardPreferences {
     bool? showFlowsCard,
     bool? showUsageCard,
     bool? showMonthlyUsageCard,
+    DashboardFlowMode? flowMode,
   }) {
     return DashboardPreferences(
       enabledWirelessInterfaces:
@@ -43,6 +48,7 @@ class DashboardPreferences {
       showFlowsCard: showFlowsCard ?? this.showFlowsCard,
       showUsageCard: showUsageCard ?? this.showUsageCard,
       showMonthlyUsageCard: showMonthlyUsageCard ?? this.showMonthlyUsageCard,
+      flowMode: flowMode ?? this.flowMode,
     );
   }
 
@@ -55,6 +61,7 @@ class DashboardPreferences {
     'showFlowsCard': showFlowsCard,
     'showUsageCard': showUsageCard,
     'showMonthlyUsageCard': showMonthlyUsageCard,
+    'flowMode': flowMode.name,
   };
 
   factory DashboardPreferences.fromJson(Map<String, dynamic> json) {
@@ -71,6 +78,10 @@ class DashboardPreferences {
       showFlowsCard: json['showFlowsCard'] ?? true,
       showUsageCard: json['showUsageCard'] ?? true,
       showMonthlyUsageCard: json['showMonthlyUsageCard'] ?? true,
+      flowMode: DashboardFlowMode.values.firstWhere(
+        (mode) => mode.name == json['flowMode']?.toString(),
+        orElse: () => DashboardFlowMode.detailed,
+      ),
     );
   }
 

@@ -961,6 +961,20 @@ class AppState extends ChangeNotifier {
         final processedDhcpData = _processDhcpLeases(rawDhcpData);
         final associatedMacs = await _apiService!.fetchAssociatedStations();
 
+        final selectedFlowProvider =
+            _dashboardPreferences.flowMode == DashboardFlowMode.simple
+            ? OpenwallaFlowProvider.conntrack
+            : OpenwallaFlowProvider.netify;
+        final flowSummary = selectedFlowProvider == OpenwallaFlowProvider.netify
+            ? const OpenwallaFlowSummary(
+                provider: OpenwallaFlowProvider.netify,
+                count: 315188,
+              )
+            : const OpenwallaFlowSummary(
+                provider: OpenwallaFlowProvider.conntrack,
+                count: 1704,
+              );
+
         _dashboardData = {
           'boardInfo': results[0][1],
           'sysInfo': results[1][1],
@@ -973,12 +987,9 @@ class AppState extends ChangeNotifier {
           'wireguard': <String, dynamic>{}, // Empty for reviewer mode
           'conntrack': {'count': 142, 'max': 1000},
           'pingSamples': await fetchPingMonitorSamples(),
-          'flowProvider': OpenwallaFlowProvider.netify,
-          'flowSummary': const OpenwallaFlowSummary(
-            provider: OpenwallaFlowProvider.netify,
-            count: 315188,
-          ),
-          'netifyFlowCount': 315188,
+          'flowProvider': flowSummary.provider,
+          'flowSummary': flowSummary,
+          'netifyFlowCount': flowSummary.count,
           'notificationCount': 2,
           'deviceCount': _countRouterDevices(processedDhcpData, associatedMacs),
           'rulesCount': 0,
@@ -1084,7 +1095,13 @@ class AppState extends ChangeNotifier {
 
       final conntrackFuture = _fetchConntrackData(ip, useHttps);
       final pingSamplesFuture = fetchPingMonitorSamples();
-      final flowSummaryFuture = fetchOpenwallaFlowSummary();
+      final selectedFlowProvider =
+          _dashboardPreferences.flowMode == DashboardFlowMode.simple
+          ? OpenwallaFlowProvider.conntrack
+          : OpenwallaFlowProvider.netify;
+      final flowSummaryFuture = fetchOpenwallaFlowSummary(
+        provider: selectedFlowProvider,
+      );
       final notificationCountFuture = fetchNotificationCount();
       final associatedMacsFuture = _apiService!
           .fetchAllAssociatedWirelessMacsWithContext(
@@ -1839,31 +1856,47 @@ class AppState extends ChangeNotifier {
 
   Future<OpenwallaFlowSummary> fetchOpenwallaFlowSummary({
     String? protocolFilter,
+    OpenwallaFlowProvider? provider,
     BuildContext? context,
   }) async {
-    final provider = await detectFlowProvider(context: context);
-    switch (provider) {
+    final selectedProvider =
+        provider ?? await detectFlowProvider(context: context);
+    switch (selectedProvider) {
       case OpenwallaFlowProvider.netify:
+        final hasNetify = _reviewerModeEnabled
+            ? true
+            : await _sqliteTableExists(
+                dbExpression: _netifyDbExpression(),
+                tableName: 'flow_raw',
+              );
+        if (!hasNetify) return OpenwallaFlowSummary.none;
         return OpenwallaFlowSummary(
-          provider: provider,
+          provider: selectedProvider,
           count: await fetchNetifyFlowCount(protocolFilter: protocolFilter),
         );
       case OpenwallaFlowProvider.conntrack:
+        final hasConntrack = _reviewerModeEnabled
+            ? true
+            : await _sqliteTableExists(
+                dbExpression: _connectionFlowsDbExpression(),
+                tableName: 'connection_flows',
+              );
+        if (!hasConntrack) return OpenwallaFlowSummary.none;
         return OpenwallaFlowSummary(
-          provider: provider,
-          count: await _fetchConnectionFlowCount(
-            protocolFilter: protocolFilter,
-          ),
+          provider: selectedProvider,
+          count: await fetchConnectionFlowCount(protocolFilter: protocolFilter),
         );
       case OpenwallaFlowProvider.none:
         return OpenwallaFlowSummary.none;
     }
   }
 
-  Future<int> _fetchConnectionFlowCount({
+  Future<int> fetchConnectionFlowCount({
     String? protocolFilter,
     BuildContext? context,
   }) async {
+    if (_reviewerModeEnabled) return 1704;
+
     try {
       final output = await _sqliteQueryOutput(
         dbExpression: _connectionFlowsDbExpression(),
