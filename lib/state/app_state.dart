@@ -1794,21 +1794,39 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  String _netifyRawWhereClause(String? protocolFilter) {
+  String _netifyRawWhereClause(String? protocolFilter, {int? hoursBack}) {
+    final conditions = <String>[];
     switch (protocolFilter?.toUpperCase()) {
       case 'HTTP':
-        return 'WHERE upper(json) LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"HTTP"%\'';
+        conditions.add(
+          'upper(json) LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"HTTP"%\'',
+        );
+        break;
       case 'HTTPS':
-        return 'WHERE upper(json) LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"HTTP/S"%\'';
+        conditions.add(
+          'upper(json) LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"HTTP/S"%\'',
+        );
+        break;
       case 'DNS':
-        return 'WHERE upper(json) LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"DNS"%\'';
-      default:
-        return '';
+        conditions.add(
+          'upper(json) LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"DNS"%\'',
+        );
+        break;
     }
+
+    final safeHours = hoursBack?.clamp(1, 168).toInt();
+    if (safeHours != null) {
+      conditions.add(
+        "timeinsert >= strftime('%s','now') - ${safeHours * 3600}",
+      );
+    }
+
+    return conditions.isEmpty ? '' : 'WHERE ${conditions.join(' AND ')}';
   }
 
   Future<int> fetchNetifyFlowCount({
     String? protocolFilter,
+    int? hoursBack,
     BuildContext? context,
   }) async {
     if (_reviewerModeEnabled) return 315188;
@@ -1821,7 +1839,7 @@ class AppState extends ChangeNotifier {
       final output = await _sqliteQueryOutput(
         dbExpression: _netifyDbExpression(),
         sql:
-            'SELECT COUNT(*) FROM flow_raw ${_netifyRawWhereClause(protocolFilter)};',
+            'SELECT COUNT(*) FROM flow_raw ${_netifyRawWhereClause(protocolFilter, hoursBack: hoursBack)};',
         context: context,
       );
       final netifyCount = _parseSqliteCount(output);
@@ -1856,6 +1874,7 @@ class AppState extends ChangeNotifier {
 
   Future<OpenwallaFlowSummary> fetchOpenwallaFlowSummary({
     String? protocolFilter,
+    int? hoursBack,
     OpenwallaFlowProvider? provider,
     BuildContext? context,
   }) async {
@@ -1872,7 +1891,10 @@ class AppState extends ChangeNotifier {
         if (!hasNetify) return OpenwallaFlowSummary.none;
         return OpenwallaFlowSummary(
           provider: selectedProvider,
-          count: await fetchNetifyFlowCount(protocolFilter: protocolFilter),
+          count: await fetchNetifyFlowCount(
+            protocolFilter: protocolFilter,
+            hoursBack: hoursBack,
+          ),
         );
       case OpenwallaFlowProvider.conntrack:
         final hasConntrack = _reviewerModeEnabled
@@ -2109,6 +2131,7 @@ class AppState extends ChangeNotifier {
     int limit = 50,
     int offset = 0,
     String? protocolFilter,
+    int? hoursBack,
     BuildContext? context,
   }) async {
     if (_reviewerModeEnabled) {
@@ -2142,19 +2165,26 @@ class AppState extends ChangeNotifier {
         );
       });
       final normalized = protocolFilter?.toUpperCase();
-      if (normalized == null || normalized.isEmpty) return mockFlows;
-      return mockFlows
-          .where(
-            (flow) =>
-                flow.protocol.toUpperCase().contains(normalized) ||
-                flow.destinationPort ==
-                    switch (normalized) {
-                      'HTTP' => '80',
-                      'HTTPS' => '443',
-                      'DNS' => '53',
-                      _ => '',
-                    },
-          )
+      final filteredByProtocol = normalized == null || normalized.isEmpty
+          ? mockFlows
+          : mockFlows
+                .where(
+                  (flow) =>
+                      flow.protocol.toUpperCase().contains(normalized) ||
+                      flow.destinationPort ==
+                          switch (normalized) {
+                            'HTTP' => '80',
+                            'HTTPS' => '443',
+                            'DNS' => '53',
+                            _ => '',
+                          },
+                )
+                .toList();
+      final safeHours = hoursBack?.clamp(1, 168).toInt();
+      if (safeHours == null) return filteredByProtocol;
+      final cutoff = now.subtract(Duration(hours: safeHours));
+      return filteredByProtocol
+          .where((flow) => !flow.timestamp.isBefore(cutoff))
           .toList();
     }
 
@@ -2164,6 +2194,7 @@ class AppState extends ChangeNotifier {
       limit: safeLimit,
       offset: safeOffset,
       protocolFilter: protocolFilter,
+      hoursBack: hoursBack,
       context: context,
     );
     return netifyFlows;
@@ -2213,6 +2244,7 @@ class AppState extends ChangeNotifier {
     required int limit,
     required int offset,
     String? protocolFilter,
+    int? hoursBack,
     BuildContext? context,
   }) async {
     final router = _routerService?.selectedRouter;
@@ -2225,7 +2257,7 @@ class AppState extends ChangeNotifier {
       final output = await _sqliteQueryOutput(
         dbExpression: _netifyDbExpression(),
         sql:
-            'SELECT json FROM flow_raw ${_netifyRawWhereClause(protocolFilter)} ORDER BY id DESC LIMIT $limit OFFSET $offset;',
+            'SELECT json FROM flow_raw ${_netifyRawWhereClause(protocolFilter, hoursBack: hoursBack)} ORDER BY id DESC LIMIT $limit OFFSET $offset;',
         context: context,
       );
       return output

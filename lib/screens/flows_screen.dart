@@ -4,6 +4,18 @@ import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 
+enum _FlowTimeRange {
+  oneHour('Last Hour', 1),
+  sixHours('Last 6 Hours', 6),
+  twelveHours('Last 12 Hours', 12),
+  twentyFourHours('Last 24 Hours', 24);
+
+  final String label;
+  final int hours;
+
+  const _FlowTimeRange(this.label, this.hours);
+}
+
 class FlowsScreen extends ConsumerStatefulWidget {
   const FlowsScreen({super.key});
 
@@ -154,6 +166,7 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
   bool _hasMoreFlows = true;
   String? _error;
   String? _selectedProtocolFilter;
+  _FlowTimeRange _selectedTimeRange = _FlowTimeRange.twentyFourHours;
   int _flowCount = 0;
   List<_FlowItem> _flows = const [];
   final ScrollController _scrollController = ScrollController();
@@ -202,6 +215,7 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
       final summary = await appState.fetchOpenwallaFlowSummary(
         provider: OpenwallaFlowProvider.netify,
         protocolFilter: _selectedProtocolFilter,
+        hoursBack: _selectedTimeRange.hours,
       );
       if (summary.provider == OpenwallaFlowProvider.none) {
         if (!mounted) return;
@@ -216,6 +230,7 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
       final flows = await appState.fetchNetifyFlows(
         limit: _pageSize,
         protocolFilter: _selectedProtocolFilter,
+        hoursBack: _selectedTimeRange.hours,
       );
       if (!mounted) return;
       setState(() {
@@ -247,6 +262,7 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
         limit: _pageSize,
         offset: _flows.length,
         protocolFilter: _selectedProtocolFilter,
+        hoursBack: _selectedTimeRange.hours,
       );
       if (!mounted) return;
       final items = _mapFlowItems(flows, hostnames);
@@ -315,6 +331,14 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
     _loadFlows();
   }
 
+  void _changeTimeRange(_FlowTimeRange range) {
+    if (_selectedTimeRange == range) return;
+    setState(() {
+      _selectedTimeRange = range;
+    });
+    _loadFlows();
+  }
+
   String _formatCount(int value) {
     final text = value.toString();
     final buffer = StringBuffer();
@@ -349,24 +373,34 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
             children: [
               Row(
                 children: [
-                  Text(
-                    'Last 24 Hours',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: colorScheme.onSurface,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () {},
-                    child: const Text(
-                      'View Blocked',
-                      style: TextStyle(fontWeight: FontWeight.w900),
+                  PopupMenuButton<_FlowTimeRange>(
+                    initialValue: _selectedTimeRange,
+                    onSelected: _changeTimeRange,
+                    itemBuilder: (context) => _FlowTimeRange.values
+                        .map(
+                          (range) => PopupMenuItem<_FlowTimeRange>(
+                            value: range,
+                            child: Text(range.label),
+                          ),
+                        )
+                        .toList(),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _selectedTimeRange.label,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                color: colorScheme.onSurface,
+                                fontWeight: FontWeight.w900,
+                              ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -588,18 +622,6 @@ class _FlowRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            SizedBox(
-              width: 34,
-              child: Text(
-                flow.country,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w800,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
             Expanded(
               child: Text(
                 flow.destination,
@@ -659,14 +681,12 @@ class _FlowDetailsDialog extends StatelessWidget {
                           icon: Icons.sensors_rounded,
                           iconColor: _FlowsScreenState._cyan,
                         ),
-                        _DetailRow(label: 'Group', value: flow.deviceGroup),
                         _DetailRow(label: 'IP Address', value: flow.deviceIp),
                         _DetailRow(label: 'Port', value: flow.devicePort),
                         _DetailRow(
                           label: 'MAC Address',
                           value: flow.macAddress,
                         ),
-                        _DetailRow(label: 'Vendor', value: flow.vendor),
                       ],
                     ),
                     const SizedBox(height: 18),
@@ -687,11 +707,6 @@ class _FlowDetailsDialog extends StatelessWidget {
                           label: 'Port',
                           value: flow.destinationPort,
                           helper: flow.destinationService,
-                        ),
-                        _DetailRow(
-                          label: 'Region',
-                          value: flow.region,
-                          showChevron: true,
                         ),
                       ],
                     ),
