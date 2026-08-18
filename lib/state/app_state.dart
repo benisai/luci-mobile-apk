@@ -73,6 +73,70 @@ class OpenwallaNotification {
   }
 }
 
+class OpenwrtFirewallRule {
+  final String section;
+  final String name;
+  final String source;
+  final String sourceIp;
+  final String destination;
+  final String protocol;
+  final String port;
+  final String action;
+  final bool enabled;
+
+  const OpenwrtFirewallRule({
+    required this.section,
+    required this.name,
+    required this.source,
+    required this.sourceIp,
+    required this.destination,
+    required this.protocol,
+    required this.port,
+    required this.action,
+    required this.enabled,
+  });
+
+  bool get isOpenwallaRule {
+    final lowerName = name.toLowerCase();
+    final lowerSection = section.toLowerCase();
+    return lowerName.startsWith('owrt_') ||
+        lowerSection.startsWith('owrt_') ||
+        lowerName.contains('owrt_');
+  }
+
+  bool get isBlocked {
+    final normalized = action.toUpperCase();
+    return normalized == 'REJECT' || normalized == 'DROP';
+  }
+
+  factory OpenwrtFirewallRule.fromUciSection(
+    String section,
+    Map<dynamic, dynamic> values,
+  ) {
+    String read(String key, String fallback) {
+      final value = values[key];
+      if (value is List) {
+        final joined = value.map((entry) => entry.toString()).join(', ');
+        return joined.trim().isEmpty ? fallback : joined;
+      }
+      final text = value?.toString().trim();
+      return text == null || text.isEmpty ? fallback : text;
+    }
+
+    return OpenwrtFirewallRule(
+      section: section,
+      name: read('name', section),
+      source: read('src', 'Any'),
+      sourceIp: read('src_ip', 'Any'),
+      destination: read('dest_ip', read('dest', 'Any')),
+      protocol: read('proto', 'Any'),
+      port: read('dest_port', 'Any'),
+      action: read('target', 'DROP').toUpperCase(),
+      enabled: read('enabled', '1') != '0',
+    );
+  }
+}
+
 class PingMonitorSample {
   final DateTime timestamp;
   final String target;
@@ -992,7 +1056,7 @@ class AppState extends ChangeNotifier {
           'netifyFlowCount': flowSummary.count,
           'notificationCount': 2,
           'deviceCount': _countRouterDevices(processedDhcpData, associatedMacs),
-          'rulesCount': 0,
+          'rulesCount': _mockFirewallRules().length,
           '_lastUpdated':
               DateTime.now().millisecondsSinceEpoch, // Force UI updates
         };
@@ -1103,6 +1167,7 @@ class AppState extends ChangeNotifier {
         provider: selectedFlowProvider,
       );
       final notificationCountFuture = fetchNotificationCount();
+      final rulesCountFuture = fetchFirewallRuleCount();
       final associatedMacsFuture = _apiService!
           .fetchAllAssociatedWirelessMacsWithContext(
             ipAddress: ip,
@@ -1198,6 +1263,7 @@ class AppState extends ChangeNotifier {
         pingSamplesFuture,
         flowSummaryFuture,
         notificationCountFuture,
+        rulesCountFuture,
         associatedMacsFuture,
       ]);
       final wirelessRaw = optionalResults[0];
@@ -1206,7 +1272,8 @@ class AppState extends ChangeNotifier {
       final pingSamples = optionalResults[3] as List<PingMonitorSample>;
       final flowSummary = optionalResults[4] as OpenwallaFlowSummary;
       final notificationCount = optionalResults[5] as int;
-      final associatedMacs = optionalResults[6] as Map<String, Set<String>>;
+      final rulesCount = optionalResults[6] as int;
+      final associatedMacs = optionalResults[7] as Map<String, Set<String>>;
 
       Map<String, dynamic>? wirelessData;
       if (wirelessRaw != null) {
@@ -1324,7 +1391,7 @@ class AppState extends ChangeNotifier {
         'netifyFlowCount': flowSummary.count,
         'notificationCount': notificationCount,
         'deviceCount': _countRouterDevices(dhcpLeases, associatedMacs),
-        'rulesCount': 0,
+        'rulesCount': rulesCount,
         '_lastUpdated':
             DateTime.now().millisecondsSinceEpoch, // Force UI updates
       };
@@ -1943,6 +2010,112 @@ class AppState extends ChangeNotifier {
     return int.tryParse(countText ?? '') ?? 0;
   }
 
+  List<OpenwrtFirewallRule> _mockFirewallRules() {
+    return const [
+      OpenwrtFirewallRule(
+        section: 'cfg0a92bd',
+        name: 'owrt_block_unknown_device',
+        source: 'lan',
+        sourceIp: 'Any',
+        destination: 'wan',
+        protocol: 'all',
+        port: 'Any',
+        action: 'REJECT',
+        enabled: true,
+      ),
+      OpenwrtFirewallRule(
+        section: 'cfg0b31ac',
+        name: 'owrt_allow_dns',
+        source: 'lan',
+        sourceIp: 'Any',
+        destination: 'Any',
+        protocol: 'udp',
+        port: '53',
+        action: 'ACCEPT',
+        enabled: true,
+      ),
+      OpenwrtFirewallRule(
+        section: 'cfg0c77aa',
+        name: 'Allow-SSH-LAN',
+        source: 'lan',
+        sourceIp: 'Any',
+        destination: 'device',
+        protocol: 'tcp',
+        port: '22',
+        action: 'ACCEPT',
+        enabled: true,
+      ),
+    ];
+  }
+
+  Map<dynamic, dynamic> _firewallValuesFromResult(dynamic result) {
+    final data = _extractRpcData(result);
+    if (data is Map && data['values'] is Map) {
+      return data['values'] as Map<dynamic, dynamic>;
+    }
+    if (data is Map) return data;
+    return const {};
+  }
+
+  List<OpenwrtFirewallRule> _parseFirewallRules(dynamic result) {
+    final values = _firewallValuesFromResult(result);
+    final rules = values.entries
+        .where((entry) {
+          final value = entry.value;
+          return value is Map && value['.type'] == 'rule';
+        })
+        .map(
+          (entry) => OpenwrtFirewallRule.fromUciSection(
+            entry.key.toString(),
+            entry.value as Map<dynamic, dynamic>,
+          ),
+        )
+        .toList();
+
+    rules.sort((a, b) {
+      if (a.isOpenwallaRule != b.isOpenwallaRule) {
+        return a.isOpenwallaRule ? -1 : 1;
+      }
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+    return rules;
+  }
+
+  Future<List<OpenwrtFirewallRule>> fetchFirewallRules({
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) return _mockFirewallRules();
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'get',
+        params: {'config': 'firewall'},
+        context: context,
+      );
+      return _parseFirewallRules(result);
+    } catch (e, stack) {
+      Logger.warning('Optional firewall rules fetch failed: $e');
+      Logger.debug('Optional firewall rules stack: $stack');
+      return const [];
+    }
+  }
+
+  Future<int> fetchFirewallRuleCount({BuildContext? context}) async {
+    if (_reviewerModeEnabled) return _mockFirewallRules().length;
+    final rules = await fetchFirewallRules(context: context);
+    return rules.length;
+  }
+
   Future<int> fetchNotificationCount({BuildContext? context}) async {
     if (_reviewerModeEnabled) return 2;
 
@@ -1980,7 +2153,7 @@ class AppState extends ChangeNotifier {
         _dashboardData = {
           ..._dashboardData!,
           'notificationCount': 2,
-          'rulesCount': 0,
+          'rulesCount': _mockFirewallRules().length,
           '_lastUpdated': DateTime.now().millisecondsSinceEpoch,
         };
         notifyListeners();
@@ -1994,6 +2167,7 @@ class AppState extends ChangeNotifier {
 
     int? deviceCount;
     final notificationCountFuture = fetchNotificationCount(context: context);
+    final rulesCountFuture = fetchFirewallRuleCount();
 
     try {
       final dhcpResult = await _apiService!.call(
@@ -2034,12 +2208,13 @@ class AppState extends ChangeNotifier {
     }
 
     final notificationCount = await notificationCountFuture;
+    final rulesCount = await rulesCountFuture;
     if (_dashboardData != null) {
       _dashboardData = {
         ..._dashboardData!,
         if (deviceCount != null) 'deviceCount': deviceCount,
         'notificationCount': notificationCount,
-        'rulesCount': 0,
+        'rulesCount': rulesCount,
         '_lastUpdated': DateTime.now().millisecondsSinceEpoch,
       };
       notifyListeners();

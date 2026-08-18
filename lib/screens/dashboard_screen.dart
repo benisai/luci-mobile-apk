@@ -12,6 +12,7 @@ import 'package:luci_mobile/screens/flows_screen.dart';
 import 'package:luci_mobile/screens/monthly_usage_screen.dart';
 import 'package:luci_mobile/screens/network_performance_screen.dart';
 import 'package:luci_mobile/screens/notifications_screen.dart';
+import 'package:luci_mobile/screens/rules_screen.dart';
 import 'package:luci_mobile/screens/simple_flows_screen.dart';
 import 'package:luci_mobile/screens/system_resources_screen.dart';
 import 'package:luci_mobile/models/router.dart' as model;
@@ -237,6 +238,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 count: (rulesCount is int ? rulesCount : 0).toString(),
                 icon: Icons.rule_rounded,
                 color: _openwallaGreen,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const RulesScreen(),
+                    ),
+                  );
+                },
               ),
             ),
           ],
