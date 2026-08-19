@@ -1,24 +1,5 @@
 # Openwalla
 
-<div align="center">
-  <a href="https://play.google.com/store/apps/details?id=com.cogwheel.LuCIMobile">
-    <img src="store-badges/google.webp" alt="Get it on Google Play" style="height:56px;"/>
-  </a>
-  <a href="https://apps.apple.com/app/luci-mobile/id6749455847">
-    <img src="store-badges/apple.webp" alt="Download on the App Store" style="height:56px;"/>
-  </a>
-  <a href="https://apt.izzysoft.de/fdroid/index/apk/com.cogwheel.LuCIMobile">
-    <img src="store-badges/izzyondroid.webp" alt="Get it on IzzyOnDroid" style="height:56px;"/>
-  </a>
-  <br><br>
-
-![Latest Release](https://shields.rbtlog.dev/simple/com.cogwheel.LuCIMobile)
-![GitHub all downloads](https://img.shields.io/github/downloads/cogwheel0/luci-mobile/total?style=flat-square&label=Downloads&logo=github&color=0A84FF)
-
-<img src="fastlane/metadata/android/en-US/images/phoneScreenshots/flutter_01.png" width="300"/>
-</div>
-
-<br>
 
 **Openwalla** is a modern Flutter app for managing and monitoring multiple OpenWrt/LuCI routers. It features an Openwalla-inspired dashboard UI, secure authentication, real-time stats, and seamless multi-router support.
 
@@ -57,6 +38,14 @@
 ---
 
 ## Installation
+```
+On Openwrt Router:
+wget https://raw.githubusercontent.com/benisai/luci-mobile-apk/main/openwrt-setup/Setup-Openwrt-WGet-Files.sh
+chmod +X Setup-Openwrt-WGet-Files.sh
+
+./Setup-Openwrt-WGet-Files.sh 
+```
+
 
 **Get it on [Google Play](https://play.google.com/store/apps/details?id=com.cogwheel.LuCIMobile)**, **[Apple App Store](https://apps.apple.com/app/luci-mobile/id6749455847)**, or **[IzzyOnDroid](https://apt.izzysoft.de/fdroid/index/apk/com.cogwheel.LuCIMobile)**, or build from source:
 
