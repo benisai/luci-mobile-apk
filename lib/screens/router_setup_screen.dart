@@ -199,6 +199,19 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
             ),
             const SizedBox(height: 12),
             _SetupFeatureCard(
+              icon: Icons.security_outlined,
+              title: 'Quarantine',
+              subtitle:
+                  'Install the quarantine service for blocking newly discovered devices.',
+              trailing: Switch.adaptive(
+                value: _installQuarantine,
+                onChanged: _isInstalling
+                    ? null
+                    : (value) => setState(() => _installQuarantine = value),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _SetupFeatureCard(
               icon: Icons.account_tree_outlined,
               title: 'Flows',
               subtitle:
@@ -228,19 +241,6 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 12),
-            _SetupFeatureCard(
-              icon: Icons.security_outlined,
-              title: 'Quarantine',
-              subtitle:
-                  'Install the quarantine service for blocking newly discovered devices.',
-              trailing: Switch.adaptive(
-                value: _installQuarantine,
-                onChanged: _isInstalling
-                    ? null
-                    : (value) => setState(() => _installQuarantine = value),
-              ),
-            ),
             const SizedBox(height: 18),
             Row(
               children: [
@@ -253,7 +253,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: FilledButton.icon(
+                  child: OutlinedButton.icon(
                     onPressed: _isInstalling ? null : _runSetup,
                     icon: _isInstalling
                         ? const SizedBox(
@@ -263,6 +263,15 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
                           )
                         : const Icon(Icons.play_arrow_rounded),
                     label: Text(_isInstalling ? 'Installing' : 'Run From App'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: colorScheme.primary,
+                      backgroundColor: colorScheme.primary.withValues(
+                        alpha: 0.06,
+                      ),
+                      side: BorderSide(
+                        color: colorScheme.primary.withValues(alpha: 0.65),
+                      ),
+                    ),
                   ),
                 ),
               ],

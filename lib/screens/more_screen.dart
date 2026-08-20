@@ -326,6 +326,25 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                 );
               },
             ),
+            const LuciSectionHeader('Router Setup'),
+            _MoreScreenSection(
+              tiles: [
+                _buildMoreTile(
+                  context,
+                  icon: Icons.construction_rounded,
+                  iconColor: Theme.of(context).colorScheme.primary,
+                  title: 'Router Setup',
+                  subtitle: 'Install Openwalla helpers on this router',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const RouterSetupScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
             const LuciSectionHeader('Application'),
             _MoreScreenSection(
               tiles: [
@@ -339,20 +358,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (context) => const ManageRoutersScreen(),
-                      ),
-                    );
-                  },
-                ),
-                _buildMoreTile(
-                  context,
-                  icon: Icons.construction_rounded,
-                  iconColor: Theme.of(context).colorScheme.primary,
-                  title: 'Router Setup',
-                  subtitle: 'Install Openwalla helpers on this router',
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const RouterSetupScreen(),
                       ),
                     );
                   },
