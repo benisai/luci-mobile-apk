@@ -15,8 +15,8 @@ class RouterSetupScreen extends ConsumerStatefulWidget {
 }
 
 class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
-  static const _repoArchiveUrl =
-      'https://github.com/benisai/luci-mobile-apk/archive/refs/heads/main.tar.gz';
+  static const _rawSetupBase =
+      'https://raw.githubusercontent.com/benisai/luci-mobile-apk/main/openwrt-setup';
 
   bool _installMonitoring = true;
   bool _installQuarantine = false;
@@ -54,19 +54,27 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
   }
 
   String get _setupCommand {
-    final installSteps = _selectedInstallers
+    final installers = _selectedInstallers;
+    final installerFetches = installers
+        .map(
+          (installer) =>
+              'fetch "\$OPENWALLA_RAW_BASE/standalone/$installer" "$installer"',
+        )
+        .join(' && ');
+    final installSteps = installers
         .map((installer) => 'sh $installer')
         .join(' && ');
     if (installSteps.isEmpty) return '';
 
     return [
+      'export OPENWALLA_RAW_BASE=$_rawSetupBase',
+      'fetch() { if command -v wget >/dev/null 2>&1; then wget -qO "\$2" "\$1"; else curl -fsSL "\$1" -o "\$2"; fi; }',
       'cd /tmp',
-      'rm -rf openwalla-app-setup luci-mobile-apk-main openwalla-app-main.tar.gz',
-      'mkdir -p openwalla-app-setup',
+      'rm -rf openwalla-app-setup',
+      'mkdir -p openwalla-app-setup/lib openwalla-app-setup/files',
       'cd openwalla-app-setup',
-      'if command -v wget >/dev/null 2>&1; then wget -qO openwalla-app-main.tar.gz $_repoArchiveUrl; else curl -L -o openwalla-app-main.tar.gz $_repoArchiveUrl; fi',
-      'tar -xzf openwalla-app-main.tar.gz',
-      'cd luci-mobile-apk-main/openwrt-setup/standalone',
+      'fetch "\$OPENWALLA_RAW_BASE/standalone/lib/openwalla-standalone-common.sh" "lib/openwalla-standalone-common.sh"',
+      installerFetches,
       installSteps,
     ].join(' && ');
   }

@@ -17,6 +17,7 @@ lib)
 esac
 FILES_DIR="$OPENWALLA_SETUP_DIR/files"
 RPCD_ACL="$OPENWALLA_SETUP_DIR/rpcd-acl.json"
+OPENWALLA_RAW_BASE="${OPENWALLA_RAW_BASE:-https://raw.githubusercontent.com/benisai/luci-mobile-apk/main/openwrt-setup}"
 PKG_MGR=""
 
 log() {
@@ -27,10 +28,42 @@ have_cmd() {
 	command -v "$1" >/dev/null 2>&1
 }
 
+download_file() {
+	url="$1"
+	dst="$2"
+	mkdir -p "$(dirname "$dst")"
+	if have_cmd wget; then
+		wget -qO "$dst" "$url" && return 0
+	fi
+	if have_cmd curl; then
+		curl -fsSL "$url" -o "$dst" && return 0
+	fi
+	return 1
+}
+
+fetch_missing_file() {
+	path="$1"
+	case "$path" in
+	"$FILES_DIR"/*)
+		name="${path#$FILES_DIR/}"
+		download_file "$OPENWALLA_RAW_BASE/files/$name" "$path"
+		;;
+	"$RPCD_ACL")
+		download_file "$OPENWALLA_RAW_BASE/rpcd-acl.json" "$path"
+		;;
+	*)
+		return 1
+		;;
+	esac
+}
+
 require_file() {
 	if [ ! -f "$1" ]; then
-		echo "Missing required file: $1"
-		exit 1
+		log "Fetching missing file: $1"
+		if ! fetch_missing_file "$1"; then
+			echo "Missing required file: $1"
+			exit 1
+		fi
 	fi
 }
 

@@ -8,6 +8,11 @@ Run them from the repository root or from this folder on the router:
 sh openwrt-setup/standalone/install-netify.sh
 ```
 
+For low-space routers, the mobile app downloads only the selected installer
+scripts and `standalone/lib/openwalla-standalone-common.sh` into `/tmp`. The
+shared helper fetches each required file from `openwrt-setup/files/` with
+`wget` or `curl` only when that installer needs it.
+
 Available installers:
 
 - `install-netify.sh` - netifyd plus Openwalla Netify collector
