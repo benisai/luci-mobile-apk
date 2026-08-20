@@ -294,58 +294,98 @@ class _RouterDashboardSettingsScreenState
     );
   }
 
-  Widget _buildRouterSection() {
+  String _routerLabel(dynamic router) {
+    if (router == null) return 'Router';
+    final hostname = router.lastKnownHostname?.toString() ?? '';
+    if (hostname.isNotEmpty) return hostname;
+    return router.ipAddress?.toString() ?? 'Router';
+  }
+
+  Widget _buildRouterTitle() {
     final appState = ref.watch(appStateProvider);
     final routers = appState.routers;
-    if (routers.length <= 1) return const SizedBox.shrink();
-
     final selectedId = _selectedRouterId ?? appState.selectedRouter?.id;
     final selected = routers
         .where((router) => router.id == selectedId)
         .firstOrNull;
-    final selectedName = selected?.lastKnownHostname?.isNotEmpty == true
-        ? selected!.lastKnownHostname!
-        : selected?.ipAddress ?? 'Select router';
+    final selectedName = _routerLabel(selected ?? appState.selectedRouter);
+    final colorScheme = Theme.of(context).colorScheme;
+    final titleStyle = Theme.of(context).textTheme.titleLarge?.copyWith(
+      color: colorScheme.onSurface,
+      fontWeight: FontWeight.w900,
+      letterSpacing: 0,
+    );
 
-    return Card(
-      elevation: 2,
-      margin: EdgeInsets.symmetric(
-        horizontal: LuciSpacing.md,
-        vertical: LuciSpacing.sm,
-      ),
-      shape: RoundedRectangleBorder(
-        borderRadius: LuciCardStyles.standardRadius,
-      ),
-      child: ListTile(
-        leading: Icon(
-          Icons.router_outlined,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-        title: Text('Router', style: LuciTextStyles.cardTitle(context)),
-        subtitle: Text(
-          selectedName,
-          style: LuciTextStyles.cardSubtitle(context),
-        ),
-        trailing: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: selectedId,
-            icon: const Icon(Icons.expand_more_rounded),
-            items: routers.map((router) {
-              final label = router.lastKnownHostname?.isNotEmpty == true
-                  ? router.lastKnownHostname!
-                  : router.ipAddress;
-              return DropdownMenuItem<String>(
-                value: router.id,
-                child: Text(label),
-              );
-            }).toList(),
-            onChanged: (value) {
-              if (value == null || value == selectedId) return;
-              _selectRouter(value);
-            },
+    if (routers.length <= 1) {
+      return Text(selectedName, style: titleStyle);
+    }
+
+    return PopupMenuButton<String>(
+      initialValue: selectedId,
+      tooltip: 'Select router',
+      onSelected: (value) {
+        if (value == selectedId) return;
+        unawaited(_selectRouter(value));
+      },
+      itemBuilder: (context) {
+        return routers.map((router) {
+          return PopupMenuItem<String>(
+            value: router.id,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.router_outlined,
+                  size: 18,
+                  color: router.id == selectedId
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: Text(_routerLabel(router))),
+              ],
+            ),
+          );
+        }).toList();
+      },
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              selectedName,
+              style: titleStyle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
+          const SizedBox(width: 6),
+          Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: colorScheme.onSurfaceVariant,
+            size: 24,
+          ),
+        ],
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return LuciAppBar(titleWidget: _buildRouterTitle(), showBack: true);
+  }
+
+  PreferredSizeWidget _buildStaticAppBar() {
+    final appState = ref.watch(appStateProvider);
+    final selectedName = _routerLabel(appState.selectedRouter);
+    return LuciAppBar(
+      titleWidget: Text(
+        selectedName,
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          color: Theme.of(context).colorScheme.onSurface,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0,
         ),
       ),
+      showBack: true,
     );
   }
 
@@ -711,27 +751,26 @@ class _RouterDashboardSettingsScreenState
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        appBar: LuciAppBar(title: 'Dashboard', showBack: true),
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        appBar: _buildStaticAppBar(),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
     if (_errorMessage != null) {
       return Scaffold(
-        appBar: const LuciAppBar(title: 'Dashboard', showBack: true),
+        appBar: _buildStaticAppBar(),
         body: Center(child: Text(_errorMessage!)),
       );
     }
 
     return Scaffold(
-      appBar: const LuciAppBar(title: 'Dashboard', showBack: true),
+      appBar: _buildAppBar(),
       body: ListView(
         padding: EdgeInsets.symmetric(vertical: LuciSpacing.sm),
         children: [
           LuciStaggeredAnimation(
             staggerDelay: const Duration(milliseconds: 50),
             children: [
-              _buildRouterSection(),
               _buildThroughputSection(),
               _buildDashboardCardsSection(),
               _buildWirelessInterfacesSection(),
