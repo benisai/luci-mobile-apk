@@ -9,6 +9,7 @@ BUILD_DIR="${OPENWALLA_BUILD_DIR:-/tmp/openwalla-apk-build}"
 OUTPUT_DIR="${OPENWALLA_APK_OUTPUT_DIR:-$PROJECT_ROOT/dist/apk}"
 APK_TEST_DIR="${OPENWALLA_APK_TEST_DIR:-$PROJECT_ROOT/APK-TEST}"
 APK_TEST_ABI="${OPENWALLA_APK_TEST_ABI:-arm64-v8a}"
+APK_TEST_MAX_BYTES="${OPENWALLA_APK_TEST_MAX_BYTES:-99000000}"
 BUILD_MODE="release"
 UPLOAD_RELEASE=false
 COPY_APK_TEST=false
@@ -18,12 +19,13 @@ APK_TEST_COMMIT_MESSAGE="${OPENWALLA_APK_TEST_COMMIT_MESSAGE:-Update APK test bu
 
 usage() {
   echo "Usage: $0 [debug|profile|release] [--upload] [--apk-test] [--split-per-abi] [--apk-test-git] [--pixel-test]" >&2
-  echo "  --upload  Copy APK into APK-TEST/, then git add/commit/push it." >&2
+  echo "  --upload  Build split APKs, copy target ABI into APK-TEST/, then git add/commit/push it." >&2
   echo "  --apk-test  Copy the verified APK into APK-TEST/ for committing to the repo." >&2
   echo "  --split-per-abi  Build smaller ABI-specific APKs." >&2
   echo "  --apk-test-git  After --apk-test, git add/commit/push copied APK test artifacts." >&2
   echo "  --pixel-test  Shortcut for: debug --split-per-abi --apk-test --apk-test-git." >&2
   echo "Set OPENWALLA_APK_TEST_ABI to choose which split APK goes into APK-TEST (default: arm64-v8a)." >&2
+  echo "Set OPENWALLA_APK_TEST_MAX_BYTES to override the git artifact size guard (default: 99000000)." >&2
   echo "Set OPENWALLA_APK_TEST_COMMIT_MESSAGE to override the APK test commit message." >&2
 }
 
@@ -54,6 +56,7 @@ for arg in "$@"; do
     --upload)
       UPLOAD_RELEASE=true
       COPY_APK_TEST=true
+      SPLIT_PER_ABI=true
       GIT_APK_TEST=true
       ;;
     --apk-test)
@@ -201,6 +204,15 @@ if [[ "$GIT_APK_TEST" == true ]]; then
     echo "No APK test artifact was copied; nothing to commit." >&2
     exit 1
   fi
+
+  for apk_test_path in "${APK_TEST_PATHS[@]}"; do
+    apk_size="$(wc -c < "$apk_test_path" | tr -d ' ')"
+    if [[ "$apk_size" -gt "$APK_TEST_MAX_BYTES" ]]; then
+      echo "APK test artifact is too large for git/GitHub: $apk_test_path (${apk_size} bytes)." >&2
+      echo "GitHub blocks files over 100 MB. Use --split-per-abi or set OPENWALLA_APK_TEST_ABI to a smaller target." >&2
+      exit 1
+    fi
+  done
 
   echo "Staging APK test artifacts"
   git -C "$PROJECT_ROOT" add -- "${APK_TEST_PATHS[@]}"
