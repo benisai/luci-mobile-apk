@@ -302,49 +302,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const LuciSectionHeader('Device Management'),
-            Builder(
-              builder: (context) {
-                final isRebooting = ref.watch(
-                  appStateProvider.select((state) => state.isRebooting),
-                );
-                return _MoreScreenSection(
-                  tiles: [
-                    _buildMoreTile(
-                      context,
-                      icon: Icons.restart_alt,
-                      iconColor: Theme.of(context).colorScheme.primary,
-                      title: 'Reboot Router',
-                      subtitle: 'Perform a system restart',
-                      onTap: isRebooting
-                          ? null
-                          : () => _showRebootDialog(context),
-                      enabled: !isRebooting,
-                      showSpinner: isRebooting,
-                    ),
-                  ],
-                );
-              },
-            ),
-            const LuciSectionHeader('Router Setup'),
-            _MoreScreenSection(
-              tiles: [
-                _buildMoreTile(
-                  context,
-                  icon: Icons.construction_rounded,
-                  iconColor: Theme.of(context).colorScheme.primary,
-                  title: 'Router Setup',
-                  subtitle: 'Install Openwalla helpers on this router',
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const RouterSetupScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
             const LuciSectionHeader('Application'),
             _MoreScreenSection(
               tiles: [
@@ -395,6 +352,49 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     context,
                   ).colorScheme.error.withValues(alpha: 0.7),
                   onTap: () => _showLogoutDialog(context),
+                ),
+              ],
+            ),
+            const LuciSectionHeader('Device Management'),
+            Builder(
+              builder: (context) {
+                final isRebooting = ref.watch(
+                  appStateProvider.select((state) => state.isRebooting),
+                );
+                return _MoreScreenSection(
+                  tiles: [
+                    _buildMoreTile(
+                      context,
+                      icon: Icons.restart_alt,
+                      iconColor: Theme.of(context).colorScheme.primary,
+                      title: 'Reboot Router',
+                      subtitle: 'Perform a system restart',
+                      onTap: isRebooting
+                          ? null
+                          : () => _showRebootDialog(context),
+                      enabled: !isRebooting,
+                      showSpinner: isRebooting,
+                    ),
+                  ],
+                );
+              },
+            ),
+            const LuciSectionHeader('Router Setup'),
+            _MoreScreenSection(
+              tiles: [
+                _buildMoreTile(
+                  context,
+                  icon: Icons.construction_rounded,
+                  iconColor: Theme.of(context).colorScheme.primary,
+                  title: 'Router Setup',
+                  subtitle: 'Install Openwalla helpers on this router',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const RouterSetupScreen(),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),

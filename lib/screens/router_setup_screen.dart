@@ -242,39 +242,11 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
               ),
             ),
             const SizedBox(height: 18),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isInstalling ? null : _copyCommand,
-                    icon: const Icon(Icons.copy_rounded),
-                    label: const Text('Copy SSH Command'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isInstalling ? null : _runSetup,
-                    icon: _isInstalling
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.play_arrow_rounded),
-                    label: Text(_isInstalling ? 'Installing' : 'Run From App'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: colorScheme.primary,
-                      backgroundColor: colorScheme.primary.withValues(
-                        alpha: 0.06,
-                      ),
-                      side: BorderSide(
-                        color: colorScheme.primary.withValues(alpha: 0.65),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            _SetupPermissionCard(
+              isInstalling: _isInstalling,
+              onRunSetup: _runSetup,
+              onCopyCommand: _copyCommand,
+              onToggleDetails: () => setState(() => _showDetails = true),
             ),
             const SizedBox(height: 16),
             Align(
@@ -300,6 +272,191 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SetupPermissionCard extends StatelessWidget {
+  final bool isInstalling;
+  final VoidCallback onRunSetup;
+  final VoidCallback onCopyCommand;
+  final VoidCallback onToggleDetails;
+
+  const _SetupPermissionCard({
+    required this.isInstalling,
+    required this.onRunSetup,
+    required this.onCopyCommand,
+    required this.onToggleDetails,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    const actionBlue = Color(0xFF2563EB);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: actionBlue.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.shield_outlined,
+                    color: actionBlue,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Router access required',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Openwalla needs permission to install the selected helper scripts on your router.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLowest.withValues(
+                  alpha: 0.42,
+                ),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.18),
+                ),
+              ),
+              child: const Column(
+                children: [
+                  _PermissionLine(
+                    icon: Icons.monitor_heart_outlined,
+                    text:
+                        'Install monitoring, usage, and notification helpers.',
+                  ),
+                  SizedBox(height: 10),
+                  _PermissionLine(
+                    icon: Icons.account_tree_outlined,
+                    text: 'Enable selected flow collection mode.',
+                  ),
+                  SizedBox(height: 10),
+                  _PermissionLine(
+                    icon: Icons.security_outlined,
+                    text: 'Initialize firewall and quarantine helpers.',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                Text(
+                  'Want to inspect the SSH fallback?',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                TextButton(
+                  onPressed: onToggleDetails,
+                  child: const Text('Show details'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: FilledButton.icon(
+                onPressed: isInstalling ? null : onRunSetup,
+                icon: isInstalling
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.verified_user_outlined),
+                label: Text(isInstalling ? 'Installing' : 'Run From App'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: actionBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 13,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: TextButton.icon(
+                onPressed: isInstalling ? null : onCopyCommand,
+                icon: const Icon(Icons.copy_rounded, size: 18),
+                label: const Text('Copy SSH Command'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PermissionLine extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _PermissionLine({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    const actionBlue = Color(0xFF2563EB);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: actionBlue, size: 17),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w800,
+              height: 1.28,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
