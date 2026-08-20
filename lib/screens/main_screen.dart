@@ -151,7 +151,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
                   opacity: getTabOpacity(2),
                   child: Icon(Icons.lan_outlined, color: getTabColor(2)),
                 ),
-                label: 'Interfaces',
+                label: 'Network',
               ),
               NavigationDestination(
                 selectedIcon: Opacity(

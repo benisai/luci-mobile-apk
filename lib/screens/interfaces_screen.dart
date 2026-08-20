@@ -9,6 +9,8 @@ import 'package:luci_mobile/design/luci_design_system.dart';
 import 'package:luci_mobile/widgets/luci_loading_states.dart';
 import 'package:luci_mobile/widgets/luci_refresh_components.dart';
 
+enum _NetworkTab { interfaces, wireless }
+
 class InterfacesScreen extends ConsumerStatefulWidget {
   final String? scrollToInterface;
   final VoidCallback? onScrollComplete;
@@ -28,6 +30,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
   String? _targetInterface;
   String? _expandedInterface;
   final Map<String, GlobalKey> _interfaceKeys = {};
+  _NetworkTab _selectedTab = _NetworkTab.interfaces;
 
   /// Safely extract a String from a UCI config value that may be a List or String.
   static String _uciString(dynamic value, [String fallback = '']) {
@@ -157,6 +160,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
               final keyStr = _interfaceKey(name: name);
               // Use exact matching only
               if (keyStr == interfaceName.toLowerCase()) {
+                setState(() => _selectedTab = _NetworkTab.interfaces);
                 _scrollToExpandedCard(keyStr);
                 return;
               }
@@ -194,6 +198,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
                   if (normalizedTarget == ssidKey ||
                       normalizedTarget == deviceKey ||
                       normalizedTarget == nameKey) {
+                    setState(() => _selectedTab = _NetworkTab.wireless);
                     _scrollToExpandedCard(keyStr);
                     return;
                   }
@@ -207,8 +212,10 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
         if (interfaceName.toLowerCase().contains('wifi') ||
             interfaceName.toLowerCase().contains('wireless') ||
             interfaceName.toLowerCase().contains('radio')) {
+          setState(() => _selectedTab = _NetworkTab.wireless);
           _scrollToSection(200); // Wireless section
         } else {
+          setState(() => _selectedTab = _NetworkTab.interfaces);
           _scrollToSection(80); // Wired section
         }
       }
@@ -355,7 +362,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
     final appState = ref.read(appStateProvider);
 
     return Scaffold(
-      appBar: const LuciAppBar(title: 'Interfaces'),
+      appBar: const LuciAppBar(title: 'Network'),
       body: SafeArea(
         top: true,
         bottom: false,
@@ -396,7 +403,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
 
                   if (dashboardError != null && dashboardData == null) {
                     return LuciErrorDisplay(
-                      title: 'Failed to Load Interfaces',
+                      title: 'Failed to Load Network',
                       message:
                           'Could not connect to the router. Please check your network connection and router settings.',
                       actionLabel: 'Retry',
@@ -408,9 +415,9 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
 
                   if (dashboardData == null) {
                     return LuciEmptyState(
-                      title: 'No Interface Data',
+                      title: 'No Network Data',
                       message:
-                          'Unable to fetch interface information. Pull down to refresh or tap the button below.',
+                          'Unable to fetch network information. Pull down to refresh or tap the button below.',
                       icon: Icons.device_hub_outlined,
                       actionLabel: 'Fetch Data',
                       onAction: () => appState.fetchDashboardData(),
@@ -420,10 +427,18 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
                   return CustomScrollView(
                     controller: _scrollController,
                     slivers: [
-                      SliverToBoxAdapter(child: LuciSectionHeader('Wired')),
-                      _buildWiredInterfacesList(),
-                      SliverToBoxAdapter(child: LuciSectionHeader('Wireless')),
-                      _buildWirelessInterfacesList(),
+                      SliverToBoxAdapter(child: _buildNetworkTabSwitcher()),
+                      if (_selectedTab == _NetworkTab.interfaces) ...[
+                        SliverToBoxAdapter(
+                          child: LuciSectionHeader('Interfaces'),
+                        ),
+                        _buildWiredInterfacesList(),
+                      ] else ...[
+                        SliverToBoxAdapter(
+                          child: LuciSectionHeader('Wireless'),
+                        ),
+                        _buildWirelessInterfacesList(),
+                      ],
                       SliverToBoxAdapter(
                         child: Padding(
                           padding: EdgeInsets.only(bottom: 16),
@@ -441,75 +456,167 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
     );
   }
 
-  Widget _buildWiredInterfacesList() {
-    final appState = ref.watch(appStateProvider);
-    final dynamic detailedData = appState.dashboardData?['interfaceDump'];
-    final dynamic statsDataSource = appState.dashboardData?['networkDevices'];
-    var interfacesList = <NetworkInterface>[];
-
-    if (detailedData is Map &&
-        detailedData.containsKey('interface') &&
-        detailedData['interface'] is List) {
-      final List<dynamic> interfaceDataList = detailedData['interface'];
-      final Map<String, dynamic> networkStatsMap = statsDataSource is Map
-          ? Map<String, dynamic>.from(statsDataSource)
-          : <String, dynamic>{};
-
-      interfacesList = interfaceDataList
-          .whereType<Map<String, dynamic>>()
-          .where(
-            (detailedInterfaceMap) =>
-                !_isLoopbackInterface(detailedInterfaceMap),
-          )
-          .map((detailedInterfaceMap) {
-            final stats = detailedInterfaceMap['stats'];
-            if (stats == null || (stats is Map && stats.isEmpty)) {
-              final String? deviceName =
-                  detailedInterfaceMap['l3_device'] ??
-                  detailedInterfaceMap['device'];
-              if (deviceName != null) {
-                final statsContainer = networkStatsMap[deviceName];
-                if (statsContainer is Map && statsContainer['stats'] is Map) {
-                  detailedInterfaceMap['stats'] = statsContainer['stats'];
-                }
-              }
-            }
-            return NetworkInterface.fromJson(detailedInterfaceMap);
-          })
-          .toList();
-    }
-
-    final interfaces = interfacesList;
-    if (interfaces.isEmpty) {
-      return const SliverToBoxAdapter(child: SizedBox.shrink());
-    }
-    return SliverList(
-      delegate: SliverChildBuilderDelegate((context, index) {
-        final iface = interfaces[index];
-        final isTargetInterface =
-            _targetInterface != null &&
-            iface.name.toLowerCase() == _targetInterface!.toLowerCase();
-
-        final keyStr = _interfaceKey(name: iface.name);
-        final key = _interfaceKeys.putIfAbsent(keyStr, () => GlobalKey());
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: _UnifiedNetworkCard(
-            key: key,
-            name: iface.name.toUpperCase(),
-            subtitle: _buildMinimalInterfaceSubtitle(iface),
-            isUp: iface.isUp,
-            icon: _getInterfaceIcon(iface.protocol),
-            details: _buildWiredDetails(context, iface),
-            initiallyExpanded:
-                isTargetInterface || _expandedInterface == keyStr,
-          ),
-        );
-      }, childCount: interfaces.length),
+  Widget _buildNetworkTabSwitcher() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            _NetworkTabButton(
+              label: 'Interface',
+              selected: _selectedTab == _NetworkTab.interfaces,
+              onTap: () =>
+                  setState(() => _selectedTab = _NetworkTab.interfaces),
+            ),
+            _NetworkTabButton(
+              label: 'Wireless',
+              selected: _selectedTab == _NetworkTab.wireless,
+              onTap: () => setState(() => _selectedTab = _NetworkTab.wireless),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
+  Widget _buildWiredInterfacesList() {
+    final interfaces = _wiredInterfaces();
+    if (interfaces.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 132,
+          mainAxisExtent: 116,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+        ),
+        delegate: SliverChildBuilderDelegate((context, index) {
+          final iface = interfaces[index];
+          final keyStr = _interfaceKey(name: iface.name);
+          final key = _interfaceKeys.putIfAbsent(keyStr, () => GlobalKey());
+          return _CompactNetworkTile(
+            key: key,
+            name: iface.name.toUpperCase(),
+            subtitle: iface.protocol,
+            isUp: iface.isUp,
+            icon: _getInterfaceIcon(iface.protocol),
+            onTap: () => _showNetworkDetails(
+              title: iface.name.toUpperCase(),
+              subtitle: _buildMinimalInterfaceSubtitle(iface),
+              icon: _getInterfaceIcon(iface.protocol),
+              isUp: iface.isUp,
+              details: _buildWiredDetails(context, iface),
+            ),
+          );
+        }, childCount: interfaces.length),
+      ),
+    );
+  }
+
+  List<NetworkInterface> _wiredInterfaces() {
+    final appState = ref.watch(appStateProvider);
+    final dynamic detailedData = appState.dashboardData?['interfaceDump'];
+    final dynamic statsDataSource = appState.dashboardData?['networkDevices'];
+
+    if (detailedData is! Map ||
+        !detailedData.containsKey('interface') ||
+        detailedData['interface'] is! List) {
+      return const [];
+    }
+
+    final List<dynamic> interfaceDataList = detailedData['interface'];
+    final Map<String, dynamic> networkStatsMap = statsDataSource is Map
+        ? Map<String, dynamic>.from(statsDataSource)
+        : <String, dynamic>{};
+
+    return interfaceDataList
+        .whereType<Map<String, dynamic>>()
+        .where(
+          (detailedInterfaceMap) => !_isLoopbackInterface(detailedInterfaceMap),
+        )
+        .map((detailedInterfaceMap) {
+          final mutableInterfaceMap = Map<String, dynamic>.from(
+            detailedInterfaceMap,
+          );
+          final stats = mutableInterfaceMap['stats'];
+          if (stats == null || (stats is Map && stats.isEmpty)) {
+            final String? deviceName =
+                mutableInterfaceMap['l3_device'] ??
+                mutableInterfaceMap['device'];
+            if (deviceName != null) {
+              final statsContainer = networkStatsMap[deviceName];
+              if (statsContainer is Map && statsContainer['stats'] is Map) {
+                mutableInterfaceMap['stats'] = statsContainer['stats'];
+              }
+            }
+          }
+          return NetworkInterface.fromJson(mutableInterfaceMap);
+        })
+        .toList();
+  }
+
   Widget _buildWirelessInterfacesList() {
+    final interfaces = _wirelessInterfaces();
+    if (interfaces.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 132,
+          mainAxisExtent: 124,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+        ),
+        delegate: SliverChildBuilderDelegate((context, index) {
+          final iface = interfaces[index];
+          final deviceName = iface['deviceName'] ?? '';
+          final radioName = iface['radioName'] ?? '';
+          final ssid = iface['ssid'] ?? '';
+          final name = iface['interfaceName'] ?? '';
+          final keyStr = _interfaceKeyForWireless(
+            ssid: ssid,
+            radioName: radioName,
+            deviceName: deviceName,
+            name: name,
+          );
+          final key = _interfaceKeys.putIfAbsent(keyStr, () => GlobalKey());
+          final displayName = ssid.toString().isNotEmpty
+              ? ssid.toString()
+              : deviceName.toString();
+          final subtitle = _wirelessBandLabel(iface);
+          return _CompactNetworkTile(
+            key: key,
+            name: displayName,
+            subtitle: subtitle,
+            isUp: iface['isEnabled'] == true,
+            icon: Icons.wifi_rounded,
+            onTap: () => _showNetworkDetails(
+              title: displayName,
+              subtitle: iface['subtitle']?.toString() ?? subtitle,
+              icon: Icons.wifi_rounded,
+              isUp: iface['isEnabled'] == true,
+              details: _buildGenericDetails(context, iface['details']),
+            ),
+          );
+        }, childCount: interfaces.length),
+      ),
+    );
+  }
+
+  List<Map<String, dynamic>> _wirelessInterfaces() {
     final appState = ref.watch(appStateProvider);
     final dashboardData = appState.dashboardData;
     final wirelessData = dashboardData?['wireless'] as Map<String, dynamic>?;
@@ -615,53 +722,120 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
       }
     });
 
-    final interfaces = interfacesList;
-    if (interfaces.isEmpty) {
-      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    return interfacesList;
+  }
+
+  String _wirelessBandLabel(Map<String, dynamic> iface) {
+    final details = iface['details'];
+    if (details is Map) {
+      final device = details['Device']?.toString().toLowerCase() ?? '';
+      final channel = int.tryParse(details['Channel']?.toString() ?? '');
+      if (device.contains('6') || (channel != null && channel > 140)) {
+        return '6G';
+      }
+      if (device.contains('5') || (channel != null && channel > 14)) {
+        return '5G';
+      }
+      if (channel != null && channel > 0) return '2.4G';
     }
-    return SliverList(
-      delegate: SliverChildBuilderDelegate((context, index) {
-        final iface = interfaces[index];
-        final deviceName = iface['deviceName'] ?? '';
-        final radioName = iface['radioName'] ?? '';
-        final ssid = iface['ssid'] ?? '';
-        final name = iface['interfaceName'] ?? '';
-        // Use the stored values for key generation
-        final keyStr = _interfaceKeyForWireless(
-          ssid: ssid,
-          radioName: radioName,
-          deviceName: deviceName,
-          name: name,
-        );
-        final key = _interfaceKeys.putIfAbsent(keyStr, () => GlobalKey());
-        final displayName = ssid.toString().isNotEmpty
-            ? ssid.toString()
-            : deviceName.toString();
+    return 'WiFi';
+  }
 
-        // Check if this is the target interface for expansion
-        final isTargetInterface =
-            _targetInterface != null &&
-            (_normalizeInterfaceKey(ssid) ==
-                    _normalizeInterfaceKey(_targetInterface!) ||
-                _normalizeInterfaceKey(deviceName) ==
-                    _normalizeInterfaceKey(_targetInterface!) ||
-                _normalizeInterfaceKey(name) ==
-                    _normalizeInterfaceKey(_targetInterface!));
-
-        final shouldExpand = isTargetInterface || _expandedInterface == keyStr;
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: _UnifiedNetworkCard(
-            key: key,
-            name: displayName,
-            subtitle: iface['subtitle'],
-            isUp: iface['isEnabled'],
-            icon: Icons.wifi,
-            details: _buildGenericDetails(context, iface['details']),
-            initiallyExpanded: shouldExpand,
+  void _showNetworkDetails({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required bool isUp,
+    required Widget details,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) {
+        final colorScheme = Theme.of(context).colorScheme;
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              bottom: 16 + MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary.withValues(
+                                alpha: 0.14,
+                              ),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              icon,
+                              color: isUp
+                                  ? colorScheme.primary
+                                  : colorScheme.onSurfaceVariant,
+                              size: 24,
+                            ),
+                          ),
+                          Positioned(
+                            right: -1,
+                            top: -1,
+                            child: LuciStatusIndicators.statusDot(
+                              context,
+                              isUp,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: LuciTextStyles.cardTitle(context),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              subtitle,
+                              style: LuciTextStyles.cardSubtitle(context),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  details,
+                ],
+              ),
+            ),
           ),
         );
-      }, childCount: interfaces.length),
+      },
     );
   }
 
@@ -1095,242 +1269,129 @@ class LuciSectionHeader extends StatelessWidget {
   }
 }
 
-class _UnifiedNetworkCard extends StatefulWidget {
+class _NetworkTabButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _NetworkTabButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: Material(
+        color: selected ? colorScheme.onSurface : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: selected
+                    ? colorScheme.surface
+                    : colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactNetworkTile extends StatelessWidget {
   final String name;
   final String subtitle;
   final bool isUp;
   final IconData icon;
-  final Widget details;
-  final bool initiallyExpanded;
+  final VoidCallback onTap;
 
-  const _UnifiedNetworkCard({
+  const _CompactNetworkTile({
     required this.name,
     required this.subtitle,
     required this.isUp,
     required this.icon,
-    required this.details,
-    this.initiallyExpanded = false,
+    required this.onTap,
     super.key,
   });
 
   @override
-  State<_UnifiedNetworkCard> createState() => _UnifiedNetworkCardState();
-}
-
-class _UnifiedNetworkCardState extends State<_UnifiedNetworkCard>
-    with SingleTickerProviderStateMixin {
-  bool _isExpanded = false;
-  late AnimationController _controller;
-  @override
-  void initState() {
-    super.initState();
-    _isExpanded = widget.initiallyExpanded;
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 400),
-      vsync: this,
-    );
-    if (widget.initiallyExpanded) {
-      _controller.forward();
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _UnifiedNetworkCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.initiallyExpanded != oldWidget.initiallyExpanded) {
-      setState(() {
-        _isExpanded = widget.initiallyExpanded;
-        if (_isExpanded) {
-          _controller.forward();
-        } else {
-          _controller.reverse();
-        }
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _toggleExpand() {
-    setState(() {
-      _isExpanded = !_isExpanded;
-      if (_isExpanded) {
-        _controller.forward();
-      } else {
-        _controller.reverse();
-      }
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final card = Card(
-      elevation: _isExpanded ? 6 : 2,
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      elevation: 2,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: LuciCardStyles.standardRadius,
+        borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: widget.initiallyExpanded && _isExpanded
-              ? colorScheme.primary.withValues(alpha: 0.3)
-              : colorScheme.surfaceContainerHighest.withValues(alpha: 0.10),
-          width: widget.initiallyExpanded && _isExpanded ? 2 : 1,
+          color: colorScheme.outlineVariant.withValues(alpha: 0.26),
         ),
       ),
       clipBehavior: Clip.antiAlias,
-      child: AnimatedScale(
-        scale: widget.initiallyExpanded && _isExpanded ? 1.02 : 1.0,
-        duration: LuciAnimations.standard,
-        curve: Curves.easeOutBack,
-        child: Column(
-          children: [
-            InkWell(
-              onTap: _toggleExpand,
-              borderRadius: LuciCardStyles.standardRadius,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: LuciSpacing.lg,
-                  vertical: 10.0,
-                ),
-                child: Row(
-                  children: [
-                    Stack(
-                      alignment: Alignment.topRight,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8.0),
-                          decoration: BoxDecoration(
-                            color: colorScheme.primaryContainer.withValues(
-                              alpha: 0.13,
-                            ),
-                            shape: BoxShape.circle,
-                          ),
-                          child: AnimatedScale(
-                            scale: widget.initiallyExpanded && _isExpanded
-                                ? 1.1
-                                : 1.0,
-                            duration: const Duration(milliseconds: 500),
-                            curve: Curves.elasticOut,
-                            child: Icon(
-                              widget.icon,
-                              color: widget.isUp
-                                  ? colorScheme.primary
-                                  : colorScheme.onSurface,
-                              size: 22,
-                              semanticLabel: 'Interface icon',
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          right: 0,
-                          top: 0,
-                          child: Tooltip(
-                            message: widget.isUp
-                                ? 'Interface is up'
-                                : 'Interface is down',
-                            child: LuciStatusIndicators.statusDot(
-                              context,
-                              widget.isUp,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.name,
-                            style: LuciTextStyles.cardTitle(context),
-                            semanticsLabel: 'Interface name: ${widget.name}',
-                          ),
-                          const SizedBox(height: LuciSpacing.xs),
-                          Container(
-                            margin: const EdgeInsets.only(right: 32),
-                            child: Divider(
-                              color: colorScheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.10),
-                              thickness: 1,
-                              height: 8,
-                            ),
-                          ),
-                          Text(
-                            widget.subtitle,
-                            style: LuciTextStyles.cardSubtitle(context),
-                            semanticsLabel:
-                                'Interface details: ${widget.subtitle}',
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (!widget.isUp)
-                      Padding(
-                        padding: const EdgeInsets.only(right: LuciSpacing.xs),
-                        child: LuciStatusIndicators.statusChip(
-                          context,
-                          'OFF',
-                          false,
-                        ),
-                      ),
-                    const SizedBox(width: LuciSpacing.sm),
-                    Icon(
-                      _isExpanded ? Icons.expand_less : Icons.expand_more,
-                      color: colorScheme.onSurfaceVariant,
-                      size: 26,
-                      semanticLabel: _isExpanded
-                          ? 'Collapse details'
-                          : 'Expand details',
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (_isExpanded)
-              Column(
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  const Divider(height: 1, indent: 18, endIndent: 18),
-                  widget.details,
+                  Icon(
+                    icon,
+                    size: 34,
+                    color: isUp
+                        ? const Color(0xFF22C55E)
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: LuciStatusIndicators.statusDot(context, isUp),
+                  ),
                 ],
               ),
-          ],
+              const SizedBox(height: 12),
+              Text(
+                name,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
         ),
       ),
     );
-
-    if (!widget.isUp) {
-      return ColorFiltered(
-        colorFilter: const ColorFilter.matrix([
-          0.2126,
-          0.7152,
-          0.0722,
-          0,
-          0,
-          0.2126,
-          0.7152,
-          0.0722,
-          0,
-          0,
-          0.2126,
-          0.7152,
-          0.0722,
-          0,
-          0,
-          0,
-          0,
-          0,
-          1,
-          0,
-        ]),
-        child: card,
-      );
-    }
-    return card;
   }
 }
