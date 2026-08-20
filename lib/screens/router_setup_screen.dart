@@ -21,6 +21,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
   bool _installMonitoring = true;
   bool _installQuarantine = false;
   bool _isInstalling = false;
+  bool _showDetails = false;
   _SetupFlowChoice _flowChoice = _SetupFlowChoice.none;
   String? _lastOutput;
 
@@ -119,6 +120,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
       setState(() {
         _lastOutput =
             'App install failed. This router may not allow setup commands until the Openwalla rpcd ACL is installed. Copy the SSH command below and run it as root.\n\n$e';
+        _showDetails = true;
       });
       _showSnack('Router setup could not run from the app.');
     } finally {
@@ -266,8 +268,23 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            _CommandPreview(command: command),
-            if (_lastOutput != null) ...[
+            Align(
+              alignment: Alignment.center,
+              child: TextButton.icon(
+                onPressed: () => setState(() => _showDetails = !_showDetails),
+                icon: Icon(
+                  _showDetails
+                      ? Icons.expand_less_rounded
+                      : Icons.expand_more_rounded,
+                ),
+                label: Text(_showDetails ? 'Hide Details' : 'Show Details'),
+              ),
+            ),
+            if (_showDetails) ...[
+              const SizedBox(height: 8),
+              _CommandPreview(command: command),
+            ],
+            if (_showDetails && _lastOutput != null) ...[
               const SizedBox(height: 16),
               _OutputPreview(output: _lastOutput!),
             ],

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/screens/login_screen.dart';
 import 'package:luci_mobile/screens/settings_screen.dart';
+import 'package:luci_mobile/screens/router_setup_screen.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/design/luci_design_system.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -338,6 +339,20 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (context) => const ManageRoutersScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildMoreTile(
+                  context,
+                  icon: Icons.construction_rounded,
+                  iconColor: Theme.of(context).colorScheme.primary,
+                  title: 'Router Setup',
+                  subtitle: 'Install Openwalla helpers on this router',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const RouterSetupScreen(),
                       ),
                     );
                   },
