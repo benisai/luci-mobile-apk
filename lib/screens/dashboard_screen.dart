@@ -9,6 +9,7 @@ import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/widgets/luci_animation_system.dart';
 import 'package:luci_mobile/models/dashboard_preferences.dart';
 import 'package:luci_mobile/screens/flows_screen.dart';
+import 'package:luci_mobile/screens/interfaces_screen.dart';
 import 'package:luci_mobile/screens/monthly_usage_screen.dart';
 import 'package:luci_mobile/screens/network_performance_screen.dart';
 import 'package:luci_mobile/screens/notifications_screen.dart';
@@ -1133,18 +1134,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     );
   }
 
-  ({int count, int max}) _conntrackValues(AppState appState) {
-    final conntrack = appState.dashboardData?['conntrack'];
-    if (conntrack is! Map) return (count: 0, max: 1000);
-
-    final count = conntrack['count'];
-    final max = conntrack['max'];
-    return (
-      count: count is int ? count : int.tryParse(count?.toString() ?? '') ?? 0,
-      max: max is int ? max : int.tryParse(max?.toString() ?? '') ?? 1000,
-    );
-  }
-
   Widget _buildDashboardBottomCards(AppState appState) {
     final preferences = appState.dashboardPreferences;
     final fallbackInterface = _primaryUsageInterfaceName(appState);
@@ -1163,7 +1152,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           if (preferences.showUsageCard) _buildUsageCard(interfaceName),
           if (preferences.showMonthlyUsageCard)
             _buildMonthlyUsageCard(interfaceName),
-          _buildConntrackCard(appState),
         ];
 
         return Column(
@@ -1172,9 +1160,100 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               if (index > 0) const SizedBox(height: 12),
               cards[index],
             ],
+            if (cards.isNotEmpty) const SizedBox(height: 12),
+            _buildDashboardShortcutGrid(),
           ],
         );
       },
+    );
+  }
+
+  Widget _buildDashboardShortcutGrid() {
+    return _buildOpenwallaCard(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      child: GridView.count(
+        crossAxisCount: 4,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        childAspectRatio: 0.92,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 6,
+        children: [
+          _buildDashboardShortcut(
+            label: 'Network',
+            icon: Icons.public_rounded,
+            onTap: () => _openNetworkPage(initialWirelessTab: false),
+          ),
+          _buildDashboardShortcut(
+            label: 'Routes',
+            icon: Icons.route_rounded,
+            onTap: () => _openDashboardPlaceholder('Routes'),
+          ),
+          _buildDashboardShortcut(
+            label: 'Smart Queue',
+            icon: Icons.sync_alt_rounded,
+            onTap: () => _openDashboardPlaceholder('Smart Queue'),
+          ),
+          _buildDashboardShortcut(
+            label: 'Wi-Fi',
+            icon: Icons.wifi_rounded,
+            onTap: () => _openNetworkPage(initialWirelessTab: true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDashboardShortcut({
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(_openwallaRadius),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: colorScheme.onSurfaceVariant, size: 30),
+              const SizedBox(height: 10),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openNetworkPage({required bool initialWirelessTab}) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) =>
+            InterfacesScreen(initialWirelessTab: initialWirelessTab),
+      ),
+    );
+  }
+
+  void _openDashboardPlaceholder(String title) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => _DashboardPlaceholderScreen(title: title),
+      ),
     );
   }
 
@@ -1787,36 +1866,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     );
   }
 
-  Widget _buildConntrackCard(AppState appState) {
-    final values = _conntrackValues(appState);
-    final max = values.max <= 0 ? 1000 : values.max;
-    final progress = (values.count / max).clamp(0.0, 1.0);
-
-    return _buildOpenwallaCard(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _metricCardTitle(
-            'Conntrack',
-            trailing: Text(
-              '${values.count} / $max connections',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _metricProgressBar(value: progress, fillColor: _openwallaCyan),
-        ],
-      ),
-    );
-  }
-
   Widget _metricCardTitle(String title, {Widget? trailing}) {
     return Row(
       children: [
@@ -2243,6 +2292,32 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             );
           }
         },
+      ),
+    );
+  }
+}
+
+class _DashboardPlaceholderScreen extends StatelessWidget {
+  final String title;
+
+  const _DashboardPlaceholderScreen({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: LuciAppBar(title: title, showBack: true),
+      body: SafeArea(
+        child: Center(
+          child: Text(
+            'Coming soon',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+        ),
       ),
     );
   }
