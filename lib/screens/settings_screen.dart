@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
-import 'package:luci_mobile/screens/dashboard_settings_list_screen.dart';
+import 'package:luci_mobile/screens/router_dashboard_settings_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -124,17 +124,13 @@ class SettingsScreen extends ConsumerWidget {
                   _buildSettingsCard(
                     context: context,
                     icon: Icons.dashboard_customize,
-                    title: 'Customize Dashboard',
+                    title: 'Dashboard',
                     subtitle:
-                        'Configure interface visibility and throughput monitoring',
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              const DashboardSettingsListScreen(),
-                        ),
-                      );
-                    },
+                        'Cards, throughput monitoring, and network interfaces',
+                    onTap: () => _openSettingsPage(
+                      context,
+                      const RouterDashboardSettingsScreen(),
+                    ),
                   ),
                   const Divider(height: 32),
                   _buildSectionTitle(context, 'Monitoring'),

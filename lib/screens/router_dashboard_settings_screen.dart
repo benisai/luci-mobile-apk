@@ -10,8 +10,8 @@ import 'package:luci_mobile/design/luci_design_system.dart';
 import 'package:luci_mobile/widgets/luci_animation_system.dart';
 
 class RouterDashboardSettingsScreen extends ConsumerStatefulWidget {
-  final String routerId;
-  const RouterDashboardSettingsScreen({super.key, required this.routerId});
+  final String? routerId;
+  const RouterDashboardSettingsScreen({super.key, this.routerId});
 
   @override
   ConsumerState<RouterDashboardSettingsScreen> createState() =>
@@ -27,6 +27,7 @@ class _RouterDashboardSettingsScreenState
   final Set<String> _availableWiredInterfaces = {};
   final List<String> _allInterfaces = [];
   Timer? _autoSaveTimer;
+  String? _selectedRouterId;
 
   void _scheduleAutoSave() {
     _autoSaveTimer?.cancel();
@@ -41,12 +42,12 @@ class _RouterDashboardSettingsScreenState
   @override
   void initState() {
     super.initState();
-    // Ensure the selected router matches the requested router
     final appState = ref.read(appStateProvider);
-    final current = appState.selectedRouter?.id;
+    _selectedRouterId = widget.routerId ?? appState.selectedRouter?.id;
     Future(() async {
-      if (current != widget.routerId) {
-        await appState.selectRouter(widget.routerId);
+      if (_selectedRouterId != null &&
+          appState.selectedRouter?.id != _selectedRouterId) {
+        await appState.selectRouter(_selectedRouterId!);
       }
       await _loadPreferences();
     });
@@ -61,6 +62,10 @@ class _RouterDashboardSettingsScreenState
   Future<void> _loadPreferences() async {
     try {
       final appState = ref.read(appStateProvider);
+      _availableWirelessInterfaces.clear();
+      _availableWiredInterfaces.clear();
+      _allInterfaces.clear();
+
       if (appState.dashboardData == null) {
         await appState.fetchDashboardData();
       }
@@ -81,6 +86,19 @@ class _RouterDashboardSettingsScreenState
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _selectRouter(String routerId) async {
+    _autoSaveTimer?.cancel();
+    setState(() {
+      _selectedRouterId = routerId;
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    final appState = ref.read(appStateProvider);
+    await appState.selectRouter(routerId);
+    await appState.fetchDashboardData();
+    await _loadPreferences();
   }
 
   void _extractAvailableInterfaces(Map<String, dynamic>? dashboardData) {
@@ -273,6 +291,61 @@ class _RouterDashboardSettingsScreenState
           }),
         ],
       ],
+    );
+  }
+
+  Widget _buildRouterSection() {
+    final appState = ref.watch(appStateProvider);
+    final routers = appState.routers;
+    if (routers.length <= 1) return const SizedBox.shrink();
+
+    final selectedId = _selectedRouterId ?? appState.selectedRouter?.id;
+    final selected = routers
+        .where((router) => router.id == selectedId)
+        .firstOrNull;
+    final selectedName = selected?.lastKnownHostname?.isNotEmpty == true
+        ? selected!.lastKnownHostname!
+        : selected?.ipAddress ?? 'Select router';
+
+    return Card(
+      elevation: 2,
+      margin: EdgeInsets.symmetric(
+        horizontal: LuciSpacing.md,
+        vertical: LuciSpacing.sm,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: LuciCardStyles.standardRadius,
+      ),
+      child: ListTile(
+        leading: Icon(
+          Icons.router_outlined,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        title: Text('Router', style: LuciTextStyles.cardTitle(context)),
+        subtitle: Text(
+          selectedName,
+          style: LuciTextStyles.cardSubtitle(context),
+        ),
+        trailing: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: selectedId,
+            icon: const Icon(Icons.expand_more_rounded),
+            items: routers.map((router) {
+              final label = router.lastKnownHostname?.isNotEmpty == true
+                  ? router.lastKnownHostname!
+                  : router.ipAddress;
+              return DropdownMenuItem<String>(
+                value: router.id,
+                child: Text(label),
+              );
+            }).toList(),
+            onChanged: (value) {
+              if (value == null || value == selectedId) return;
+              _selectRouter(value);
+            },
+          ),
+        ),
+      ),
     );
   }
 
@@ -639,25 +712,26 @@ class _RouterDashboardSettingsScreenState
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
-        appBar: LuciAppBar(title: 'Dashboard Settings', showBack: true),
+        appBar: LuciAppBar(title: 'Dashboard', showBack: true),
         body: Center(child: CircularProgressIndicator()),
       );
     }
     if (_errorMessage != null) {
       return Scaffold(
-        appBar: const LuciAppBar(title: 'Dashboard Settings', showBack: true),
+        appBar: const LuciAppBar(title: 'Dashboard', showBack: true),
         body: Center(child: Text(_errorMessage!)),
       );
     }
 
     return Scaffold(
-      appBar: const LuciAppBar(title: 'Dashboard Settings', showBack: true),
+      appBar: const LuciAppBar(title: 'Dashboard', showBack: true),
       body: ListView(
         padding: EdgeInsets.symmetric(vertical: LuciSpacing.sm),
         children: [
           LuciStaggeredAnimation(
             staggerDelay: const Duration(milliseconds: 50),
             children: [
+              _buildRouterSection(),
               _buildThroughputSection(),
               _buildDashboardCardsSection(),
               _buildWirelessInterfacesSection(),
