@@ -15,8 +15,10 @@ Available installers:
 - `install-ping-monitor.sh` / `install-ping-test.sh` - ping monitor output for latency timeline
 - `install-dns-monitor.sh` / `install-dns-test.sh` - DNS monitor output
 - `install-speedtest-monitor.sh` - speedtest helper and cron schedule
+- `install-usage-monitoring.sh` - vnStat/nlbwmon usage package support
 - `install-devices-collector.sh` - device inventory SQLite collector keyed by MAC
 - `install-device-bandwidth.sh` - per-device bandwidth collector and summary helper
+- `install-internet-blocking.sh` - device internet-blocking pause helper and cron job
 - `install-quarantine.sh` - device quarantine helper service
 - `install-notifications-db.sh` - notifications SQLite helper
 - `install-state-sync.sh` - Openwalla state backup/restore helper

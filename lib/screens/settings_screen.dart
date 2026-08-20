@@ -6,6 +6,7 @@ import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/screens/router_dashboard_settings_screen.dart';
+import 'package:luci_mobile/screens/router_setup_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -131,6 +132,17 @@ class SettingsScreen extends ConsumerWidget {
                       context,
                       const RouterDashboardSettingsScreen(),
                     ),
+                  ),
+                  const Divider(height: 32),
+                  _buildSectionTitle(context, 'Router Setup'),
+                  _buildSettingsCard(
+                    context: context,
+                    icon: Icons.construction_rounded,
+                    title: 'Router Setup',
+                    subtitle:
+                        'Install Openwalla monitoring, flows, and quarantine helpers',
+                    onTap: () =>
+                        _openSettingsPage(context, const RouterSetupScreen()),
                   ),
                   const Divider(height: 32),
                   _buildSectionTitle(context, 'Monitoring'),

@@ -746,6 +746,26 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<String> runRouterSetupCommand(
+    String command, {
+    BuildContext? context,
+  }) async {
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    final result = await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command: command,
+      context: context,
+    );
+    return _commandOutput(result);
+  }
+
   String? get sysauth => _authService?.sysauth;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
