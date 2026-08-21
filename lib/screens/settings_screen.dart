@@ -186,8 +186,9 @@ class SettingsScreen extends ConsumerWidget {
                   _buildSettingsCard(
                     context: context,
                     icon: Icons.bar_chart_rounded,
-                    title: 'Monthly Usage',
-                    subtitle: 'Configure monthly usage tracking',
+                    title: 'Usage Settings',
+                    subtitle:
+                        'Choose the vnStat interface used for usage graphs',
                     onTap: () => _openSettingsPage(
                       context,
                       const _MonthlyUsageSettingsScreen(),

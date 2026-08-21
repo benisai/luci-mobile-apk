@@ -8,7 +8,6 @@ import 'package:luci_mobile/screens/settings_screen.dart';
 import 'package:luci_mobile/screens/router_setup_screen.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/design/luci_design_system.dart';
-import 'package:luci_mobile/screens/manage_routers_screen.dart';
 import 'package:luci_mobile/utils/http_client_manager.dart';
 import 'package:luci_mobile/state/app_state.dart';
 
@@ -226,20 +225,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
             const LuciSectionHeader('Application'),
             _MoreScreenSection(
               tiles: [
-                _buildMoreTile(
-                  context,
-                  icon: Icons.router,
-                  iconColor: Theme.of(context).colorScheme.primary,
-                  title: 'Manage Routers',
-                  subtitle: 'Edit or remove saved routers',
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const ManageRoutersScreen(),
-                      ),
-                    );
-                  },
-                ),
                 _buildMoreTile(
                   context,
                   icon: Icons.settings_outlined,

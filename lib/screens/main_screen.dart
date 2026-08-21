@@ -103,11 +103,14 @@ class _MainScreenState extends ConsumerState<MainScreen> {
               NavigationDestination(
                 selectedIcon: Opacity(
                   opacity: getTabOpacity(1),
-                  child: Icon(Icons.bar_chart_rounded, color: getTabColor(1)),
+                  child: Icon(Icons.query_stats_rounded, color: getTabColor(1)),
                 ),
                 icon: Opacity(
                   opacity: getTabOpacity(1),
-                  child: Icon(Icons.bar_chart_outlined, color: getTabColor(1)),
+                  child: Icon(
+                    Icons.query_stats_outlined,
+                    color: getTabColor(1),
+                  ),
                 ),
                 label: 'Statistics',
               ),

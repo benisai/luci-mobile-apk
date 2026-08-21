@@ -9,7 +9,7 @@ import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/widgets/luci_refresh_components.dart';
 
-enum _StatsUsageRange { day, week }
+enum _StatsUsageRange { minute, hour, day, week }
 
 class StatisticsScreen extends ConsumerStatefulWidget {
   const StatisticsScreen({super.key});
@@ -69,9 +69,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       : _primaryUsageInterfaceName(appState);
                   return Column(
                     children: [
-                      _buildUsageCard(interfaceName),
-                      const SizedBox(height: 12),
                       _buildMonthlyUsageCard(interfaceName),
+                      const SizedBox(height: 12),
+                      _buildUsageCard(interfaceName),
                     ],
                   );
                 },
@@ -195,26 +195,61 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                '0 MB',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0,
-                  height: 0.95,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 3),
-                child: Text('26 days left', style: _mutedTextStyle()),
+              FutureBuilder<List<VnstatUsageSample>>(
+                future: _monthlyUsageFuture(interfaceName),
+                builder: (context, snapshot) {
+                  final summary = _monthlySummary(snapshot.data ?? const []);
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        _formatUsageTotal(summary.totalBytes),
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurface,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0,
+                              height: 0.95,
+                            ),
+                      ),
+                      const SizedBox(width: 8),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 3),
+                        child: Text(
+                          '${summary.daysLeft} days left',
+                          style: _mutedTextStyle(),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ],
           ),
           const SizedBox(height: 22),
-          _progressBar(0),
+          FutureBuilder<List<VnstatUsageSample>>(
+            future: _monthlyUsageFuture(interfaceName),
+            builder: (context, snapshot) {
+              final summary = _monthlySummary(snapshot.data ?? const []);
+              return _progressBar(summary.progress);
+            },
+          ),
         ],
       ),
+    );
+  }
+
+  Future<List<VnstatUsageSample>> _monthlyUsageFuture(String interfaceName) {
+    final key = '$interfaceName:monthly-summary';
+    return _usageFutures.putIfAbsent(
+      key,
+      () => ref
+          .read(appStateProvider)
+          .fetchVnstatUsageSamples(
+            period: 'daily',
+            interfaceName: interfaceName,
+            limit: 45,
+          ),
     );
   }
 
@@ -222,8 +257,18 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     _StatsUsageRange range,
     String interfaceName,
   ) {
-    final period = range == _StatsUsageRange.day ? 'daily' : 'daily';
-    final limit = range == _StatsUsageRange.day ? 14 : 60;
+    final period = switch (range) {
+      _StatsUsageRange.minute => '5min',
+      _StatsUsageRange.hour => 'hourly',
+      _StatsUsageRange.day => 'hourly',
+      _StatsUsageRange.week => 'daily',
+    };
+    final limit = switch (range) {
+      _StatsUsageRange.minute => 12,
+      _StatsUsageRange.hour => 12,
+      _StatsUsageRange.day => 24,
+      _StatsUsageRange.week => 7,
+    };
     final key = '$interfaceName:$period:$limit';
     return _usageFutures.putIfAbsent(
       key,
@@ -239,6 +284,8 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
 
   String _usageRangeLabel(_StatsUsageRange range) {
     return switch (range) {
+      _StatsUsageRange.minute => 'Minute',
+      _StatsUsageRange.hour => 'Hour',
       _StatsUsageRange.day => 'Day',
       _StatsUsageRange.week => 'Week',
     };
@@ -246,8 +293,10 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
 
   String _usageSubtitle(_StatsUsageRange range) {
     return switch (range) {
-      _StatsUsageRange.day => 'Last 14 days',
-      _StatsUsageRange.week => 'Last 8 weeks',
+      _StatsUsageRange.minute => 'Last 60 minutes',
+      _StatsUsageRange.hour => 'Last 12 hours',
+      _StatsUsageRange.day => 'Last 24 hours',
+      _StatsUsageRange.week => 'Last 7 days',
     };
   }
 
@@ -302,44 +351,65 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     List<VnstatUsageSample> samples,
   ) {
     final now = DateTime.now();
-    if (range == _StatsUsageRange.week) {
-      return List.generate(8, (index) {
-        final end = DateTime(
+    return switch (range) {
+      _StatsUsageRange.minute => _timeBuckets(
+        samples,
+        count: 12,
+        bucket: const Duration(minutes: 5),
+        anchor: DateTime(
           now.year,
           now.month,
           now.day,
-        ).subtract(Duration(days: (7 - index) * 7));
-        final start = end.subtract(const Duration(days: 6));
-        final slotEnd = end.add(const Duration(days: 1));
-        final matches = samples.where((sample) {
-          final time = sample.timestamp.toLocal();
-          return !time.isBefore(start) && time.isBefore(slotEnd);
-        }).toList();
-        return (
-          label: index == 7 ? 'This Week' : 'W-${7 - index}',
-          downloadBytes: matches.fold<int>(
-            0,
-            (sum, sample) => sum + sample.downloadBytes,
-          ),
-          uploadBytes: matches.fold<int>(
-            0,
-            (sum, sample) => sum + sample.uploadBytes,
-          ),
-          hasData: matches.isNotEmpty,
-        );
-      });
-    }
+          now.hour,
+          now.minute - (now.minute % 5),
+        ),
+        labelFor: (slot, index, lastIndex) =>
+            index == lastIndex ? 'Now' : _timeLabel(slot),
+      ),
+      _StatsUsageRange.hour => _timeBuckets(
+        samples,
+        count: 12,
+        bucket: const Duration(hours: 1),
+        anchor: DateTime(now.year, now.month, now.day, now.hour),
+        labelFor: (slot, index, lastIndex) =>
+            index == lastIndex ? 'Now' : _hourLabel(slot),
+      ),
+      _StatsUsageRange.day => _timeBuckets(
+        samples,
+        count: 24,
+        bucket: const Duration(hours: 1),
+        anchor: DateTime(now.year, now.month, now.day, now.hour),
+        labelFor: (slot, index, lastIndex) =>
+            index == lastIndex ? 'Now' : _hourLabel(slot),
+      ),
+      _StatsUsageRange.week => _timeBuckets(
+        samples,
+        count: 7,
+        bucket: const Duration(days: 1),
+        anchor: DateTime(now.year, now.month, now.day),
+        labelFor: (slot, index, lastIndex) =>
+            index == lastIndex ? 'Today' : _weekdayShort(slot.weekday),
+      ),
+    };
+  }
 
-    return List.generate(14, (index) {
-      final day = now.subtract(Duration(days: 13 - index));
-      final slot = DateTime(day.year, day.month, day.day);
-      final slotEnd = slot.add(const Duration(days: 1));
+  List<({String label, int downloadBytes, int uploadBytes, bool hasData})>
+  _timeBuckets(
+    List<VnstatUsageSample> samples, {
+    required int count,
+    required Duration bucket,
+    required DateTime anchor,
+    required String Function(DateTime slot, int index, int lastIndex) labelFor,
+  }) {
+    return List.generate(count, (index) {
+      final slot = anchor.subtract(bucket * (count - 1 - index));
+      final slotEnd = slot.add(bucket);
       final matches = samples.where((sample) {
         final time = sample.timestamp.toLocal();
         return !time.isBefore(slot) && time.isBefore(slotEnd);
       }).toList();
       return (
-        label: index == 13 ? 'Today' : _weekdayShort(day.weekday),
+        label: labelFor(slot, index, count - 1),
         downloadBytes: matches.fold<int>(
           0,
           (sum, sample) => sum + sample.downloadBytes,
@@ -632,6 +702,42 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   Set<int> _bottomLabelIndexes(int length) {
     if (length <= 1) return {0};
     return {0, (length / 3).floor(), ((length * 2) / 3).floor(), length - 1};
+  }
+
+  ({int totalBytes, int daysLeft, double progress}) _monthlySummary(
+    List<VnstatUsageSample> samples,
+  ) {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month);
+    final end = DateTime(now.year, now.month + 1);
+    final daysInMonth = end.difference(start).inDays;
+    final totalBytes = samples
+        .where((sample) {
+          final time = sample.timestamp.toLocal();
+          return !time.isBefore(start) && time.isBefore(end);
+        })
+        .fold<int>(
+          0,
+          (sum, sample) => sum + sample.downloadBytes + sample.uploadBytes,
+        );
+
+    return (
+      totalBytes: totalBytes,
+      daysLeft: max(0, daysInMonth - now.day),
+      progress: daysInMonth <= 0 ? 0 : now.day / daysInMonth,
+    );
+  }
+
+  String _timeLabel(DateTime time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  String _hourLabel(DateTime time) {
+    final hour = time.hour % 12 == 0 ? 12 : time.hour % 12;
+    final suffix = time.hour >= 12 ? 'PM' : 'AM';
+    return '$hour $suffix';
   }
 
   String _weekdayShort(int weekday) {

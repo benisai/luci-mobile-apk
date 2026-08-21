@@ -1223,6 +1223,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     );
   }
 
+  Future<void> _confirmRemoveRouter(model.Router router, String label) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Router'),
+        content: Text('Remove $label from this app?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    await ref.read(appStateProvider).removeRouter(router.id);
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = ref.watch(appStateProvider);
@@ -1238,7 +1260,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       appBar: LuciAppBar(
         centerTitle: true,
         title: null, // Always use titleWidget now
-        titleWidget: routers.length > 1
+        titleWidget: routers.isNotEmpty
             ? Center(
                 child: Container(
                   decoration: BoxDecoration(
@@ -1378,14 +1400,35 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                                             context,
                                           ).textTheme.bodySmall,
                                         ),
-                                        trailing: isSelected
-                                            ? Icon(
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (isSelected)
+                                              Icon(
                                                 Icons.check_circle,
                                                 color: Theme.of(
                                                   context,
                                                 ).colorScheme.primary,
-                                              )
-                                            : null,
+                                              ),
+                                            IconButton(
+                                              tooltip: 'Remove router',
+                                              icon: Icon(
+                                                Icons.delete_outline_rounded,
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .error
+                                                    .withValues(alpha: 0.82),
+                                              ),
+                                              onPressed: () async {
+                                                Navigator.of(context).pop();
+                                                await _confirmRemoveRouter(
+                                                  r,
+                                                  routerTitle,
+                                                );
+                                              },
+                                            ),
+                                          ],
+                                        ),
                                         selected: isSelected,
                                         selectedTileColor: Theme.of(context)
                                             .colorScheme
