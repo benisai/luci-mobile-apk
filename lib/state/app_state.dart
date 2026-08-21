@@ -3022,6 +3022,66 @@ class AppState extends ChangeNotifier {
     return const [];
   }
 
+  Future<List<String>> fetchVnstatInterfaceNames({
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      return const ['br-lan', 'wan', 'WG'];
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    final commands = ['/usr/bin/vnstat', '/usr/sbin/vnstat'];
+    for (final command in commands) {
+      try {
+        final result = await _apiService!.call(
+          router.ipAddress,
+          sysauth,
+          router.useHttps,
+          object: 'file',
+          method: 'exec',
+          params: {
+            'command': command,
+            'params': ['--iflist'],
+          },
+          context: context,
+        );
+        final names = _parseVnstatIfList(_commandOutput(result));
+        if (names.isNotEmpty) return names;
+      } catch (e, stack) {
+        Logger.debug('Optional vnstat --iflist command $command failed: $e');
+        Logger.debug('Optional vnstat --iflist stack: $stack');
+      }
+    }
+
+    return const [];
+  }
+
+  List<String> _parseVnstatIfList(String output) {
+    final trimmed = output.trim();
+    if (trimmed.isEmpty) return const [];
+
+    final cleaned = trimmed
+        .split('\n')
+        .map(
+          (line) => line.replaceFirst(RegExp(r'^Available interfaces:\s*'), ''),
+        )
+        .join(' ');
+    final names =
+        cleaned
+            .split(RegExp(r'\s+'))
+            .map((name) => name.trim())
+            .where((name) => name.isNotEmpty && name != ':')
+            .toSet()
+            .toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return names;
+  }
+
   List<VnstatUsageSample> _parseVnstatSamples(
     String output, {
     required String period,

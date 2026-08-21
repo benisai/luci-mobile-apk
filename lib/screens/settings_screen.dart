@@ -734,19 +734,44 @@ class _MonthlyUsageSettingsScreenState
     setState(() => _isLoading = true);
     final appState = ref.read(appStateProvider);
     final settings = await appState.fetchMonthlyUsageSettings(context: context);
-    final interfaces = appState.dashboardInterfaceNames();
+    if (!mounted) return;
+    final vnstatInterfaces = await appState.fetchVnstatInterfaceNames(
+      context: context,
+    );
+    final interfaces = vnstatInterfaces.isNotEmpty
+        ? vnstatInterfaces
+        : appState.dashboardInterfaceNames();
     if (!mounted) return;
 
+    final selectedInterface = _resolveSelectedInterface(
+      settings.interfaceName,
+      interfaces,
+    );
+
     setState(() {
-      _interfaces = interfaces.contains(settings.interfaceName)
+      _interfaces = interfaces.contains(selectedInterface)
           ? interfaces
-          : [...interfaces, settings.interfaceName];
-      _selectedInterface = settings.interfaceName;
+          : [...interfaces, selectedInterface];
+      _selectedInterface = selectedInterface;
       final now = DateTime.now();
       final safeDay = settings.monthStartDay.clamp(1, 28);
       _startDate = DateTime(now.year, now.month, safeDay);
       _isLoading = false;
     });
+  }
+
+  String _resolveSelectedInterface(String savedInterface, List<String> names) {
+    if (names.contains(savedInterface)) return savedInterface;
+
+    final savedLower = savedInterface.toLowerCase();
+    final caseInsensitive = names.where((name) {
+      return name.toLowerCase() == savedLower;
+    }).firstOrNull;
+    if (caseInsensitive != null) return caseInsensitive;
+
+    if (savedLower == 'lan' && names.contains('br-lan')) return 'br-lan';
+    if (names.contains(_defaultInterface)) return _defaultInterface;
+    return names.isNotEmpty ? names.first : savedInterface;
   }
 
   Future<void> _saveSettings() async {
