@@ -2990,36 +2990,53 @@ class AppState extends ChangeNotifier {
       return const [];
     }
 
-    final commands = ['/usr/bin/vnstat', '/usr/sbin/vnstat'];
+    final commands = ['/usr/bin/vnstat', '/usr/sbin/vnstat', '/bin/vnstat'];
+    final paramsVariants = _vnstatJsonParamVariants(period);
     for (final command in commands) {
-      try {
-        final result = await _apiService!.call(
-          router.ipAddress,
-          sysauth,
-          router.useHttps,
-          object: 'file',
-          method: 'exec',
-          params: {
-            'command': command,
-            'params': ['--json'],
-          },
-          context: context,
-        );
-        final output = _commandOutput(result);
-        if (output.trim().isEmpty) continue;
-        final samples = _parseVnstatSamples(
-          output,
-          period: period,
-          preferredInterface: interfaceName,
-          limit: limit,
-        );
-        if (samples.isNotEmpty) return samples;
-      } catch (e, stack) {
-        Logger.debug('Optional vnstat command $command failed: $e');
-        Logger.debug('Optional vnstat stack: $stack');
+      for (final paramsVariant in paramsVariants) {
+        try {
+          final result = await _apiService!.call(
+            router.ipAddress,
+            sysauth,
+            router.useHttps,
+            object: 'file',
+            method: 'exec',
+            params: {'command': command, 'params': paramsVariant},
+            context: context,
+          );
+          final output = _commandOutput(result);
+          if (output.trim().isEmpty) continue;
+          final samples = _parseVnstatSamples(
+            output,
+            period: period,
+            preferredInterface: interfaceName,
+            limit: limit,
+          );
+          if (samples.isNotEmpty) return samples;
+        } catch (e, stack) {
+          Logger.debug(
+            'Optional vnstat command $command ${paramsVariant.join(' ')} failed: $e',
+          );
+          Logger.debug('Optional vnstat stack: $stack');
+        }
       }
     }
     return const [];
+  }
+
+  List<List<String>> _vnstatJsonParamVariants(String period) {
+    final (mode, flag) = switch (period) {
+      '5min' => ('5', '-5'),
+      'hourly' => ('h', '-h'),
+      'daily' => ('d', '-d'),
+      'monthly' => ('m', '-m'),
+      _ => (null, null),
+    };
+    return [
+      const ['--json'],
+      if (mode != null) ['--json', mode],
+      if (flag != null) [flag, '--json'],
+    ];
   }
 
   Future<List<String>> fetchVnstatInterfaceNames({
@@ -3035,7 +3052,7 @@ class AppState extends ChangeNotifier {
       return const [];
     }
 
-    final commands = ['/usr/bin/vnstat', '/usr/sbin/vnstat'];
+    final commands = ['/usr/bin/vnstat', '/usr/sbin/vnstat', '/bin/vnstat'];
     for (final command in commands) {
       try {
         final result = await _apiService!.call(

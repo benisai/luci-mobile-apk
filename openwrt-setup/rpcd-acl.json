@@ -50,6 +50,7 @@
 				"/usr/bin/tail": ["exec"],
 				"/sbin/uci": ["exec"],
 				"/bin/uci": ["exec"],
+				"/bin/vnstat": ["exec"],
 				"/etc/init.d/openwalla-netify-collector": ["exec"],
 				"/etc/init.d/openwalla-connection-flows-collector": ["exec"],
 				"/etc/init.d/openwalla-devices-collector": ["exec"],
