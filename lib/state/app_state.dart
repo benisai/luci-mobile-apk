@@ -226,6 +226,62 @@ class OpenwrtSqmQueue {
   }
 }
 
+class OpenwrtNetworkInterfaceConfig {
+  final String section;
+  final String interfaceName;
+  final String protocol;
+  final String ipAddress;
+  final String netmask;
+  final List<String> dnsServers;
+  final String? dhcpSection;
+  final bool dhcpEnabled;
+  final int dhcpStart;
+  final int dhcpLimit;
+  final String leaseTime;
+
+  const OpenwrtNetworkInterfaceConfig({
+    required this.section,
+    required this.interfaceName,
+    required this.protocol,
+    required this.ipAddress,
+    required this.netmask,
+    required this.dnsServers,
+    required this.dhcpSection,
+    required this.dhcpEnabled,
+    required this.dhcpStart,
+    required this.dhcpLimit,
+    required this.leaseTime,
+  });
+
+  String get dnsText => dnsServers.join(' ');
+
+  OpenwrtNetworkInterfaceConfig copyWith({
+    String? protocol,
+    String? ipAddress,
+    String? netmask,
+    List<String>? dnsServers,
+    String? dhcpSection,
+    bool? dhcpEnabled,
+    int? dhcpStart,
+    int? dhcpLimit,
+    String? leaseTime,
+  }) {
+    return OpenwrtNetworkInterfaceConfig(
+      section: section,
+      interfaceName: interfaceName,
+      protocol: protocol ?? this.protocol,
+      ipAddress: ipAddress ?? this.ipAddress,
+      netmask: netmask ?? this.netmask,
+      dnsServers: dnsServers ?? this.dnsServers,
+      dhcpSection: dhcpSection ?? this.dhcpSection,
+      dhcpEnabled: dhcpEnabled ?? this.dhcpEnabled,
+      dhcpStart: dhcpStart ?? this.dhcpStart,
+      dhcpLimit: dhcpLimit ?? this.dhcpLimit,
+      leaseTime: leaseTime ?? this.leaseTime,
+    );
+  }
+}
+
 class PingMonitorSample {
   final DateTime timestamp;
   final String target;
@@ -2521,6 +2577,188 @@ class AppState extends ChangeNotifier {
       sysauth,
       router.useHttps,
       command: '/etc/init.d/sqm restart 2>/dev/null || true',
+    );
+    notifyListeners();
+  }
+
+  Future<OpenwrtNetworkInterfaceConfig?> fetchNetworkInterfaceConfig(
+    String interfaceName, {
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      return OpenwrtNetworkInterfaceConfig(
+        section: interfaceName,
+        interfaceName: interfaceName,
+        protocol: interfaceName.toLowerCase() == 'wan' ? 'dhcp' : 'static',
+        ipAddress: interfaceName.toLowerCase() == 'wan' ? '' : '192.168.10.1',
+        netmask: interfaceName.toLowerCase() == 'wan' ? '' : '255.255.255.0',
+        dnsServers: const ['1.1.1.1', '8.8.8.8'],
+        dhcpSection: interfaceName.toLowerCase() == 'wan'
+            ? null
+            : interfaceName,
+        dhcpEnabled: interfaceName.toLowerCase() != 'wan',
+        dhcpStart: 100,
+        dhcpLimit: 150,
+        leaseTime: '12h',
+      );
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return null;
+    }
+
+    final networkResult = await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'uci',
+      method: 'get',
+      params: {'config': 'network'},
+      context: context,
+    );
+    final dhcpResult = await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'uci',
+      method: 'get',
+      params: {'config': 'dhcp'},
+    );
+
+    final networkValues = _extractUciValues(networkResult);
+    final dhcpValues = _extractUciValues(dhcpResult);
+    final normalized = interfaceName.toLowerCase();
+
+    final networkEntry = networkValues.entries.where((entry) {
+      return entry.key.toLowerCase() == normalized &&
+          entry.value['.type']?.toString() == 'interface';
+    }).firstOrNull;
+    if (networkEntry == null) return null;
+
+    final dhcpEntry = dhcpValues.entries.where((entry) {
+      final value = entry.value;
+      if (value['.type']?.toString() != 'dhcp') return false;
+      final iface = value['interface']?.toString().toLowerCase();
+      return entry.key.toLowerCase() == normalized || iface == normalized;
+    }).firstOrNull;
+
+    String stringValue(Map<String, dynamic> values, String key) {
+      final value = values[key];
+      if (value is List) {
+        return value.map((entry) => entry.toString()).join(' ');
+      }
+      return value?.toString() ?? '';
+    }
+
+    int intValue(Map<String, dynamic>? values, String key, int fallback) {
+      return int.tryParse(values?[key]?.toString() ?? '') ?? fallback;
+    }
+
+    final network = networkEntry.value;
+    final dhcp = dhcpEntry?.value;
+    final dnsText = stringValue(network, 'dns').trim();
+
+    return OpenwrtNetworkInterfaceConfig(
+      section: networkEntry.key,
+      interfaceName: interfaceName,
+      protocol: stringValue(network, 'proto').trim().isEmpty
+          ? 'static'
+          : stringValue(network, 'proto').trim(),
+      ipAddress: stringValue(network, 'ipaddr').trim(),
+      netmask: stringValue(network, 'netmask').trim(),
+      dnsServers: dnsText.isEmpty ? const [] : dnsText.split(RegExp(r'\s+')),
+      dhcpSection: dhcpEntry?.key,
+      dhcpEnabled: dhcp == null ? false : dhcp['ignore']?.toString() != '1',
+      dhcpStart: intValue(dhcp, 'start', 100),
+      dhcpLimit: intValue(dhcp, 'limit', 150),
+      leaseTime: dhcp?['leasetime']?.toString() ?? '12h',
+    );
+  }
+
+  Future<void> saveNetworkInterfaceConfig(
+    OpenwrtNetworkInterfaceConfig config, {
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    final networkValues = <String, String>{
+      'proto': config.protocol,
+      'ipaddr': config.ipAddress,
+      'netmask': config.netmask,
+    };
+    if (config.dnsServers.isNotEmpty) {
+      networkValues['dns'] = config.dnsServers.join(' ');
+    }
+
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'network',
+      section: config.section,
+      values: networkValues,
+      context: context,
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'network',
+    );
+
+    var dhcpSection = config.dhcpSection;
+    if (dhcpSection == null || dhcpSection.isEmpty) {
+      final addResult = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'add',
+        params: {'config': 'dhcp', 'type': 'dhcp'},
+      );
+      dhcpSection = _extractAddedSection(addResult);
+    }
+
+    if (dhcpSection != null && dhcpSection.isNotEmpty) {
+      await _apiService!.uciSet(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        config: 'dhcp',
+        section: dhcpSection,
+        values: {
+          'interface': config.interfaceName,
+          'ignore': config.dhcpEnabled ? '0' : '1',
+          'start': config.dhcpStart.toString(),
+          'limit': config.dhcpLimit.toString(),
+          'leasetime': config.leaseTime,
+        },
+      );
+      await _apiService!.uciCommit(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        config: 'dhcp',
+      );
+    }
+
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command:
+          '/etc/init.d/network reload 2>/dev/null; /etc/init.d/dnsmasq restart 2>/dev/null || true',
     );
     notifyListeners();
   }

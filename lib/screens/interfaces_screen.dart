@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:flutter/services.dart';
 import 'package:luci_mobile/models/interface.dart';
+import 'package:luci_mobile/state/app_state.dart';
 import 'dart:math';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/screens/router_dashboard_settings_screen.dart';
@@ -412,6 +413,19 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
     );
   }
 
+  Future<void> _showEditInterfaceSheet(NetworkInterface iface) async {
+    final updated = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) =>
+          _NetworkInterfaceEditSheet(interfaceName: iface.name),
+    );
+    if (updated == true && mounted) {
+      await ref.read(appStateProvider).fetchDashboardData();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = ref.read(appStateProvider);
@@ -584,6 +598,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
             subtitle: _buildMinimalInterfaceSubtitle(iface),
             isUp: iface.isUp,
             icon: _getInterfaceIcon(iface.protocol),
+            onEdit: () => _showEditInterfaceSheet(iface),
             details: _buildWiredDetails(context, iface),
             initiallyExpanded:
                 isTargetInterface || _expandedInterface == keyStr,
@@ -1177,6 +1192,348 @@ class LuciSectionHeader extends StatelessWidget {
   }
 }
 
+class _NetworkInterfaceEditSheet extends ConsumerStatefulWidget {
+  final String interfaceName;
+
+  const _NetworkInterfaceEditSheet({required this.interfaceName});
+
+  @override
+  ConsumerState<_NetworkInterfaceEditSheet> createState() =>
+      _NetworkInterfaceEditSheetState();
+}
+
+class _NetworkInterfaceEditSheetState
+    extends ConsumerState<_NetworkInterfaceEditSheet> {
+  final _ipController = TextEditingController();
+  final _netmaskController = TextEditingController();
+  final _dnsController = TextEditingController();
+  final _startIpController = TextEditingController();
+  final _endIpController = TextEditingController();
+  final _leaseTimeController = TextEditingController();
+  OpenwrtNetworkInterfaceConfig? _config;
+  var _protocol = 'static';
+  var _dhcpEnabled = false;
+  bool _isLoading = true;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _ipController.dispose();
+    _netmaskController.dispose();
+    _dnsController.dispose();
+    _startIpController.dispose();
+    _endIpController.dispose();
+    _leaseTimeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final config = await ref
+        .read(appStateProvider)
+        .fetchNetworkInterfaceConfig(widget.interfaceName, context: context);
+    if (!mounted) return;
+    if (config == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+    _config = config;
+    _protocol = config.protocol;
+    _dhcpEnabled = config.dhcpEnabled;
+    _ipController.text = config.ipAddress;
+    _netmaskController.text = config.netmask;
+    _dnsController.text = config.dnsText;
+    _startIpController.text = _offsetToIp(config.ipAddress, config.dhcpStart);
+    _endIpController.text = _offsetToIp(
+      config.ipAddress,
+      config.dhcpStart + config.dhcpLimit - 1,
+    );
+    _leaseTimeController.text = config.leaseTime;
+    setState(() => _isLoading = false);
+  }
+
+  String _offsetToIp(String routerIp, int offset) {
+    final parts = routerIp.split('.');
+    if (parts.length != 4 || offset <= 0) return offset.toString();
+    return '${parts[0]}.${parts[1]}.${parts[2]}.$offset';
+  }
+
+  int _lastOctetOrNumber(String value, int fallback) {
+    final trimmed = value.trim();
+    final parts = trimmed.split('.');
+    if (parts.length == 4) return int.tryParse(parts.last) ?? fallback;
+    return int.tryParse(trimmed) ?? fallback;
+  }
+
+  Future<void> _save() async {
+    final current = _config;
+    if (current == null) return;
+    final start = _lastOctetOrNumber(
+      _startIpController.text,
+      current.dhcpStart,
+    ).clamp(1, 254);
+    final end = _lastOctetOrNumber(
+      _endIpController.text,
+      current.dhcpStart + current.dhcpLimit - 1,
+    ).clamp(start, 254);
+    final dnsServers = _dnsController.text
+        .split(RegExp(r'[\s,]+'))
+        .map((entry) => entry.trim())
+        .where((entry) => entry.isNotEmpty)
+        .toList();
+
+    final next = current.copyWith(
+      protocol: _protocol,
+      ipAddress: _ipController.text.trim(),
+      netmask: _netmaskController.text.trim(),
+      dnsServers: dnsServers,
+      dhcpEnabled: _dhcpEnabled,
+      dhcpStart: start,
+      dhcpLimit: end - start + 1,
+      leaseTime: _leaseTimeController.text.trim().isEmpty
+          ? '12h'
+          : _leaseTimeController.text.trim(),
+    );
+
+    setState(() => _isSaving = true);
+    try {
+      await ref
+          .read(appStateProvider)
+          .saveNetworkInterfaceConfig(next, context: context);
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save interface: $e')));
+      setState(() => _isSaving = false);
+    }
+  }
+
+  bool get _showDhcp {
+    final name = widget.interfaceName.toLowerCase();
+    return name == 'lan' || _config?.dhcpSection != null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          18,
+          0,
+          18,
+          MediaQuery.of(context).viewInsets.bottom + 18,
+        ),
+        child: _isLoading
+            ? const Padding(
+                padding: EdgeInsets.symmetric(vertical: 44),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : _config == null
+            ? Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text('Unable to load ${widget.interfaceName}.'),
+              )
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Edit ${widget.interfaceName}',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Close',
+                          onPressed: _isSaving
+                              ? null
+                              : () => Navigator.of(context).pop(false),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'IPv4',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _FormPanel(
+                      children: [
+                        DropdownButtonFormField<String>(
+                          initialValue: _protocol,
+                          decoration: const InputDecoration(
+                            labelText: 'Protocol',
+                          ),
+                          items: const ['static', 'dhcp', 'dhcpv6', 'wireguard']
+                              .map(
+                                (value) => DropdownMenuItem(
+                                  value: value,
+                                  child: Text(value),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: _isSaving
+                              ? null
+                              : (value) => setState(
+                                  () => _protocol = value ?? _protocol,
+                                ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _ipController,
+                          enabled: !_isSaving,
+                          decoration: const InputDecoration(
+                            labelText: 'IP Address',
+                            hintText: '192.168.10.1',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _netmaskController,
+                          enabled: !_isSaving,
+                          decoration: const InputDecoration(
+                            labelText: 'Subnet Mask',
+                            hintText: '255.255.255.0',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _dnsController,
+                          enabled: !_isSaving,
+                          decoration: const InputDecoration(
+                            labelText: 'Upstream DNS Servers',
+                            hintText: '1.1.1.1 8.8.8.8',
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_showDhcp) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        'DHCPv4 Server',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _FormPanel(
+                        children: [
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('DHCPv4 Server'),
+                            value: _dhcpEnabled,
+                            onChanged: _isSaving
+                                ? null
+                                : (value) =>
+                                      setState(() => _dhcpEnabled = value),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _startIpController,
+                            enabled: !_isSaving && _dhcpEnabled,
+                            decoration: const InputDecoration(
+                              labelText: 'Start IP Address',
+                              hintText: '192.168.10.100',
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _endIpController,
+                            enabled: !_isSaving && _dhcpEnabled,
+                            decoration: const InputDecoration(
+                              labelText: 'End IP Address',
+                              hintText: '192.168.10.249',
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _leaseTimeController,
+                            enabled: !_isSaving && _dhcpEnabled,
+                            decoration: const InputDecoration(
+                              labelText: 'Lease Time',
+                              hintText: '12h',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _isSaving
+                                ? null
+                                : () => Navigator.of(context).pop(false),
+                            child: const Text('Dismiss'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: _isSaving ? null : _save,
+                            icon: _isSaving
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.save_rounded),
+                            label: const Text('Save'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _FormPanel extends StatelessWidget {
+  final List<Widget> children;
+
+  const _FormPanel({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+        ),
+      ),
+      child: Column(children: children),
+    );
+  }
+}
+
 class _UnifiedNetworkCard extends StatefulWidget {
   final String name;
   final String subtitle;
@@ -1184,6 +1541,7 @@ class _UnifiedNetworkCard extends StatefulWidget {
   final IconData icon;
   final Widget details;
   final bool initiallyExpanded;
+  final VoidCallback? onEdit;
 
   const _UnifiedNetworkCard({
     required this.name,
@@ -1192,6 +1550,7 @@ class _UnifiedNetworkCard extends StatefulWidget {
     required this.icon,
     required this.details,
     this.initiallyExpanded = false,
+    this.onEdit,
     super.key,
   });
 
@@ -1351,7 +1710,13 @@ class _UnifiedNetworkCardState extends State<_UnifiedNetworkCard>
                         ],
                       ),
                     ),
-                    if (!widget.isUp)
+                    if (widget.onEdit != null)
+                      IconButton(
+                        tooltip: 'Edit interface',
+                        onPressed: widget.onEdit,
+                        icon: const Icon(Icons.edit_rounded, size: 20),
+                      )
+                    else if (!widget.isUp)
                       Padding(
                         padding: const EdgeInsets.only(right: LuciSpacing.xs),
                         child: LuciStatusIndicators.statusChip(
