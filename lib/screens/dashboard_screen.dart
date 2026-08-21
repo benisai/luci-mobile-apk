@@ -8,17 +8,15 @@ import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/widgets/luci_animation_system.dart';
 import 'package:luci_mobile/models/dashboard_preferences.dart';
+import 'package:luci_mobile/screens/clients_screen.dart';
 import 'package:luci_mobile/screens/flows_screen.dart';
 import 'package:luci_mobile/screens/interfaces_screen.dart';
-import 'package:luci_mobile/screens/monthly_usage_screen.dart';
 import 'package:luci_mobile/screens/network_performance_screen.dart';
 import 'package:luci_mobile/screens/notifications_screen.dart';
 import 'package:luci_mobile/screens/rules_screen.dart';
 import 'package:luci_mobile/screens/simple_flows_screen.dart';
 import 'package:luci_mobile/screens/system_resources_screen.dart';
 import 'package:luci_mobile/models/router.dart' as model;
-
-enum _UsageRange { minute, hour, day, week }
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -34,9 +32,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   static const Color _openwallaGreen = Color(0xFF20CF70);
   static const Color _openwallaCardBorder = Color(0xFF313C52);
   static const double _openwallaRadius = 8;
-  _UsageRange _usageRange = _UsageRange.day;
-  final Map<String, Future<List<VnstatUsageSample>>> _usageFutures = {};
-  Future<MonthlyUsageSettings>? _monthlyUsageSettingsFuture;
   Timer? _summaryRefreshTimer;
   bool _summaryRefreshInFlight = false;
 
@@ -212,7 +207,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 count: (deviceCount is int ? deviceCount : 0).toString(),
                 icon: Icons.devices_rounded,
                 color: _openwallaCyan,
-                onTap: () => ref.read(appStateProvider).requestTab(1),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const ClientsScreen(),
+                    ),
+                  );
+                },
               ),
             ),
             const SizedBox(width: 10),
@@ -1115,57 +1116,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     );
   }
 
-  String _primaryUsageInterfaceName(AppState appState) {
-    final interfaces =
-        appState.dashboardData?['interfaceDump']?['interface']
-            as List<dynamic>?;
-    if (interfaces == null) return 'br-lan';
-
-    final names = interfaces
-        .whereType<Map<String, dynamic>>()
-        .map((interface) => interface['interface']?.toString())
-        .whereType<String>()
-        .where((name) => name != 'loopback' && name != 'lo')
-        .toList();
-
-    return names.firstWhere(
-      (name) => name == 'br-lan',
-      orElse: () => names.isNotEmpty ? names.first : 'br-lan',
-    );
-  }
-
-  Widget _buildDashboardBottomCards(AppState appState) {
-    final preferences = appState.dashboardPreferences;
-    final fallbackInterface = _primaryUsageInterfaceName(appState);
-    _monthlyUsageSettingsFuture ??= ref
-        .read(appStateProvider)
-        .fetchMonthlyUsageSettings();
-
-    return FutureBuilder<MonthlyUsageSettings>(
-      future: _monthlyUsageSettingsFuture,
-      builder: (context, snapshot) {
-        final configuredInterface = snapshot.data?.interfaceName;
-        final interfaceName = configuredInterface?.isNotEmpty == true
-            ? configuredInterface!
-            : fallbackInterface;
-        final cards = <Widget>[
-          if (preferences.showUsageCard) _buildUsageCard(interfaceName),
-          if (preferences.showMonthlyUsageCard)
-            _buildMonthlyUsageCard(interfaceName),
-        ];
-
-        return Column(
-          children: [
-            for (var index = 0; index < cards.length; index++) ...[
-              if (index > 0) const SizedBox(height: 12),
-              cards[index],
-            ],
-            if (cards.isNotEmpty) const SizedBox(height: 12),
-            _buildDashboardShortcutGrid(),
-          ],
-        );
-      },
-    );
+  Widget _buildDashboardBottomCards() {
+    return _buildDashboardShortcutGrid();
   }
 
   Widget _buildDashboardShortcutGrid() {
@@ -1182,22 +1134,26 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           _buildDashboardShortcut(
             label: 'Network',
             icon: Icons.public_rounded,
-            onTap: () => _openNetworkPage(initialWirelessTab: false),
+            color: _openwallaCyan,
+            onTap: () => _openNetworkPage(wirelessOnly: false),
           ),
           _buildDashboardShortcut(
             label: 'Routes',
             icon: Icons.route_rounded,
+            color: _openwallaOrange,
             onTap: () => _openDashboardPlaceholder('Routes'),
           ),
           _buildDashboardShortcut(
             label: 'Smart Queue',
             icon: Icons.sync_alt_rounded,
+            color: _openwallaGreen,
             onTap: () => _openDashboardPlaceholder('Smart Queue'),
           ),
           _buildDashboardShortcut(
             label: 'Wi-Fi',
             icon: Icons.wifi_rounded,
-            onTap: () => _openNetworkPage(initialWirelessTab: true),
+            color: Theme.of(context).colorScheme.primary,
+            onTap: () => _openNetworkPage(wirelessOnly: true),
           ),
         ],
       ),
@@ -1207,6 +1163,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   Widget _buildDashboardShortcut({
     required String label,
     required IconData icon,
+    required Color color,
     required VoidCallback onTap,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -1220,7 +1177,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: colorScheme.onSurfaceVariant, size: 30),
+              Icon(icon, color: color, size: 30),
               const SizedBox(height: 10),
               Text(
                 label,
@@ -1240,11 +1197,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     );
   }
 
-  void _openNetworkPage({required bool initialWirelessTab}) {
+  void _openNetworkPage({required bool wirelessOnly}) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) =>
-            InterfacesScreen(initialWirelessTab: initialWirelessTab),
+        builder: (context) => InterfacesScreen(wirelessOnly: wirelessOnly),
       ),
     );
   }
@@ -1257,635 +1213,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     );
   }
 
-  Widget _buildUsageCard(String interfaceName) {
-    final usageFuture = _usageFuture(_usageRange, interfaceName);
-
-    return _buildOpenwallaCard(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _metricCardTitle(
-            '$interfaceName Usage',
-            trailing: _usageRangePicker(),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _usageSubtitle(_usageRange),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurfaceVariant.withValues(alpha: 0.78),
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0,
-            ),
-          ),
-          const SizedBox(height: 20),
-          FutureBuilder<List<VnstatUsageSample>>(
-            future: usageFuture,
-            builder: (context, snapshot) {
-              final samples = _usageSamplesForRange(
-                _usageRange,
-                snapshot.data ?? const [],
-              );
-              return _usageLineGraph(samples);
-            },
-          ),
-          const SizedBox(height: 18),
-          _usageLegend(),
-        ],
-      ),
-    );
-  }
-
-  Future<List<VnstatUsageSample>> _usageFuture(
-    _UsageRange range,
-    String interfaceName,
-  ) {
-    final period = _usageVnstatPeriod(range);
-    final limit = switch (range) {
-      _UsageRange.minute => 24,
-      _UsageRange.hour => 24,
-      _UsageRange.day => 14,
-      _UsageRange.week => 60,
-    };
-    final key = '$interfaceName:$period:$limit';
-    return _usageFutures.putIfAbsent(
-      key,
-      () => ref
-          .read(appStateProvider)
-          .fetchVnstatUsageSamples(
-            period: period,
-            interfaceName: interfaceName,
-            limit: limit,
-          ),
-    );
-  }
-
-  String _usageVnstatPeriod(_UsageRange range) {
-    return switch (range) {
-      _UsageRange.minute => '5min',
-      _UsageRange.hour => 'hourly',
-      _UsageRange.day => 'daily',
-      _UsageRange.week => 'daily',
-    };
-  }
-
-  String _usageRangeLabel(_UsageRange range) {
-    return switch (range) {
-      _UsageRange.minute => 'Minute',
-      _UsageRange.hour => 'Hour',
-      _UsageRange.day => 'Day',
-      _UsageRange.week => 'Week',
-    };
-  }
-
-  String _usageSubtitle(_UsageRange range) {
-    return switch (range) {
-      _UsageRange.minute => 'Last 2 hours, 5 minute intervals',
-      _UsageRange.hour => 'Last 24 hours',
-      _UsageRange.day => 'Last 14 days',
-      _UsageRange.week => 'Last 8 weeks',
-    };
-  }
-
-  Widget _usageRangePicker() {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return PopupMenuButton<_UsageRange>(
-      initialValue: _usageRange,
-      onSelected: (range) => setState(() => _usageRange = range),
-      itemBuilder: (context) => _UsageRange.values
-          .map(
-            (range) => PopupMenuItem<_UsageRange>(
-              value: range,
-              child: Text(_usageRangeLabel(range)),
-            ),
-          )
-          .toList(),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.34),
-          border: Border.all(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.55),
-          ),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _usageRangeLabel(_usageRange),
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Icon(
-              Icons.keyboard_arrow_down_rounded,
-              size: 18,
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  List<({String label, int downloadBytes, int uploadBytes, bool hasData})>
-  _usageSamplesForRange(_UsageRange range, List<VnstatUsageSample> samples) {
-    final now = DateTime.now();
-
-    return switch (range) {
-      _UsageRange.minute => List.generate(24, (index) {
-        final slot = DateTime(
-          now.year,
-          now.month,
-          now.day,
-          now.hour,
-          (now.minute ~/ 5) * 5,
-        ).subtract(Duration(minutes: (23 - index) * 5));
-        final slotEnd = slot.add(const Duration(minutes: 5));
-        final matches = samples.where((sample) {
-          final time = sample.timestamp.toLocal();
-          return !time.isBefore(slot) && time.isBefore(slotEnd);
-        }).toList();
-        final download = matches.fold<int>(
-          0,
-          (sum, sample) => sum + sample.downloadBytes,
-        );
-        final upload = matches.fold<int>(
-          0,
-          (sum, sample) => sum + sample.uploadBytes,
-        );
-        return (
-          label: '${slot.hour}:${slot.minute.toString().padLeft(2, '0')}',
-          downloadBytes: download,
-          uploadBytes: upload,
-          hasData: matches.isNotEmpty,
-        );
-      }),
-      _UsageRange.hour => List.generate(24, (index) {
-        final slot = DateTime(
-          now.year,
-          now.month,
-          now.day,
-          now.hour,
-        ).subtract(Duration(hours: 23 - index));
-        final slotEnd = slot.add(const Duration(hours: 1));
-        final matches = samples.where((sample) {
-          final time = sample.timestamp.toLocal();
-          return !time.isBefore(slot) && time.isBefore(slotEnd);
-        }).toList();
-        return (
-          label: index == 23 ? 'Now' : '${slot.hour}:00',
-          downloadBytes: matches.fold<int>(
-            0,
-            (sum, sample) => sum + sample.downloadBytes,
-          ),
-          uploadBytes: matches.fold<int>(
-            0,
-            (sum, sample) => sum + sample.uploadBytes,
-          ),
-          hasData: matches.isNotEmpty,
-        );
-      }),
-      _UsageRange.day => List.generate(14, (index) {
-        final day = now.subtract(Duration(days: 13 - index));
-        final slot = DateTime(day.year, day.month, day.day);
-        final slotEnd = slot.add(const Duration(days: 1));
-        final matches = samples.where((sample) {
-          final time = sample.timestamp.toLocal();
-          return !time.isBefore(slot) && time.isBefore(slotEnd);
-        }).toList();
-        return (
-          label: index == 13 ? 'Today' : _weekdayShort(day.weekday),
-          downloadBytes: matches.fold<int>(
-            0,
-            (sum, sample) => sum + sample.downloadBytes,
-          ),
-          uploadBytes: matches.fold<int>(
-            0,
-            (sum, sample) => sum + sample.uploadBytes,
-          ),
-          hasData: matches.isNotEmpty,
-        );
-      }),
-      _UsageRange.week => List.generate(8, (index) {
-        final end = DateTime(
-          now.year,
-          now.month,
-          now.day,
-        ).subtract(Duration(days: (7 - index) * 7));
-        final start = end.subtract(const Duration(days: 6));
-        final slotEnd = end.add(const Duration(days: 1));
-        final matches = samples.where((sample) {
-          final time = sample.timestamp.toLocal();
-          return !time.isBefore(start) && time.isBefore(slotEnd);
-        }).toList();
-        return (
-          label: index == 7 ? 'This Week' : 'W-${7 - index}',
-          downloadBytes: matches.fold<int>(
-            0,
-            (sum, sample) => sum + sample.downloadBytes,
-          ),
-          uploadBytes: matches.fold<int>(
-            0,
-            (sum, sample) => sum + sample.uploadBytes,
-          ),
-          hasData: matches.isNotEmpty,
-        );
-      }),
-    };
-  }
-
-  String _weekdayShort(int weekday) {
-    const labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return labels[(weekday - 1).clamp(0, 6)];
-  }
-
-  String _formatUsageTotal(int bytes) {
-    if (bytes <= 0) return '0 B';
-    if (bytes < 1024) return '$bytes B';
-    final kb = bytes / 1024;
-    if (kb < 1024) return '${kb.toStringAsFixed(kb >= 10 ? 0 : 1)} KB';
-    final mb = bytes / (1024 * 1024);
-    if (mb < 1024) return '${mb.toStringAsFixed(mb >= 10 ? 0 : 1)} MB';
-    final gb = mb / 1024;
-    if (gb >= 100) return '${gb.toStringAsFixed(0)} GB';
-    if (gb >= 10) return '${gb.toStringAsFixed(1)} GB';
-    return '${gb.toStringAsFixed(2)} GB';
-  }
-
-  Widget _usageLineGraph(
-    List<({String label, int downloadBytes, int uploadBytes, bool hasData})>
-    samples,
-  ) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final totalDownload = samples.fold<int>(
-      0,
-      (sum, sample) => sum + sample.downloadBytes,
-    );
-    final totalUpload = samples.fold<int>(
-      0,
-      (sum, sample) => sum + sample.uploadBytes,
-    );
-    final maxValue = samples
-        .expand((sample) => [sample.downloadBytes, sample.uploadBytes])
-        .fold<int>(0, (max, value) => value > max ? value : max);
-    final maxY = _niceUsageMax(maxValue);
-    final hasAnyData = samples.any((sample) => sample.hasData);
-    final labelIndexes = _usageBottomLabelIndexes(samples.length);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _usageTotalSummary(totalDownload, totalUpload),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 188,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              LineChart(
-                LineChartData(
-                  minX: 0,
-                  maxX: (samples.length - 1)
-                      .clamp(1, samples.length)
-                      .toDouble(),
-                  minY: 0,
-                  maxY: maxY,
-                  gridData: FlGridData(
-                    drawVerticalLine: false,
-                    horizontalInterval: maxY / 4,
-                    getDrawingHorizontalLine: (value) => FlLine(
-                      color: colorScheme.outlineVariant.withValues(alpha: 0.22),
-                      strokeWidth: 1,
-                    ),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 42,
-                        interval: maxY / 4,
-                        getTitlesWidget: (value, meta) {
-                          if (value == 0) return const SizedBox.shrink();
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: Text(
-                              _formatUsageAxisValue(value),
-                              textAlign: TextAlign.right,
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(
-                                    color: colorScheme.onSurfaceVariant
-                                        .withValues(alpha: 0.74),
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 0,
-                                  ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 28,
-                        interval: 1,
-                        getTitlesWidget: (value, meta) {
-                          final index = value.round();
-                          if (!labelIndexes.contains(index) ||
-                              index < 0 ||
-                              index >= samples.length) {
-                            return const SizedBox.shrink();
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              samples[index].label,
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(
-                                    color: index == samples.length - 1
-                                        ? colorScheme.onSurface
-                                        : colorScheme.onSurfaceVariant,
-                                    fontWeight: index == samples.length - 1
-                                        ? FontWeight.w900
-                                        : FontWeight.w700,
-                                    letterSpacing: 0,
-                                  ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  lineTouchData: LineTouchData(
-                    touchTooltipData: LineTouchTooltipData(
-                      fitInsideHorizontally: true,
-                      fitInsideVertically: true,
-                      getTooltipColor: (_) =>
-                          colorScheme.surface.withValues(alpha: 0.96),
-                      tooltipBorderRadius: BorderRadius.circular(8),
-                      tooltipPadding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      getTooltipItems: (spots) => spots.map((spot) {
-                        final index = spot.x.round().clamp(
-                          0,
-                          samples.length - 1,
-                        );
-                        final sample = samples[index];
-                        final total = sample.downloadBytes + sample.uploadBytes;
-                        final label = spot.barIndex == 0
-                            ? 'Download'
-                            : 'Upload';
-                        final value = spot.barIndex == 0
-                            ? sample.downloadBytes
-                            : sample.uploadBytes;
-                        final color = spot.barIndex == 0
-                            ? _openwallaCyan
-                            : _openwallaOrange;
-                        return LineTooltipItem(
-                          '${sample.label}\n'
-                          '$label ${_formatUsageTotal(value)}\n'
-                          'Total ${_formatUsageTotal(total)}',
-                          TextStyle(
-                            color: color,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0,
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  lineBarsData: [
-                    _usageLineChartBar(
-                      samples: samples,
-                      color: _openwallaCyan,
-                      selector: (sample) => sample.downloadBytes,
-                    ),
-                    _usageLineChartBar(
-                      samples: samples,
-                      color: _openwallaOrange,
-                      selector: (sample) => sample.uploadBytes,
-                    ),
-                  ],
-                ),
-              ),
-              if (!hasAnyData)
-                Text(
-                  'No usage data yet',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0,
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  LineChartBarData _usageLineChartBar({
-    required List<
-      ({String label, int downloadBytes, int uploadBytes, bool hasData})
-    >
-    samples,
-    required Color color,
-    required int Function(
-      ({String label, int downloadBytes, int uploadBytes, bool hasData}) sample,
-    )
-    selector,
-  }) {
-    return LineChartBarData(
-      spots: List.generate(samples.length, (index) {
-        final sample = samples[index];
-        return FlSpot(
-          index.toDouble(),
-          sample.hasData ? selector(sample).toDouble() : 0,
-        );
-      }),
-      isCurved: true,
-      curveSmoothness: 0.28,
-      color: color,
-      barWidth: 3,
-      isStrokeCapRound: true,
-      dotData: FlDotData(show: false),
-      belowBarData: BarAreaData(
-        show: true,
-        color: color.withValues(alpha: 0.12),
-      ),
-    );
-  }
-
-  double _niceUsageMax(int maxBytes) {
-    if (maxBytes <= 0) return 1024;
-    final units = <int>[
-      1024,
-      10 * 1024,
-      100 * 1024,
-      1024 * 1024,
-      10 * 1024 * 1024,
-      100 * 1024 * 1024,
-      1024 * 1024 * 1024,
-      10 * 1024 * 1024 * 1024,
-      100 * 1024 * 1024 * 1024,
-    ];
-    for (final unit in units) {
-      if (maxBytes <= unit) return unit.toDouble();
-    }
-    return maxBytes * 1.15;
-  }
-
-  String _formatUsageAxisValue(double bytes) {
-    if (bytes <= 0) return '';
-    return _formatUsageTotal(bytes.round());
-  }
-
-  Set<int> _usageBottomLabelIndexes(int length) {
-    if (length <= 1) return {0};
-    return {0, (length / 3).floor(), ((length * 2) / 3).floor(), length - 1};
-  }
-
-  Widget _usageTotalSummary(int downloadBytes, int uploadBytes) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final total = downloadBytes + uploadBytes;
-
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            'Total ${_formatUsageTotal(total)}',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: colorScheme.onSurface,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0,
-            ),
-          ),
-        ),
-        Flexible(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerRight,
-            child: Text(
-              'Down ${_formatUsageTotal(downloadBytes)}  Up ${_formatUsageTotal(uploadBytes)}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _usageLegend() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _usageLegendItem('Download', _openwallaCyan),
-        const SizedBox(width: 18),
-        _usageLegendItem('Upload', _openwallaOrange),
-      ],
-    );
-  }
-
-  Widget _usageLegendItem(String label, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 6),
-        Text(label, style: _metricMutedTextStyle()),
-      ],
-    );
-  }
-
-  Widget _buildMonthlyUsageCard(String interfaceName) {
-    return _buildOpenwallaCard(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) =>
-                MonthlyUsageScreen(interfaceName: interfaceName),
-          ),
-        );
-      },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _metricCardTitle(
-            '$interfaceName Monthly Usage',
-            trailing: _subtleCardArrow(),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '0 MB',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0,
-                  height: 0.95,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 3),
-                child: Text('26 days left', style: _metricMutedTextStyle()),
-              ),
-            ],
-          ),
-          const SizedBox(height: 22),
-          _metricProgressBar(value: 0),
-        ],
-      ),
-    );
-  }
-
-  Widget _metricCardTitle(String title, {Widget? trailing}) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        if (trailing != null) ...[const SizedBox(width: 8), trailing],
-      ],
-    );
-  }
-
   Widget _subtleCardArrow() {
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -1893,29 +1220,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       Icons.arrow_forward_ios_rounded,
       size: 16,
       color: colorScheme.onSurfaceVariant.withValues(alpha: 0.74),
-    );
-  }
-
-  TextStyle? _metricMutedTextStyle() {
-    return Theme.of(context).textTheme.titleSmall?.copyWith(
-      color: Theme.of(context).colorScheme.onSurfaceVariant,
-      fontWeight: FontWeight.w800,
-      letterSpacing: 0,
-    );
-  }
-
-  Widget _metricProgressBar({required double value, Color? fillColor}) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: LinearProgressIndicator(
-        value: value.clamp(0, 1),
-        minHeight: 16,
-        backgroundColor: colorScheme.surfaceContainerHighest,
-        valueColor: AlwaysStoppedAnimation<Color>(
-          fillColor ?? colorScheme.surfaceContainerHighest,
-        ),
-      ),
     );
   }
 
@@ -2219,7 +1523,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 _buildDashboardFlowsCard(appState),
               ],
               const SizedBox(height: 12),
-              _buildDashboardBottomCards(appState),
+              _buildDashboardBottomCards(),
               const SizedBox(height: 12),
               // Extra padding to ensure scroll behavior for RefreshIndicator
               const SizedBox(height: 100),
@@ -2279,7 +1583,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                                 _buildDashboardFlowsCard(appState),
                               ],
                               const SizedBox(height: 12),
-                              _buildDashboardBottomCards(appState),
+                              _buildDashboardBottomCards(),
                               const SizedBox(height: 24),
                             ],
                           ),

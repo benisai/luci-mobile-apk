@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:luci_mobile/screens/dashboard_screen.dart';
-import 'package:luci_mobile/screens/clients_screen.dart';
 import 'package:luci_mobile/screens/more_screen.dart';
+import 'package:luci_mobile/screens/statistics_screen.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/widgets/luci_navigation_enhancements.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -39,7 +39,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
 
   List<Widget> get _widgetOptions => [
     const DashboardScreen(),
-    const ClientsScreen(),
+    const StatisticsScreen(),
     const MoreScreen(),
   ];
 
@@ -103,13 +103,13 @@ class _MainScreenState extends ConsumerState<MainScreen> {
               NavigationDestination(
                 selectedIcon: Opacity(
                   opacity: getTabOpacity(1),
-                  child: Icon(Icons.people, color: getTabColor(1)),
+                  child: Icon(Icons.bar_chart_rounded, color: getTabColor(1)),
                 ),
                 icon: Opacity(
                   opacity: getTabOpacity(1),
-                  child: Icon(Icons.people_outline, color: getTabColor(1)),
+                  child: Icon(Icons.bar_chart_outlined, color: getTabColor(1)),
                 ),
-                label: 'Clients',
+                label: 'Statistics',
               ),
               NavigationDestination(
                 selectedIcon: Opacity(

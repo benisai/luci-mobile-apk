@@ -9,18 +9,16 @@ import 'package:luci_mobile/design/luci_design_system.dart';
 import 'package:luci_mobile/widgets/luci_loading_states.dart';
 import 'package:luci_mobile/widgets/luci_refresh_components.dart';
 
-enum _NetworkTab { interfaces, wireless }
-
 class InterfacesScreen extends ConsumerStatefulWidget {
   final String? scrollToInterface;
   final VoidCallback? onScrollComplete;
-  final bool initialWirelessTab;
+  final bool wirelessOnly;
 
   const InterfacesScreen({
     super.key,
     this.scrollToInterface,
     this.onScrollComplete,
-    this.initialWirelessTab = false,
+    this.wirelessOnly = false,
   });
 
   @override
@@ -32,7 +30,6 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
   String? _targetInterface;
   String? _expandedInterface;
   final Map<String, GlobalKey> _interfaceKeys = {};
-  _NetworkTab _selectedTab = _NetworkTab.interfaces;
 
   /// Safely extract a String from a UCI config value that may be a List or String.
   static String _uciString(dynamic value, [String fallback = '']) {
@@ -103,9 +100,6 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedTab = widget.initialWirelessTab
-        ? _NetworkTab.wireless
-        : _NetworkTab.interfaces;
     _targetInterface = widget.scrollToInterface;
     if (_targetInterface != null) {
       // Delay scrolling to allow the widget to build
@@ -133,15 +127,6 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
           _targetInterface = null;
         });
       }
-    }
-
-    if (widget.initialWirelessTab != oldWidget.initialWirelessTab &&
-        widget.scrollToInterface == null) {
-      setState(() {
-        _selectedTab = widget.initialWirelessTab
-            ? _NetworkTab.wireless
-            : _NetworkTab.interfaces;
-      });
     }
   }
 
@@ -174,7 +159,6 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
               final keyStr = _interfaceKey(name: name);
               // Use exact matching only
               if (keyStr == interfaceName.toLowerCase()) {
-                setState(() => _selectedTab = _NetworkTab.interfaces);
                 _scrollToExpandedCard(keyStr);
                 return;
               }
@@ -212,7 +196,6 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
                   if (normalizedTarget == ssidKey ||
                       normalizedTarget == deviceKey ||
                       normalizedTarget == nameKey) {
-                    setState(() => _selectedTab = _NetworkTab.wireless);
                     _scrollToExpandedCard(keyStr);
                     return;
                   }
@@ -226,10 +209,8 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
         if (interfaceName.toLowerCase().contains('wifi') ||
             interfaceName.toLowerCase().contains('wireless') ||
             interfaceName.toLowerCase().contains('radio')) {
-          setState(() => _selectedTab = _NetworkTab.wireless);
           _scrollToSection(200); // Wireless section
         } else {
-          setState(() => _selectedTab = _NetworkTab.interfaces);
           _scrollToSection(80); // Wired section
         }
       }
@@ -376,7 +357,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
     final appState = ref.read(appStateProvider);
 
     return Scaffold(
-      appBar: const LuciAppBar(title: 'Network'),
+      appBar: LuciAppBar(title: widget.wirelessOnly ? 'Wi-Fi' : 'Network'),
       body: SafeArea(
         top: true,
         bottom: false,
@@ -441,17 +422,12 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
                   return CustomScrollView(
                     controller: _scrollController,
                     slivers: [
-                      SliverToBoxAdapter(child: _buildNetworkTabSwitcher()),
-                      if (_selectedTab == _NetworkTab.interfaces) ...[
-                        SliverToBoxAdapter(
-                          child: LuciSectionHeader('Interfaces'),
-                        ),
-                        _buildWiredInterfacesList(),
-                      ] else ...[
-                        SliverToBoxAdapter(
-                          child: LuciSectionHeader('Wireless'),
-                        ),
+                      if (widget.wirelessOnly) ...[
+                        SliverToBoxAdapter(child: LuciSectionHeader('Wi-Fi')),
                         _buildWirelessInterfacesList(),
+                      ] else ...[
+                        SliverToBoxAdapter(child: LuciSectionHeader('Network')),
+                        _buildWiredInterfacesList(),
                       ],
                       SliverToBoxAdapter(
                         child: Padding(
@@ -463,35 +439,6 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
                   );
                 },
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNetworkTabSwitcher() {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            _NetworkTabButton(
-              label: 'Interface',
-              selected: _selectedTab == _NetworkTab.interfaces,
-              onTap: () =>
-                  setState(() => _selectedTab = _NetworkTab.interfaces),
-            ),
-            _NetworkTabButton(
-              label: 'Wireless',
-              selected: _selectedTab == _NetworkTab.wireless,
-              onTap: () => setState(() => _selectedTab = _NetworkTab.wireless),
             ),
           ],
         ),
@@ -1148,47 +1095,6 @@ class LuciSectionHeader extends StatelessWidget {
           color: theme.colorScheme.onSurface,
           fontWeight: FontWeight.bold,
           letterSpacing: 1.2,
-        ),
-      ),
-    );
-  }
-}
-
-class _NetworkTabButton extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _NetworkTabButton({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Expanded(
-      child: Material(
-        color: selected ? colorScheme.onSurface : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: selected
-                    ? colorScheme.surface
-                    : colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0,
-              ),
-            ),
-          ),
         ),
       ),
     );
