@@ -226,6 +226,108 @@ class OpenwrtSqmQueue {
   }
 }
 
+class OpenwrtDnsHostEntry {
+  final String section;
+  final String hostname;
+  final String ipAddress;
+
+  const OpenwrtDnsHostEntry({
+    required this.section,
+    required this.hostname,
+    required this.ipAddress,
+  });
+
+  factory OpenwrtDnsHostEntry.fromUciSection(
+    String section,
+    Map<dynamic, dynamic> values,
+  ) {
+    String read(String key) => values[key]?.toString().trim() ?? '';
+
+    return OpenwrtDnsHostEntry(
+      section: section,
+      hostname: read('name'),
+      ipAddress: read('ip'),
+    );
+  }
+}
+
+class OpenwrtAdblockSettings {
+  final String section;
+  final bool installed;
+  final bool enabled;
+  final bool safeSearch;
+  final bool reportEnabled;
+  final String triggerInterface;
+  final String dnsBackend;
+  final String serviceStatus;
+
+  const OpenwrtAdblockSettings({
+    required this.section,
+    required this.installed,
+    required this.enabled,
+    required this.safeSearch,
+    required this.reportEnabled,
+    required this.triggerInterface,
+    required this.dnsBackend,
+    required this.serviceStatus,
+  });
+
+  OpenwrtAdblockSettings copyWith({
+    String? section,
+    bool? installed,
+    bool? enabled,
+    bool? safeSearch,
+    bool? reportEnabled,
+    String? triggerInterface,
+    String? dnsBackend,
+    String? serviceStatus,
+  }) {
+    return OpenwrtAdblockSettings(
+      section: section ?? this.section,
+      installed: installed ?? this.installed,
+      enabled: enabled ?? this.enabled,
+      safeSearch: safeSearch ?? this.safeSearch,
+      reportEnabled: reportEnabled ?? this.reportEnabled,
+      triggerInterface: triggerInterface ?? this.triggerInterface,
+      dnsBackend: dnsBackend ?? this.dnsBackend,
+      serviceStatus: serviceStatus ?? this.serviceStatus,
+    );
+  }
+
+  factory OpenwrtAdblockSettings.fromUciSection(
+    String section,
+    Map<dynamic, dynamic> values, {
+    required bool installed,
+    required String serviceStatus,
+  }) {
+    String read(String key, String fallback) {
+      final value = values[key];
+      if (value is List) {
+        final joined = value.map((entry) => entry.toString()).join(' ');
+        return joined.trim().isEmpty ? fallback : joined;
+      }
+      final text = value?.toString().trim();
+      return text == null || text.isEmpty ? fallback : text;
+    }
+
+    bool boolValue(String key, bool fallback) {
+      final value = read(key, fallback ? '1' : '0').toLowerCase();
+      return value == '1' || value == 'true' || value == 'yes';
+    }
+
+    return OpenwrtAdblockSettings(
+      section: section,
+      installed: installed,
+      enabled: boolValue('adb_enabled', false),
+      safeSearch: boolValue('adb_safesearch', false),
+      reportEnabled: boolValue('adb_report', false),
+      triggerInterface: read('adb_trigger', 'wan'),
+      dnsBackend: read('adb_dns', 'dnsmasq'),
+      serviceStatus: serviceStatus,
+    );
+  }
+}
+
 class OpenwrtNetworkInterfaceConfig {
   final String section;
   final String interfaceName;
@@ -2577,6 +2679,351 @@ class AppState extends ChangeNotifier {
       sysauth,
       router.useHttps,
       command: '/etc/init.d/sqm restart 2>/dev/null || true',
+    );
+    notifyListeners();
+  }
+
+  List<OpenwrtDnsHostEntry> _mockDnsHostEntries() {
+    return const [
+      OpenwrtDnsHostEntry(
+        section: 'cfg_dns_camera',
+        hostname: 'camera.local',
+        ipAddress: '10.0.0.50',
+      ),
+      OpenwrtDnsHostEntry(
+        section: 'cfg_dns_nas',
+        hostname: 'nas.local',
+        ipAddress: '10.0.0.20',
+      ),
+    ];
+  }
+
+  Future<List<OpenwrtDnsHostEntry>> fetchDnsHostEntries({
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) return _mockDnsHostEntries();
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'get',
+        params: {'config': 'dhcp'},
+        context: context,
+      );
+      final values = _extractUciValues(result);
+      final entries =
+          values.entries
+              .where((entry) => entry.value['.type']?.toString() == 'domain')
+              .map(
+                (entry) =>
+                    OpenwrtDnsHostEntry.fromUciSection(entry.key, entry.value),
+              )
+              .where(
+                (entry) =>
+                    entry.hostname.trim().isNotEmpty ||
+                    entry.ipAddress.trim().isNotEmpty,
+              )
+              .toList()
+            ..sort(
+              (a, b) =>
+                  a.hostname.toLowerCase().compareTo(b.hostname.toLowerCase()),
+            );
+      return entries;
+    } catch (e, stack) {
+      Logger.warning('Optional DNS host entries fetch failed: $e');
+      Logger.debug('Optional DNS host entries stack: $stack');
+      return const [];
+    }
+  }
+
+  Future<void> saveDnsHostEntry(OpenwrtDnsHostEntry entry) async {
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    var section = entry.section.trim();
+    if (section.isEmpty) {
+      final addResult = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'add',
+        params: {'config': 'dhcp', 'type': 'domain'},
+      );
+      section = _extractAddedSection(addResult) ?? '';
+      if (section.isEmpty) throw StateError('Unable to create DNS entry');
+    }
+
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'dhcp',
+      section: section,
+      values: {'name': entry.hostname.trim(), 'ip': entry.ipAddress.trim()},
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'dhcp',
+    );
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command: '/etc/init.d/dnsmasq restart 2>/dev/null || true',
+    );
+    notifyListeners();
+  }
+
+  Future<void> deleteDnsHostEntry(String section) async {
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'uci',
+      method: 'delete',
+      params: {'config': 'dhcp', 'section': section},
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'dhcp',
+    );
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command: '/etc/init.d/dnsmasq restart 2>/dev/null || true',
+    );
+    notifyListeners();
+  }
+
+  OpenwrtAdblockSettings _mockAdblockSettings() {
+    return const OpenwrtAdblockSettings(
+      section: 'global',
+      installed: true,
+      enabled: true,
+      safeSearch: false,
+      reportEnabled: true,
+      triggerInterface: 'wan',
+      dnsBackend: 'dnsmasq',
+      serviceStatus: 'running',
+    );
+  }
+
+  Future<OpenwrtAdblockSettings> fetchAdblockSettings({
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) return _mockAdblockSettings();
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const OpenwrtAdblockSettings(
+        section: 'global',
+        installed: false,
+        enabled: false,
+        safeSearch: false,
+        reportEnabled: false,
+        triggerInterface: 'wan',
+        dnsBackend: 'dnsmasq',
+        serviceStatus: 'Not connected',
+      );
+    }
+
+    String statusText = 'unknown';
+    var installed = false;
+    try {
+      final statusResult = await _apiService!.systemExec(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        command:
+            '[ -x /etc/init.d/adblock ] && /etc/init.d/adblock status 2>&1 || echo "__OPENWALLA_ADBLOCK_MISSING__"',
+      );
+      final data = _extractRpcData(statusResult);
+      final stdout = data is Map ? data['stdout']?.toString().trim() : '';
+      statusText = stdout == null || stdout.isEmpty ? 'unknown' : stdout;
+      installed = !statusText.contains('__OPENWALLA_ADBLOCK_MISSING__');
+      if (!installed) statusText = 'AdBlock package is not installed';
+    } catch (e) {
+      Logger.warning('Optional AdBlock status fetch failed: $e');
+    }
+
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'get',
+        params: {'config': 'adblock'},
+      );
+      final values = _extractUciValues(result);
+      final entry =
+          values.entries
+              .where((entry) => entry.value['.type']?.toString() == 'adblock')
+              .firstOrNull ??
+          values.entries
+              .where((entry) => entry.value.containsKey('adb_enabled'))
+              .firstOrNull;
+      if (entry == null) {
+        return OpenwrtAdblockSettings(
+          section: 'global',
+          installed: installed,
+          enabled: false,
+          safeSearch: false,
+          reportEnabled: false,
+          triggerInterface: 'wan',
+          dnsBackend: 'dnsmasq',
+          serviceStatus: statusText,
+        );
+      }
+      return OpenwrtAdblockSettings.fromUciSection(
+        entry.key,
+        entry.value,
+        installed: installed,
+        serviceStatus: statusText,
+      );
+    } catch (e, stack) {
+      Logger.warning('Optional AdBlock config fetch failed: $e');
+      Logger.debug('Optional AdBlock config stack: $stack');
+      return OpenwrtAdblockSettings(
+        section: 'global',
+        installed: installed,
+        enabled: false,
+        safeSearch: false,
+        reportEnabled: false,
+        triggerInterface: 'wan',
+        dnsBackend: 'dnsmasq',
+        serviceStatus: statusText,
+      );
+    }
+  }
+
+  Future<void> saveAdblockSettings(OpenwrtAdblockSettings settings) async {
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    var section = settings.section.trim().isEmpty ? 'global' : settings.section;
+    try {
+      await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'get',
+        params: {'config': 'adblock', 'section': section},
+      );
+    } catch (_) {
+      final addResult = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'add',
+        params: {'config': 'adblock', 'type': 'adblock', 'name': 'global'},
+      );
+      section = _extractAddedSection(addResult) ?? section;
+    }
+
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'adblock',
+      section: section,
+      values: {
+        'adb_enabled': settings.enabled ? '1' : '0',
+        'adb_safesearch': settings.safeSearch ? '1' : '0',
+        'adb_report': settings.reportEnabled ? '1' : '0',
+        'adb_trigger': settings.triggerInterface.trim().isEmpty
+            ? 'wan'
+            : settings.triggerInterface.trim(),
+        'adb_dns': settings.dnsBackend.trim().isEmpty
+            ? 'dnsmasq'
+            : settings.dnsBackend.trim(),
+      },
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'adblock',
+    );
+
+    final command = settings.enabled
+        ? '/etc/init.d/adblock enable 2>/dev/null; /etc/init.d/adblock reload 2>/dev/null || /etc/init.d/adblock restart 2>/dev/null || true'
+        : '/etc/init.d/adblock stop 2>/dev/null; /etc/init.d/adblock disable 2>/dev/null || true';
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command: command,
+    );
+    notifyListeners();
+  }
+
+  Future<void> runAdblockServiceAction(String action) async {
+    const allowed = {'start', 'stop', 'restart', 'reload', 'suspend', 'resume'};
+    if (!allowed.contains(action)) {
+      throw ArgumentError.value(action, 'action', 'Unsupported AdBlock action');
+    }
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command: '/etc/init.d/adblock $action 2>/dev/null || true',
     );
     notifyListeners();
   }

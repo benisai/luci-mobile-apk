@@ -8,7 +8,9 @@ import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/widgets/luci_animation_system.dart';
 import 'package:luci_mobile/models/dashboard_preferences.dart';
+import 'package:luci_mobile/screens/adblock_screen.dart';
 import 'package:luci_mobile/screens/clients_screen.dart';
+import 'package:luci_mobile/screens/dns_screen.dart';
 import 'package:luci_mobile/screens/flows_screen.dart';
 import 'package:luci_mobile/screens/interfaces_screen.dart';
 import 'package:luci_mobile/screens/network_performance_screen.dart';
@@ -1126,10 +1128,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     return _buildOpenwallaCard(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       child: GridView.count(
-        crossAxisCount: 4,
+        crossAxisCount: 3,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        childAspectRatio: 0.92,
+        childAspectRatio: 1.08,
         mainAxisSpacing: 8,
         crossAxisSpacing: 6,
         children: [
@@ -1138,6 +1140,22 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             icon: Icons.public_rounded,
             color: _openwallaCyan,
             onTap: () => _openNetworkPage(wirelessOnly: false),
+          ),
+          _buildDashboardShortcut(
+            label: 'DNS',
+            icon: Icons.dns_rounded,
+            color: _openwallaGreen,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const DnsScreen()),
+              );
+            },
+          ),
+          _buildDashboardShortcut(
+            label: 'Wi-Fi',
+            icon: Icons.wifi_rounded,
+            color: Theme.of(context).colorScheme.primary,
+            onTap: () => _openNetworkPage(wirelessOnly: true),
           ),
           _buildDashboardShortcut(
             label: 'Routes',
@@ -1162,10 +1180,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             },
           ),
           _buildDashboardShortcut(
-            label: 'Wi-Fi',
-            icon: Icons.wifi_rounded,
-            color: Theme.of(context).colorScheme.primary,
-            onTap: () => _openNetworkPage(wirelessOnly: true),
+            label: 'AdBlock',
+            icon: Icons.block_rounded,
+            color: _openwallaOrange,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const AdblockScreen()),
+              );
+            },
           ),
         ],
       ),
