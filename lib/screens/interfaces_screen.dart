@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:luci_mobile/models/interface.dart';
 import 'dart:math';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
+import 'package:luci_mobile/screens/router_dashboard_settings_screen.dart';
 import 'package:luci_mobile/design/luci_design_system.dart';
 import 'package:luci_mobile/widgets/luci_loading_states.dart';
 import 'package:luci_mobile/widgets/luci_refresh_components.dart';
@@ -352,12 +353,82 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
         });
   }
 
+  void _showNetworkInterfaceSettings() {
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        final colorScheme = Theme.of(context).colorScheme;
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 24,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 560),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 16, 8, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Network Interfaces',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                color: colorScheme.onSurface,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0,
+                              ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                ),
+                Flexible(
+                  child: RouterDashboardSettingsScreen(
+                    title: 'Network Interfaces',
+                    showThroughput: false,
+                    showDashboardCards: false,
+                    showWirelessInterfaces: false,
+                    embedded: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = ref.read(appStateProvider);
 
     return Scaffold(
-      appBar: LuciAppBar(title: widget.wirelessOnly ? 'Wi-Fi' : 'Network'),
+      appBar: LuciAppBar(
+        title: widget.wirelessOnly ? 'Wi-Fi' : 'Network',
+        actions: widget.wirelessOnly
+            ? null
+            : [
+                IconButton(
+                  tooltip: 'Network interface settings',
+                  icon: const Icon(Icons.settings_rounded),
+                  onPressed: _showNetworkInterfaceSettings,
+                ),
+              ],
+      ),
       body: SafeArea(
         top: true,
         bottom: false,
@@ -423,10 +494,8 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
                     controller: _scrollController,
                     slivers: [
                       if (widget.wirelessOnly) ...[
-                        SliverToBoxAdapter(child: LuciSectionHeader('Wi-Fi')),
                         _buildWirelessInterfacesList(),
                       ] else ...[
-                        SliverToBoxAdapter(child: LuciSectionHeader('Network')),
                         _buildWiredInterfacesList(),
                       ],
                       SliverToBoxAdapter(
@@ -450,6 +519,8 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
     final appState = ref.watch(appStateProvider);
     final dynamic detailedData = appState.dashboardData?['interfaceDump'];
     final dynamic statsDataSource = appState.dashboardData?['networkDevices'];
+    final enabledWiredInterfaces =
+        appState.dashboardPreferences.enabledWiredInterfaces;
     var interfacesList = <NetworkInterface>[];
 
     if (detailedData is Map &&
@@ -466,6 +537,11 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
             (detailedInterfaceMap) =>
                 !_isLoopbackInterface(detailedInterfaceMap),
           )
+          .where((detailedInterfaceMap) {
+            if (enabledWiredInterfaces.isEmpty) return true;
+            final name = detailedInterfaceMap['interface']?.toString() ?? '';
+            return enabledWiredInterfaces.contains(name);
+          })
           .map((detailedInterfaceMap) {
             final mutableInterfaceMap = Map<String, dynamic>.from(
               detailedInterfaceMap,

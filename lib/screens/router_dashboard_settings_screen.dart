@@ -11,7 +11,23 @@ import 'package:luci_mobile/widgets/luci_animation_system.dart';
 
 class RouterDashboardSettingsScreen extends ConsumerStatefulWidget {
   final String? routerId;
-  const RouterDashboardSettingsScreen({super.key, this.routerId});
+  final bool showThroughput;
+  final bool showDashboardCards;
+  final bool showWirelessInterfaces;
+  final bool showWiredInterfaces;
+  final String? title;
+  final bool embedded;
+
+  const RouterDashboardSettingsScreen({
+    super.key,
+    this.routerId,
+    this.showThroughput = true,
+    this.showDashboardCards = true,
+    this.showWirelessInterfaces = true,
+    this.showWiredInterfaces = true,
+    this.title,
+    this.embedded = false,
+  });
 
   @override
   ConsumerState<RouterDashboardSettingsScreen> createState() =>
@@ -214,8 +230,8 @@ class _RouterDashboardSettingsScreenState
   Widget _buildThroughputSection() {
     final interfaces = _availableWiredInterfaces.toList()..sort();
     return _buildSection(
-      title: 'Throughput Monitoring',
-      subtitle: 'Configure which interfaces to monitor',
+      title: 'Live Throughput Monitoring',
+      subtitle: 'Choose which interfaces feed the Live Traffic dashboard card',
       icon: Icons.speed,
       initiallyExpanded: true,
       children: [
@@ -370,10 +386,16 @@ class _RouterDashboardSettingsScreenState
   }
 
   PreferredSizeWidget _buildAppBar() {
+    if (widget.title != null) {
+      return LuciAppBar(title: widget.title, showBack: true);
+    }
     return LuciAppBar(titleWidget: _buildRouterTitle(), showBack: true);
   }
 
   PreferredSizeWidget _buildStaticAppBar() {
+    if (widget.title != null) {
+      return LuciAppBar(title: widget.title, showBack: true);
+    }
     final appState = ref.watch(appStateProvider);
     final selectedName = _routerLabel(appState.selectedRouter);
     return LuciAppBar(
@@ -751,35 +773,44 @@ class _RouterDashboardSettingsScreenState
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
+      if (widget.embedded) {
+        return const Center(child: CircularProgressIndicator());
+      }
       return Scaffold(
         appBar: _buildStaticAppBar(),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
     if (_errorMessage != null) {
+      if (widget.embedded) {
+        return Center(child: Text(_errorMessage!));
+      }
       return Scaffold(
         appBar: _buildStaticAppBar(),
         body: Center(child: Text(_errorMessage!)),
       );
     }
 
-    return Scaffold(
-      appBar: _buildAppBar(),
-      body: ListView(
-        padding: EdgeInsets.symmetric(vertical: LuciSpacing.sm),
-        children: [
-          LuciStaggeredAnimation(
-            staggerDelay: const Duration(milliseconds: 50),
-            children: [
-              _buildThroughputSection(),
-              _buildDashboardCardsSection(),
+    final content = ListView(
+      shrinkWrap: widget.embedded,
+      padding: EdgeInsets.symmetric(vertical: LuciSpacing.sm),
+      children: [
+        LuciStaggeredAnimation(
+          staggerDelay: const Duration(milliseconds: 50),
+          children: [
+            if (widget.showThroughput) _buildThroughputSection(),
+            if (widget.showDashboardCards) _buildDashboardCardsSection(),
+            if (widget.showWirelessInterfaces)
               _buildWirelessInterfacesSection(),
-              _buildWiredInterfacesSection(),
-              SizedBox(height: LuciSpacing.lg),
-            ],
-          ),
-        ],
-      ),
+            if (widget.showWiredInterfaces) _buildWiredInterfacesSection(),
+            SizedBox(height: LuciSpacing.lg),
+          ],
+        ),
+      ],
     );
+
+    if (widget.embedded) return content;
+
+    return Scaffold(appBar: _buildAppBar(), body: content);
   }
 }

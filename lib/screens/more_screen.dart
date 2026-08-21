@@ -8,9 +8,6 @@ import 'package:luci_mobile/screens/settings_screen.dart';
 import 'package:luci_mobile/screens/router_setup_screen.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/design/luci_design_system.dart';
-import 'package:package_info_plus/package_info_plus.dart';
-import 'package:url_launcher/url_launcher_string.dart';
-import 'package:luci_mobile/config/app_config.dart';
 import 'package:luci_mobile/screens/manage_routers_screen.dart';
 import 'package:luci_mobile/utils/http_client_manager.dart';
 import 'package:luci_mobile/state/app_state.dart';
@@ -217,82 +214,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
     );
   }
 
-  Future<void> _showAboutDialog(BuildContext context) async {
-    final info = await PackageInfo.fromPlatform();
-    if (!context.mounted) return;
-
-    unawaited(
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Row(
-              children: [
-                const Icon(Icons.router, size: 32),
-                const SizedBox(width: 12),
-                const Text('Openwalla'),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Version ${info.version}'),
-                const SizedBox(height: 16),
-                const Text('A mobile client for OpenWrt routers.'),
-                const SizedBox(height: 16),
-                const Text('Open source and free to use.'),
-                const SizedBox(height: 16),
-                InkWell(
-                  onTap: () async {
-                    final url = AppConfig.githubRepositoryUrl;
-                    final success = await launchUrlString(
-                      url,
-                      mode: LaunchMode.externalApplication,
-                    );
-                    if (!success && context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text('Could not open repository'),
-                          backgroundColor: Theme.of(context).colorScheme.error,
-                        ),
-                      );
-                    }
-                  },
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.link,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'GitHub Repository',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Close'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -332,14 +253,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                       ),
                     );
                   },
-                ),
-                _buildMoreTile(
-                  context,
-                  icon: Icons.info_outline,
-                  iconColor: Theme.of(context).colorScheme.secondary,
-                  title: 'About',
-                  subtitle: 'App version and information',
-                  onTap: () => _showAboutDialog(context),
                 ),
                 _buildMoreTile(
                   context,

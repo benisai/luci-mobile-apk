@@ -124,16 +124,36 @@ class SettingsScreen extends ConsumerWidget {
                   _buildSettingsCard(
                     context: context,
                     icon: Icons.dashboard_customize,
-                    title: 'Dashboard',
-                    subtitle:
-                        'Cards, throughput monitoring, and network interfaces',
+                    title: 'Dashboard Cards',
+                    subtitle: 'Choose which cards appear on the dashboard',
                     onTap: () => _openSettingsPage(
                       context,
-                      const RouterDashboardSettingsScreen(),
+                      const RouterDashboardSettingsScreen(
+                        title: 'Dashboard Cards',
+                        showThroughput: false,
+                        showWirelessInterfaces: false,
+                        showWiredInterfaces: false,
+                      ),
                     ),
                   ),
                   const Divider(height: 32),
                   _buildSectionTitle(context, 'Monitoring'),
+                  _buildSettingsCard(
+                    context: context,
+                    icon: Icons.speed_rounded,
+                    title: 'Live Throughput Monitoring',
+                    subtitle:
+                        'Choose which interfaces feed the Live Traffic dashboard card',
+                    onTap: () => _openSettingsPage(
+                      context,
+                      const RouterDashboardSettingsScreen(
+                        title: 'Live Throughput Monitoring',
+                        showDashboardCards: false,
+                        showWirelessInterfaces: false,
+                        showWiredInterfaces: false,
+                      ),
+                    ),
+                  ),
                   _buildSettingsCard(
                     context: context,
                     icon: Icons.network_ping_rounded,
