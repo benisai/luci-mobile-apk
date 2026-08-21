@@ -3031,8 +3031,8 @@ class AppState extends ChangeNotifier {
     try {
       final payload = jsonDecode(output);
       if (payload is! Map<String, dynamic>) return const [];
-      final interfaces = payload['interfaces'];
-      if (interfaces is! List) return const [];
+      final interfaces = _vnstatInterfaces(payload['interfaces']);
+      if (interfaces.isEmpty) return const [];
       final picked = _pickVnstatInterface(
         interfaces,
         period: period,
@@ -3058,31 +3058,109 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  List<Map> _vnstatInterfaces(dynamic rawInterfaces) {
+    if (rawInterfaces is List) {
+      return rawInterfaces.whereType<Map>().toList();
+    }
+    if (rawInterfaces is Map) {
+      return rawInterfaces.entries.where((entry) => entry.value is Map).map((
+        entry,
+      ) {
+        final value = Map<dynamic, dynamic>.from(entry.value as Map);
+        value.putIfAbsent('name', () => entry.key.toString());
+        return value;
+      }).toList();
+    }
+    return const [];
+  }
+
   dynamic _pickVnstatInterface(
-    List interfaces, {
+    List<Map> interfaces, {
     required String period,
     String? preferredInterface,
   }) {
     final preferred = preferredInterface?.trim();
+    final withRows = interfaces.where((interface) {
+      return _vnstatPeriodRows(interface['traffic'], period).isNotEmpty;
+    }).toList();
+    if (withRows.isEmpty) return interfaces.firstOrNull;
+
     if (preferred != null && preferred.isNotEmpty) {
-      final exact = interfaces.whereType<Map>().where((interface) {
-        return interface['name']?.toString() == preferred &&
-            _vnstatPeriodRows(interface['traffic'], period).isNotEmpty;
+      final exact = withRows.where((interface) {
+        return _vnstatInterfaceNames(interface).contains(preferred);
       }).firstOrNull;
-      if (exact != null) return exact;
+      if (exact != null && _vnstatTrafficTotal(exact, period) > 0) {
+        return exact;
+      }
 
       final lower = preferred.toLowerCase();
-      final caseInsensitive = interfaces.whereType<Map>().where((interface) {
-        return interface['name']?.toString().toLowerCase() == lower &&
-            _vnstatPeriodRows(interface['traffic'], period).isNotEmpty;
+      final caseInsensitive = withRows.where((interface) {
+        return _vnstatInterfaceNames(
+          interface,
+        ).map((name) => name.toLowerCase()).contains(lower);
       }).firstOrNull;
-      if (caseInsensitive != null) return caseInsensitive;
+      if (caseInsensitive != null &&
+          _vnstatTrafficTotal(caseInsensitive, period) > 0) {
+        return caseInsensitive;
+      }
     }
 
-    return interfaces.whereType<Map>().where((interface) {
-          return _vnstatPeriodRows(interface['traffic'], period).isNotEmpty;
-        }).firstOrNull ??
-        (interfaces.isNotEmpty ? interfaces.first : null);
+    final withTraffic = withRows
+      ..sort(
+        (a, b) => _vnstatTrafficTotal(
+          b,
+          period,
+        ).compareTo(_vnstatTrafficTotal(a, period)),
+      );
+    if (_vnstatTrafficTotal(withTraffic.first, period) > 0) {
+      return withTraffic.first;
+    }
+
+    if (preferred != null && preferred.isNotEmpty) {
+      final preferredWithRows = withRows.where((interface) {
+        final names = _vnstatInterfaceNames(interface);
+        return names.contains(preferred) ||
+            names
+                .map((name) => name.toLowerCase())
+                .contains(preferred.toLowerCase());
+      }).firstOrNull;
+      if (preferredWithRows != null) return preferredWithRows;
+    }
+
+    return withRows.first;
+  }
+
+  Set<String> _vnstatInterfaceNames(Map interface) {
+    return {
+      interface['name']?.toString(),
+      interface['id']?.toString(),
+      interface['interface']?.toString(),
+      interface['alias']?.toString(),
+    }.whereType<String>().where((name) => name.trim().isNotEmpty).toSet();
+  }
+
+  int _vnstatTrafficTotal(Map interface, String period) {
+    return _vnstatPeriodRows(interface['traffic'], period).fold<int>(0, (
+      sum,
+      row,
+    ) {
+      if (row is! Map) return sum;
+      return sum +
+          _vnstatBytes(
+            row['rx'] ??
+                row['rx_bytes'] ??
+                row['received'] ??
+                row['download'] ??
+                row['down'],
+          ) +
+          _vnstatBytes(
+            row['tx'] ??
+                row['tx_bytes'] ??
+                row['transmitted'] ??
+                row['upload'] ??
+                row['up'],
+          );
+    });
   }
 
   List _vnstatPeriodRows(dynamic traffic, String period) {
@@ -3095,10 +3173,13 @@ class AppState extends ChangeNotifier {
         '5minutes',
         'minute',
         'minutes',
+        '5min',
+        'five_minute',
+        'five_minutes',
       ],
-      'hourly' => ['hour', 'hours'],
-      'daily' => ['day', 'days'],
-      'monthly' => ['month', 'months'],
+      'hourly' => ['hour', 'hours', 'hourly'],
+      'daily' => ['day', 'days', 'daily'],
+      'monthly' => ['month', 'months', 'monthly'],
       _ => const <String>[],
     };
     for (final key in keys) {
@@ -3114,33 +3195,74 @@ class AppState extends ChangeNotifier {
     if (timestamp == null) return null;
     return VnstatUsageSample(
       timestamp: timestamp,
-      downloadBytes: _vnstatBytes(row['rx'] ?? row['rx_bytes']),
-      uploadBytes: _vnstatBytes(row['tx'] ?? row['tx_bytes']),
+      downloadBytes: _vnstatBytes(
+        row['rx'] ??
+            row['rx_bytes'] ??
+            row['received'] ??
+            row['download'] ??
+            row['down'],
+      ),
+      uploadBytes: _vnstatBytes(
+        row['tx'] ??
+            row['tx_bytes'] ??
+            row['transmitted'] ??
+            row['upload'] ??
+            row['up'],
+      ),
     );
   }
 
   DateTime? _resolveVnstatTimestamp(Map row, String period) {
-    final rawTimestamp = row['timestamp'] ?? row['time'];
+    final rawTimestamp = row['timestamp'] ?? row['begin'];
     if (rawTimestamp is num) {
       final milliseconds = rawTimestamp > 1000000000000
           ? rawTimestamp.toInt()
           : rawTimestamp.toInt() * 1000;
       return DateTime.fromMillisecondsSinceEpoch(milliseconds);
     }
+    if (rawTimestamp is String) {
+      final parsed = DateTime.tryParse(rawTimestamp);
+      if (parsed != null) return parsed;
+      final numericTimestamp = int.tryParse(rawTimestamp);
+      if (numericTimestamp != null) {
+        final milliseconds = numericTimestamp > 1000000000000
+            ? numericTimestamp
+            : numericTimestamp * 1000;
+        return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+      }
+    }
 
     final date = row['date'];
-    if (date is! Map) return null;
-    final year = _asInt(date['year']);
-    final month = _asInt(date['month']);
-    final day = _asInt(date['day']);
+    int year;
+    int month;
+    int day;
+    if (date is Map) {
+      year = _asInt(date['year']);
+      month = _asInt(date['month']);
+      day = _asInt(date['day']);
+    } else if (date is String) {
+      final parsed = DateTime.tryParse(date);
+      if (parsed == null) return null;
+      year = parsed.year;
+      month = parsed.month;
+      day = parsed.day;
+    } else {
+      return null;
+    }
     if (year <= 0 || month <= 0) return null;
 
     final time = row['time'];
     final timeMap = time is Map ? time : const {};
-    var hour = _asInt(timeMap['hour'] ?? date['hour']);
+    var hour = _asInt(timeMap['hour'] ?? (date is Map ? date['hour'] : null));
     final minute = _asInt(
-      timeMap['minute'] ?? timeMap['min'] ?? date['minute'],
+      timeMap['minute'] ??
+          timeMap['min'] ??
+          (date is Map ? date['minute'] : null),
     );
+    if (time is String) {
+      final parts = time.split(':');
+      if (parts.isNotEmpty) hour = int.tryParse(parts[0]) ?? hour;
+    }
     if ((period == 'hourly' || period == '5min') && hour == 0) {
       final maybeHour = _asInt(row['id']);
       if (maybeHour >= 0 && maybeHour <= 23) hour = maybeHour;
@@ -3153,7 +3275,11 @@ class AppState extends ChangeNotifier {
   int _vnstatBytes(dynamic value) {
     if (value is int) return value < 0 ? 0 : value;
     if (value is num) return value < 0 ? 0 : value.round();
-    if (value is Map) return _vnstatBytes(value['bytes']);
+    if (value is Map) {
+      return _vnstatBytes(
+        value['bytes'] ?? value['value'] ?? value['total'] ?? value['amount'],
+      );
+    }
     final parsed = int.tryParse(value?.toString() ?? '') ?? 0;
     return parsed < 0 ? 0 : parsed;
   }
