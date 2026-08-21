@@ -36,7 +36,7 @@
 				"luci-rpc": ["getDHCPLeases", "getNetworkDevices", "getWirelessDevices"],
 				"service": ["list"]
 			},
-			"uci": ["openwalla", "banip", "sqm", "wireless", "dhcp", "network", "adblock"]
+			"uci": ["openwalla", "banip", "sqm", "qos", "wireless", "dhcp", "network", "adblock", "pbr"]
 		},
 		"write": {
 			"file": {
@@ -62,6 +62,8 @@
 				"/etc/init.d/dnsmasq": ["exec"],
 				"/etc/init.d/adblock": ["exec"],
 				"/etc/init.d/banip": ["exec"],
+				"/etc/init.d/qos": ["exec"],
+				"/etc/init.d/pbr": ["exec"],
 				"/etc/init.d/cron": ["exec"],
 				"/etc/init.d/sqm": ["exec"],
 				"/etc/init.d/firewall": ["exec"],
@@ -108,6 +110,7 @@
 				"ddns",
 				"banip",
 				"adblock",
+				"pbr",
 				"openwalla"
 			]
 		}

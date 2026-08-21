@@ -15,6 +15,11 @@ shared helper fetches each required file from `openwrt-setup/files/` with
 
 Available installers:
 
+- `install-standard-apps.sh` - uhttpd-mod-ubus, nlbwmon, vnstat2, sqlite, conntrack, and qrencode
+- `install-adblock.sh` - OpenWrt adblock and LuCI adblock packages
+- `install-qos-scripts.sh` - QoS/SQM package support
+- `install-banip.sh` - banIP package support
+- `install-pbr.sh` - PBR package support
 - `install-netify.sh` - netifyd plus Openwalla Netify collector
 - `install-conntrack.sh` - connection flow collector backed by SQLite
 - `install-ping-monitor.sh` / `install-ping-test.sh` - ping monitor output for latency timeline
