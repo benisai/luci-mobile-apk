@@ -3730,7 +3730,17 @@ class AppState extends ChangeNotifier {
     }
     if (result is Map) {
       final stdout = result['stdout'] ?? result['data'] ?? result['output'];
-      if (stdout != null) return stdout.toString();
+      final stderr = result['stderr'];
+      final code = result['code'];
+      final parts = <String>[];
+      final stdoutText = stdout?.toString().trimRight() ?? '';
+      final stderrText = stderr?.toString().trimRight() ?? '';
+      if (stdoutText.isNotEmpty) parts.add(stdoutText);
+      if (stderrText.isNotEmpty) parts.add(stderrText);
+      if (code != null && code.toString() != '0') {
+        parts.add('Exit code: $code');
+      }
+      if (parts.isNotEmpty) return parts.join('\n');
     }
     if (result is List && result.length > 1 && result[0] == 0) {
       return result[1]?.toString() ?? '';

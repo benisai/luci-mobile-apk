@@ -102,7 +102,8 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
 
     setState(() {
       _isInstalling = true;
-      _lastOutput = null;
+      _lastOutput =
+          'Connecting to router...\nRunning Openwalla setup command...\n\nOutput will appear here when the router returns console data.';
     });
 
     try {
@@ -114,7 +115,9 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
       await _enableDashboardCardsForInstalledFeatures();
       if (!mounted) return;
       setState(() {
-        _lastOutput = output.trim().isEmpty ? 'Setup finished.' : output.trim();
+        _lastOutput = output.trim().isEmpty
+            ? 'Setup finished. The router did not return console output.'
+            : output.trim();
       });
       _showSnack('Router setup finished.');
     } catch (e) {
@@ -250,9 +253,9 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
                 const SizedBox(height: 8),
                 _CommandPreview(command: command),
               ],
-              if (_showDetails && _lastOutput != null) ...[
+              if (_lastOutput != null) ...[
                 const SizedBox(height: 16),
-                _OutputPreview(output: _lastOutput!),
+                _OutputPreview(output: _lastOutput!, isRunning: _isInstalling),
               ],
             ],
           ],
@@ -812,8 +815,9 @@ class _CommandPreview extends StatelessWidget {
 
 class _OutputPreview extends StatelessWidget {
   final String output;
+  final bool isRunning;
 
-  const _OutputPreview({required this.output});
+  const _OutputPreview({required this.output, required this.isRunning});
 
   @override
   Widget build(BuildContext context) {
@@ -825,11 +829,18 @@ class _OutputPreview extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Setup Output',
+              isRunning ? 'SSH Console Running' : 'SSH Console Output',
               style: Theme.of(
                 context,
               ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
             ),
+            if (isRunning) ...[
+              const SizedBox(height: 10),
+              LinearProgressIndicator(
+                minHeight: 3,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ],
             const SizedBox(height: 10),
             SelectableText(
               output,
