@@ -509,6 +509,15 @@ class _PingTestCard extends StatelessWidget {
       if (index == labels.length - 1) return 'Now';
       return '';
     }).toList();
+    final tooltips = slotSamples.asMap().entries.map((entry) {
+      final sample = entry.value;
+      final slotLabel = entry.key == slotSamples.length - 1
+          ? 'Now'
+          : labels[entry.key];
+      if (sample == null) return '$slotLabel\nNo ping data';
+      final latency = NetworkPerformanceScreen.formatLatency(sample.latencyMs);
+      return '$slotLabel\nLatency: $latency\nStatus: ${sample.status}\nTarget: ${sample.target}';
+    }).toList();
 
     return _ChartPanel(
       title: 'Ping Test',
@@ -519,6 +528,7 @@ class _PingTestCard extends StatelessWidget {
       color: NetworkPerformanceScreen._green,
       secondaryColor: NetworkPerformanceScreen._yellow,
       labels: readableLabels,
+      tooltips: tooltips,
       stats: [
         (
           label: 'Min',
@@ -586,6 +596,20 @@ class _SpeedTestCard extends StatelessWidget {
     final hasData = slotSamples
         .map((sample) => sample?.downloadMbps != null)
         .toList();
+    final tooltips = slotSamples.asMap().entries.map((entry) {
+      final sample = entry.value;
+      final label = entry.key == slotSamples.length - 1
+          ? 'Today'
+          : labels[entry.key];
+      if (sample == null) return '$label\nNo speedtest data';
+      final down = sample.downloadMbps == null
+          ? 'N/A'
+          : '${sample.downloadMbps!.toStringAsFixed(1)} Mbps';
+      final up = sample.uploadMbps == null
+          ? 'N/A'
+          : '${sample.uploadMbps!.toStringAsFixed(1)} Mbps';
+      return '$label\nDownload: $down\nUpload: $up\nStatus: ${sample.status}';
+    }).toList();
 
     return _ChartPanel(
       title: 'Speed Test',
@@ -598,6 +622,7 @@ class _SpeedTestCard extends StatelessWidget {
       color: NetworkPerformanceScreen._cyan,
       secondaryColor: NetworkPerformanceScreen._orange,
       labels: labels,
+      tooltips: tooltips,
     );
   }
 }
@@ -661,6 +686,7 @@ class _ChartPanel extends StatelessWidget {
   final Color color;
   final Color secondaryColor;
   final List<String> labels;
+  final List<String> tooltips;
   final List<({String label, String value})> stats;
 
   const _ChartPanel({
@@ -672,6 +698,7 @@ class _ChartPanel extends StatelessWidget {
     required this.color,
     required this.secondaryColor,
     required this.labels,
+    this.tooltips = const [],
     this.stats = const [],
   });
 
@@ -735,20 +762,28 @@ class _ChartPanel extends StatelessWidget {
                 final height = 112 * bars[index].clamp(0, 1).toDouble();
                 final hasSample = index < hasData.length && hasData[index];
                 return Expanded(
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Container(
-                      width: 12,
-                      height: height < 3 ? 3 : height,
-                      decoration: BoxDecoration(
-                        color: !hasSample
-                            ? colorScheme.onSurfaceVariant.withValues(
-                                alpha: 0.28,
-                              )
-                            : index == bars.length - 2
-                            ? secondaryColor
-                            : color,
-                        borderRadius: BorderRadius.circular(4),
+                  child: Tooltip(
+                    message: index < tooltips.length
+                        ? tooltips[index]
+                        : labels[index],
+                    triggerMode: TooltipTriggerMode.tap,
+                    showDuration: const Duration(seconds: 3),
+                    preferBelow: false,
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Container(
+                        width: 12,
+                        height: height < 3 ? 3 : height,
+                        decoration: BoxDecoration(
+                          color: !hasSample
+                              ? colorScheme.onSurfaceVariant.withValues(
+                                  alpha: 0.28,
+                                )
+                              : index == bars.length - 2
+                              ? secondaryColor
+                              : color,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
                     ),
                   ),

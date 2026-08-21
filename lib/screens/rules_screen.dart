@@ -14,6 +14,7 @@ class RulesScreen extends ConsumerStatefulWidget {
 class _RulesScreenState extends ConsumerState<RulesScreen> {
   List<OpenwrtFirewallRule> _rules = const [];
   bool _isLoading = true;
+  bool _showOpenwrtRules = false;
   String? _error;
 
   @override
@@ -132,6 +133,10 @@ class _RulesScreenState extends ConsumerState<RulesScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final openwallaRules = _rules
+        .where((rule) => rule.isOpenwallaRule)
+        .toList();
+    final openwrtRules = _rules.where((rule) => !rule.isOpenwallaRule).toList();
 
     return Scaffold(
       appBar: const LuciAppBar(title: 'Rules', showBack: true),
@@ -171,18 +176,89 @@ class _RulesScreenState extends ConsumerState<RulesScreen> {
                   message: 'No firewall rules found.',
                   action: _loadRules,
                 )
-              else
-                ..._rules.map(
-                  (rule) => _RuleCard(
-                    rule: rule,
-                    onTap: () => _showRuleDetails(rule),
-                  ),
+              else ...[
+                _RuleGroupHeader(
+                  title: 'Openwalla Rules',
+                  count: openwallaRules.length,
                 ),
+                if (openwallaRules.isEmpty)
+                  _RulesEmptyCard(
+                    message: 'No Openwalla rules found.',
+                    action: _loadRules,
+                  )
+                else
+                  ...openwallaRules.map(
+                    (rule) => _RuleCard(
+                      rule: rule,
+                      onTap: () => _showRuleDetails(rule),
+                    ),
+                  ),
+                const SizedBox(height: 10),
+                _RuleGroupHeader(
+                  title: 'OpenWrt Default Rules',
+                  count: openwrtRules.length,
+                  isExpanded: _showOpenwrtRules,
+                  onTap: () =>
+                      setState(() => _showOpenwrtRules = !_showOpenwrtRules),
+                ),
+                if (_showOpenwrtRules)
+                  ...openwrtRules.map(
+                    (rule) => _RuleCard(
+                      rule: rule,
+                      onTap: () => _showRuleDetails(rule),
+                    ),
+                  ),
+              ],
             ],
           ),
         ),
       ),
     );
+  }
+}
+
+class _RuleGroupHeader extends StatelessWidget {
+  final String title;
+  final int count;
+  final bool? isExpanded;
+  final VoidCallback? onTap;
+
+  const _RuleGroupHeader({
+    required this.title,
+    required this.count,
+    this.isExpanded,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final content = Padding(
+      padding: const EdgeInsets.fromLTRB(2, 12, 2, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '$title ($count)',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+          if (isExpanded != null)
+            Icon(
+              isExpanded!
+                  ? Icons.expand_less_rounded
+                  : Icons.expand_more_rounded,
+              color: colorScheme.onSurfaceVariant,
+            ),
+        ],
+      ),
+    );
+    if (onTap == null) return content;
+    return InkWell(onTap: onTap, child: content);
   }
 }
 
@@ -253,8 +329,8 @@ class _RuleCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         decoration: BoxDecoration(
           color: backgroundColor,
           borderRadius: BorderRadius.circular(8),
@@ -272,12 +348,12 @@ class _RuleCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     rule.name,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       color: colorScheme.onSurface,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 0,
                     ),
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -290,32 +366,64 @@ class _RuleCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (rule.isOpenwallaRule)
-                  _RuleBadge(
-                    label: 'Openwalla',
-                    color: colorScheme.primary,
-                    filled: false,
-                  ),
-                _RuleBadge(
-                  label: rule.enabled ? 'Enabled' : 'Disabled',
-                  color: rule.enabled
-                      ? const Color(0xFF20CF70)
-                      : colorScheme.onSurfaceVariant,
-                  filled: false,
-                ),
-                _RuleBadge(label: rule.protocol, color: colorScheme.secondary),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _RuleDetailGrid(rule: rule),
+            const SizedBox(height: 8),
+            _RuleCompactLine(rule: rule),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _RuleCompactLine extends StatelessWidget {
+  final OpenwrtFirewallRule rule;
+
+  const _RuleCompactLine({required this.rule});
+
+  String _value(String value) => value == 'Any' ? '*' : value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final destination = [
+      _value(rule.destination),
+      if (rule.port != 'Any') ':${rule.port}',
+    ].join();
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '${_value(rule.source)} ${_value(rule.sourceIp)}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        Icon(
+          Icons.arrow_forward_rounded,
+          size: 14,
+          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            destination,
+            textAlign: TextAlign.right,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -348,24 +456,6 @@ class _RuleBadge extends StatelessWidget {
           letterSpacing: 0,
         ),
       ),
-    );
-  }
-}
-
-class _RuleDetailGrid extends StatelessWidget {
-  final OpenwrtFirewallRule rule;
-
-  const _RuleDetailGrid({required this.rule});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        _RuleDetailRow(label: 'Source', value: rule.source),
-        _RuleDetailRow(label: 'Source IP', value: rule.sourceIp),
-        _RuleDetailRow(label: 'Destination', value: rule.destination),
-        _RuleDetailRow(label: 'Port', value: rule.port),
-      ],
     );
   }
 }

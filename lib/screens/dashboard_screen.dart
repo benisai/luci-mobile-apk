@@ -15,6 +15,8 @@ import 'package:luci_mobile/screens/network_performance_screen.dart';
 import 'package:luci_mobile/screens/notifications_screen.dart';
 import 'package:luci_mobile/screens/rules_screen.dart';
 import 'package:luci_mobile/screens/simple_flows_screen.dart';
+import 'package:luci_mobile/screens/routes_screen.dart';
+import 'package:luci_mobile/screens/smart_queue_screen.dart';
 import 'package:luci_mobile/screens/system_resources_screen.dart';
 import 'package:luci_mobile/models/router.dart' as model;
 
@@ -1141,13 +1143,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             label: 'Routes',
             icon: Icons.route_rounded,
             color: _openwallaOrange,
-            onTap: () => _openDashboardPlaceholder('Routes'),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const RoutesScreen()),
+              );
+            },
           ),
           _buildDashboardShortcut(
             label: 'Smart Queue',
             icon: Icons.sync_alt_rounded,
             color: _openwallaGreen,
-            onTap: () => _openDashboardPlaceholder('Smart Queue'),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const SmartQueueScreen(),
+                ),
+              );
+            },
           ),
           _buildDashboardShortcut(
             label: 'Wi-Fi',
@@ -1201,14 +1213,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => InterfacesScreen(wirelessOnly: wirelessOnly),
-      ),
-    );
-  }
-
-  void _openDashboardPlaceholder(String title) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => _DashboardPlaceholderScreen(title: title),
       ),
     );
   }
@@ -1639,32 +1643,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             );
           }
         },
-      ),
-    );
-  }
-}
-
-class _DashboardPlaceholderScreen extends StatelessWidget {
-  final String title;
-
-  const _DashboardPlaceholderScreen({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: LuciAppBar(title: title, showBack: true),
-      body: SafeArea(
-        child: Center(
-          child: Text(
-            'Coming soon',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0,
-            ),
-          ),
-        ),
       ),
     );
   }

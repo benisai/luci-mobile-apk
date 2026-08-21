@@ -137,6 +137,95 @@ class OpenwrtFirewallRule {
   }
 }
 
+class OpenwrtStaticRoute {
+  final String section;
+  final String interfaceName;
+  final String routeType;
+  final String target;
+  final String netmask;
+  final String gateway;
+  final String metric;
+  final bool enabled;
+
+  const OpenwrtStaticRoute({
+    required this.section,
+    required this.interfaceName,
+    required this.routeType,
+    required this.target,
+    required this.netmask,
+    required this.gateway,
+    required this.metric,
+    required this.enabled,
+  });
+
+  factory OpenwrtStaticRoute.fromUciSection(
+    String section,
+    Map<dynamic, dynamic> values,
+  ) {
+    String read(String key, String fallback) {
+      final text = values[key]?.toString().trim();
+      return text == null || text.isEmpty ? fallback : text;
+    }
+
+    return OpenwrtStaticRoute(
+      section: section,
+      interfaceName: read('interface', 'unspecified'),
+      routeType: read('type', 'unicast'),
+      target: read('target', '0.0.0.0'),
+      netmask: read('netmask', ''),
+      gateway: read('gateway', ''),
+      metric: read('metric', '0'),
+      enabled: read('disabled', '0') != '1',
+    );
+  }
+}
+
+class OpenwrtSqmQueue {
+  final String section;
+  final bool enabled;
+  final String interfaceName;
+  final int downloadKbps;
+  final int uploadKbps;
+  final String qdisc;
+  final String script;
+  final bool debugLogging;
+  final String verbosity;
+
+  const OpenwrtSqmQueue({
+    required this.section,
+    required this.enabled,
+    required this.interfaceName,
+    required this.downloadKbps,
+    required this.uploadKbps,
+    required this.qdisc,
+    required this.script,
+    required this.debugLogging,
+    required this.verbosity,
+  });
+
+  factory OpenwrtSqmQueue.fromUciSection(
+    String section,
+    Map<dynamic, dynamic> values,
+  ) {
+    String read(String key, String fallback) {
+      final text = values[key]?.toString().trim();
+      return text == null || text.isEmpty ? fallback : text;
+    }
+
+    return OpenwrtSqmQueue(
+      section: section,
+      enabled: read('enabled', '0') == '1',
+      interfaceName: read('interface', 'eth1'),
+      downloadKbps: int.tryParse(read('download', '0')) ?? 0,
+      uploadKbps: int.tryParse(read('upload', '0')) ?? 0,
+      qdisc: read('qdisc', 'cake'),
+      script: read('script', 'piece_of_cake.qos'),
+      debugLogging: read('debug_logging', '0') == '1',
+      verbosity: read('verbosity', '5'),
+    );
+  }
+}
+
 class PingMonitorSample {
   final DateTime timestamp;
   final String target;
@@ -2207,6 +2296,233 @@ class AppState extends ChangeNotifier {
       command:
           '/etc/init.d/firewall reload 2>/dev/null || /etc/init.d/firewall restart 2>/dev/null || true',
     );
+  }
+
+  List<OpenwrtStaticRoute> _mockStaticRoutes() {
+    return const [
+      OpenwrtStaticRoute(
+        section: 'route_openwalla_lab',
+        interfaceName: 'lan',
+        routeType: 'unicast',
+        target: '10.20.30.0/24',
+        netmask: '',
+        gateway: '172.31.1.2',
+        metric: '10',
+        enabled: true,
+      ),
+    ];
+  }
+
+  Future<List<OpenwrtStaticRoute>> fetchStaticRoutes({
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) return _mockStaticRoutes();
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'get',
+        params: {'config': 'network'},
+        context: context,
+      );
+      final values = _extractUciValues(result);
+      final routes =
+          values.entries
+              .where((entry) => entry.value['.type']?.toString() == 'route')
+              .map(
+                (entry) =>
+                    OpenwrtStaticRoute.fromUciSection(entry.key, entry.value),
+              )
+              .toList()
+            ..sort(
+              (a, b) => a.interfaceName.toLowerCase().compareTo(
+                b.interfaceName.toLowerCase(),
+              ),
+            );
+      return routes;
+    } catch (e, stack) {
+      Logger.warning('Optional static routes fetch failed: $e');
+      Logger.debug('Optional static routes stack: $stack');
+      return const [];
+    }
+  }
+
+  Future<void> addStaticRoute({
+    required String interfaceName,
+    required String routeType,
+    required String target,
+    required String gateway,
+    String metric = '',
+  }) async {
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    final addResult = await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'uci',
+      method: 'add',
+      params: {'config': 'network', 'type': 'route'},
+    );
+    final section = _extractAddedSection(addResult);
+    if (section == null || section.isEmpty) {
+      throw StateError('Unable to create route section');
+    }
+
+    final values = <String, String>{
+      'interface': interfaceName,
+      'type': routeType,
+      'target': target,
+    };
+    if (gateway.trim().isNotEmpty) values['gateway'] = gateway.trim();
+    if (metric.trim().isNotEmpty) values['metric'] = metric.trim();
+
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'network',
+      section: section,
+      values: values,
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'network',
+    );
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command: '/etc/init.d/network reload 2>/dev/null || ifup $interfaceName',
+    );
+    notifyListeners();
+  }
+
+  List<OpenwrtSqmQueue> _mockSqmQueues() {
+    return const [
+      OpenwrtSqmQueue(
+        section: 'queue',
+        enabled: true,
+        interfaceName: 'eth1',
+        downloadKbps: 85000,
+        uploadKbps: 10000,
+        qdisc: 'cake',
+        script: 'piece_of_cake.qos',
+        debugLogging: false,
+        verbosity: '5',
+      ),
+    ];
+  }
+
+  Future<List<OpenwrtSqmQueue>> fetchSqmQueues({BuildContext? context}) async {
+    if (_reviewerModeEnabled) return _mockSqmQueues();
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'get',
+        params: {'config': 'sqm'},
+        context: context,
+      );
+      final values = _extractUciValues(result);
+      return values.entries
+          .where((entry) => entry.value['.type']?.toString() == 'queue')
+          .map(
+            (entry) => OpenwrtSqmQueue.fromUciSection(entry.key, entry.value),
+          )
+          .toList();
+    } catch (e, stack) {
+      Logger.warning('Optional SQM fetch failed: $e');
+      Logger.debug('Optional SQM stack: $stack');
+      return const [];
+    }
+  }
+
+  Future<void> saveSqmQueue(OpenwrtSqmQueue queue) async {
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    var section = queue.section;
+    if (section.isEmpty) {
+      final addResult = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'add',
+        params: {'config': 'sqm', 'type': 'queue'},
+      );
+      section = _extractAddedSection(addResult) ?? '';
+      if (section.isEmpty) throw StateError('Unable to create SQM queue');
+    }
+
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'sqm',
+      section: section,
+      values: {
+        'enabled': queue.enabled ? '1' : '0',
+        'interface': queue.interfaceName,
+        'download': queue.downloadKbps.toString(),
+        'upload': queue.uploadKbps.toString(),
+        'qdisc': queue.qdisc,
+        'script': queue.script,
+        'debug_logging': queue.debugLogging ? '1' : '0',
+        'verbosity': queue.verbosity,
+      },
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'sqm',
+    );
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command: '/etc/init.d/sqm restart 2>/dev/null || true',
+    );
+    notifyListeners();
   }
 
   Future<int> fetchNotificationCount({BuildContext? context}) async {
