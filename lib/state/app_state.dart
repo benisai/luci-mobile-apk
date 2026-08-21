@@ -259,6 +259,7 @@ class OpenwrtAdblockSettings {
   final bool reportEnabled;
   final String triggerInterface;
   final String dnsBackend;
+  final List<String> selectedFeeds;
   final String serviceStatus;
 
   const OpenwrtAdblockSettings({
@@ -269,6 +270,7 @@ class OpenwrtAdblockSettings {
     required this.reportEnabled,
     required this.triggerInterface,
     required this.dnsBackend,
+    required this.selectedFeeds,
     required this.serviceStatus,
   });
 
@@ -280,6 +282,7 @@ class OpenwrtAdblockSettings {
     bool? reportEnabled,
     String? triggerInterface,
     String? dnsBackend,
+    List<String>? selectedFeeds,
     String? serviceStatus,
   }) {
     return OpenwrtAdblockSettings(
@@ -290,6 +293,7 @@ class OpenwrtAdblockSettings {
       reportEnabled: reportEnabled ?? this.reportEnabled,
       triggerInterface: triggerInterface ?? this.triggerInterface,
       dnsBackend: dnsBackend ?? this.dnsBackend,
+      selectedFeeds: selectedFeeds ?? this.selectedFeeds,
       serviceStatus: serviceStatus ?? this.serviceStatus,
     );
   }
@@ -315,6 +319,23 @@ class OpenwrtAdblockSettings {
       return value == '1' || value == 'true' || value == 'yes';
     }
 
+    List<String> readList(String key) {
+      final value = values[key];
+      if (value is List) {
+        return value
+            .map((entry) => entry.toString().trim())
+            .where((entry) => entry.isNotEmpty)
+            .toList();
+      }
+      final text = value?.toString().trim() ?? '';
+      return text.isEmpty
+          ? const []
+          : text
+                .split(RegExp(r'\s+'))
+                .where((entry) => entry.isNotEmpty)
+                .toList();
+    }
+
     return OpenwrtAdblockSettings(
       section: section,
       installed: installed,
@@ -323,6 +344,7 @@ class OpenwrtAdblockSettings {
       reportEnabled: boolValue('adb_report', false),
       triggerInterface: read('adb_trigger', 'wan'),
       dnsBackend: read('adb_dns', 'dnsmasq'),
+      selectedFeeds: readList('adb_feed'),
       serviceStatus: serviceStatus,
     );
   }
@@ -2838,6 +2860,7 @@ class AppState extends ChangeNotifier {
       reportEnabled: true,
       triggerInterface: 'wan',
       dnsBackend: 'dnsmasq',
+      selectedFeeds: ['adguard', 'adguard_tracking', 'certpl'],
       serviceStatus: 'running',
     );
   }
@@ -2858,6 +2881,7 @@ class AppState extends ChangeNotifier {
         reportEnabled: false,
         triggerInterface: 'wan',
         dnsBackend: 'dnsmasq',
+        selectedFeeds: [],
         serviceStatus: 'Not connected',
       );
     }
@@ -2907,6 +2931,7 @@ class AppState extends ChangeNotifier {
           reportEnabled: false,
           triggerInterface: 'wan',
           dnsBackend: 'dnsmasq',
+          selectedFeeds: const [],
           serviceStatus: statusText,
         );
       }
@@ -2927,6 +2952,7 @@ class AppState extends ChangeNotifier {
         reportEnabled: false,
         triggerInterface: 'wan',
         dnsBackend: 'dnsmasq',
+        selectedFeeds: const [],
         serviceStatus: statusText,
       );
     }
@@ -2983,6 +3009,18 @@ class AppState extends ChangeNotifier {
             ? 'dnsmasq'
             : settings.dnsBackend.trim(),
       },
+    );
+    final feedCommands = <String>[
+      'uci -q delete adblock.$section.adb_feed',
+      for (final feed in settings.selectedFeeds)
+        if (RegExp(r'^[A-Za-z0-9_+-]+$').hasMatch(feed))
+          "uci add_list adblock.$section.adb_feed='$feed'",
+    ];
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command: feedCommands.join('; '),
     );
     await _apiService!.uciCommit(
       router.ipAddress,

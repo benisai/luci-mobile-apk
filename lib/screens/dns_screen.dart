@@ -95,17 +95,7 @@ class _DnsScreenState extends ConsumerState<DnsScreen> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: LuciAppBar(
-        title: 'DNS',
-        showBack: true,
-        actions: [
-          IconButton(
-            tooltip: 'Add DNS entry',
-            onPressed: () => _showEntrySheet(),
-            icon: const Icon(Icons.add_rounded),
-          ),
-        ],
-      ),
+      appBar: LuciAppBar(title: 'DNS', showBack: true),
       body: SafeArea(
         top: false,
         child: RefreshIndicator(
