@@ -20,7 +20,12 @@ have_cmd() {
 
 SCRIPT_PATH="$0"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" 2>/dev/null && pwd)"
-FILES_DIR="$SCRIPT_DIR/files"
+OPENWALLA_GITHUB_REPO="${OPENWALLA_GITHUB_REPO:-benisai/luci-mobile-apk}"
+OPENWALLA_GITHUB_REF="${OPENWALLA_GITHUB_REF:-main}"
+OPENWALLA_RAW_BASE="${OPENWALLA_RAW_BASE:-https://raw.githubusercontent.com/$OPENWALLA_GITHUB_REPO/$OPENWALLA_GITHUB_REF/openwrt-setup}"
+OPENWALLA_ROOT="${OPENWALLA_ROOT:-/root/openwalla}"
+FILES_DIR="$OPENWALLA_ROOT/files"
+RPCD_ACL="$OPENWALLA_ROOT/rpcd-acl.json"
 INSTALL_PROFILE=""
 INSTALL_ADBLOCK=0
 INSTALL_PBR=0
@@ -47,6 +52,10 @@ Options:
   --with-pbr         Install pbr package(s)
   --without-pbr      Skip pbr package(s)
   --help             Show this help
+
+Environment:
+  OPENWALLA_RAW_BASE  Override the raw GitHub base URL for setup files
+  OPENWALLA_ROOT      Override download directory (default: /root/openwalla)
 EOF
 }
 
@@ -226,6 +235,56 @@ set_uci() {
 	uci set "$key=$value"
 }
 
+download_file() {
+	url="$1"
+	dst="$2"
+	mkdir -p "$(dirname "$dst")"
+	if have_cmd wget; then
+		wget -qO "$dst" "$url" && return 0
+	fi
+	if have_cmd curl; then
+		curl -fsSL "$url" -o "$dst" && return 0
+	fi
+	echo "Neither wget nor curl is available; cannot download $url"
+	return 1
+}
+
+download_setup_payloads() {
+	log "Downloading Openwalla setup files to $OPENWALLA_ROOT"
+	mkdir -p "$FILES_DIR"
+
+	for file in \
+		openwalla-connection-flow-collector.sh \
+		openwalla-connection-flows-collector.init \
+		openwalla-device-bandwidth-collector.init \
+		openwalla-device-bandwidth-collector.sh \
+		openwalla-device-quarantine.init \
+		openwalla-device-quarantine.sh \
+		openwalla-device-traffic-summary.sh \
+		openwalla-devices-collector.init \
+		openwalla-devices-collector.sh \
+		openwalla-dns-monitor.init \
+		openwalla-dns-monitor.sh \
+		openwalla-netify-collector.init \
+		openwalla-netify-collector.sh \
+		openwalla-notifications-db.sh \
+		openwalla-paternal-pause.sh \
+		openwalla-ping-monitor.init \
+		openwalla-ping-monitor.sh \
+		openwalla-speedtest-monitor.sh \
+		openwalla-state-sync.init \
+		openwalla-state-sync.sh \
+		openwalla.config
+	do
+		download_file "$OPENWALLA_RAW_BASE/files/$file" "$FILES_DIR/$file" || exit 1
+	done
+
+	download_file "$OPENWALLA_RAW_BASE/rpcd-acl.json" "$RPCD_ACL" || exit 1
+	log "Openwalla setup files downloaded."
+}
+
+download_setup_payloads
+
 require_file "$FILES_DIR/openwalla-connection-flow-collector.sh"
 require_file "$FILES_DIR/openwalla-ping-monitor.sh"
 require_file "$FILES_DIR/openwalla-dns-monitor.sh"
@@ -245,7 +304,7 @@ require_file "$FILES_DIR/openwalla-dns-monitor.init"
 require_file "$FILES_DIR/openwalla-state-sync.init"
 require_file "$FILES_DIR/openwalla-device-quarantine.init"
 require_file "$FILES_DIR/openwalla.config"
-require_file "$SCRIPT_DIR/rpcd-acl.json"
+require_file "$RPCD_ACL"
 if [ "$INSTALL_NETIFY" = "1" ]; then
 	require_file "$FILES_DIR/openwalla-netify-collector.sh"
 	require_file "$FILES_DIR/openwalla-netify-collector.init"
@@ -332,7 +391,7 @@ install_file "$FILES_DIR/openwalla-ping-monitor.init" /etc/init.d/openwalla-ping
 install_file "$FILES_DIR/openwalla-dns-monitor.init" /etc/init.d/openwalla-dns-monitor 0755
 install_file "$FILES_DIR/openwalla-state-sync.init" /etc/init.d/openwalla-state-sync 0755
 install_file "$FILES_DIR/openwalla-device-quarantine.init" /etc/init.d/openwalla-device-quarantine 0755
-install_file "$SCRIPT_DIR/rpcd-acl.json" /usr/share/rpcd/acl.d/openwalla.json 0644
+install_file "$RPCD_ACL" /usr/share/rpcd/acl.d/openwalla.json 0644
 if [ "$INSTALL_NETIFY" = "1" ]; then
 	install_file "$FILES_DIR/openwalla-netify-collector.sh" /usr/bin/openwalla-netify-collector 0755
 	install_file "$FILES_DIR/openwalla-netify-collector.init" /etc/init.d/openwalla-netify-collector 0755
