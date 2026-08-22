@@ -103,14 +103,21 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
     setState(() {
       _isInstalling = true;
       _lastOutput =
-          'Connecting to router...\nRunning Openwalla setup command...\n\nOutput will appear here when the router returns console data.';
+          'Connecting to router over SSH...\nRunning Openwalla setup command...\n\nConsole output will appear here as the install runs.';
     });
 
     try {
       final appState = ref.read(appStateProvider);
-      final output = await appState.runRouterSetupCommand(
+      final outputBuffer = StringBuffer();
+      final output = await appState.runRouterSetupCommandViaSsh(
         command,
-        context: context,
+        onOutput: (chunk) {
+          outputBuffer.write(chunk);
+          if (!mounted) return;
+          setState(() {
+            _lastOutput = outputBuffer.toString().trimRight();
+          });
+        },
       );
       await _enableDashboardCardsForInstalledFeatures();
       if (!mounted) return;
@@ -124,10 +131,10 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
       if (!mounted) return;
       setState(() {
         _lastOutput =
-            'App install failed. This router may not allow setup commands until the Openwalla rpcd ACL is installed. Copy the SSH command below and run it as root.\n\n$e';
+            'SSH install failed. Make sure SSH is enabled on the router and the saved router username/password can log in as root. You can still copy the SSH command below and run it manually.\n\n$e';
         _showDetails = true;
       });
-      _showSnack('Router setup could not run from the app.');
+      _showSnack('Router setup could not run over SSH.');
     } finally {
       if (mounted) setState(() => _isInstalling = false);
     }
@@ -218,7 +225,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
                       _isInstalling
                           ? 'Installing'
                           : _wizardStep == 4
-                          ? 'Run From App'
+                          ? 'Install via SSH'
                           : 'Next',
                     ),
                   ),
@@ -460,6 +467,11 @@ class _SetupPermissionCard extends StatelessWidget {
               ),
               child: const Column(
                 children: [
+                  _PermissionLine(
+                    icon: Icons.terminal_rounded,
+                    text: 'Connect over SSH with the saved router login.',
+                  ),
+                  SizedBox(height: 10),
                   _PermissionLine(
                     icon: Icons.inventory_2_outlined,
                     text: 'Install standard OpenWrt application packages.',

@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:luci_mobile/services/secure_storage_service.dart';
 import 'package:luci_mobile/services/router_service.dart';
+import 'package:luci_mobile/services/ssh_service.dart';
 import 'package:luci_mobile/services/throughput_service.dart';
 import 'package:luci_mobile/models/client.dart';
 import 'package:luci_mobile/models/router.dart' as model;
@@ -1033,6 +1034,37 @@ class AppState extends ChangeNotifier {
       context: context,
     );
     return _commandOutput(result);
+  }
+
+  Future<String> runRouterSetupCommandViaSsh(
+    String command, {
+    void Function(String chunk)? onOutput,
+  }) async {
+    final router = _routerService?.selectedRouter;
+    if (router == null) {
+      throw StateError('No selected router connection is available');
+    }
+    if (router.username.trim().isEmpty || router.password.isEmpty) {
+      throw StateError('Saved router SSH credentials are missing');
+    }
+
+    if (_reviewerModeEnabled) {
+      const output =
+          'Connecting with saved router credentials...\n'
+          'Installing selected Openwalla setup components...\n'
+          'Setup finished.';
+      onOutput?.call(output);
+      return output;
+    }
+
+    final result = await SshService().runCommand(
+      host: router.ipAddress,
+      username: router.username,
+      password: router.password,
+      command: command,
+      onOutput: onOutput,
+    );
+    return result.output;
   }
 
   String? get sysauth => _authService?.sysauth;
