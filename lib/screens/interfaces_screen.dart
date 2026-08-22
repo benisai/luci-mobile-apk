@@ -598,7 +598,6 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
             subtitle: _buildMinimalInterfaceSubtitle(iface),
             isUp: iface.isUp,
             icon: _getInterfaceIcon(iface.protocol),
-            onEdit: () => _showEditInterfaceSheet(iface),
             details: _buildWiredDetails(context, iface),
             initiallyExpanded:
                 isTargetInterface || _expandedInterface == keyStr,
@@ -763,6 +762,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
   }
 
   Widget _buildWiredDetails(BuildContext context, NetworkInterface interface) {
+    final canEditLan = _normalizeInterfaceKey(interface.name) == 'lan';
     return Column(
       children: [
         _buildDetailRow(context, 'Device', interface.device),
@@ -818,6 +818,20 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: _buildStatsRow(context, interface.stats),
         ),
+        if (canEditLan) ...[
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: () => _showEditInterfaceSheet(interface),
+                icon: const Icon(Icons.edit_rounded, size: 18),
+                label: const Text('Edit LAN'),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -1541,7 +1555,6 @@ class _UnifiedNetworkCard extends StatefulWidget {
   final IconData icon;
   final Widget details;
   final bool initiallyExpanded;
-  final VoidCallback? onEdit;
 
   const _UnifiedNetworkCard({
     required this.name,
@@ -1550,7 +1563,6 @@ class _UnifiedNetworkCard extends StatefulWidget {
     required this.icon,
     required this.details,
     this.initiallyExpanded = false,
-    this.onEdit,
     super.key,
   });
 
@@ -1710,13 +1722,7 @@ class _UnifiedNetworkCardState extends State<_UnifiedNetworkCard>
                         ],
                       ),
                     ),
-                    if (widget.onEdit != null)
-                      IconButton(
-                        tooltip: 'Edit interface',
-                        onPressed: widget.onEdit,
-                        icon: const Icon(Icons.edit_rounded, size: 20),
-                      )
-                    else if (!widget.isUp)
+                    if (!widget.isUp)
                       Padding(
                         padding: const EdgeInsets.only(right: LuciSpacing.xs),
                         child: LuciStatusIndicators.statusChip(
