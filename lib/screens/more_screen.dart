@@ -239,18 +239,6 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                     );
                   },
                 ),
-                _buildMoreTile(
-                  context,
-                  icon: Icons.logout,
-                  iconColor: Theme.of(context).colorScheme.error,
-                  title: 'Logout',
-                  subtitle: 'End your session and sign out',
-                  titleColor: Theme.of(context).colorScheme.error,
-                  subtitleColor: Theme.of(
-                    context,
-                  ).colorScheme.error.withValues(alpha: 0.7),
-                  onTap: () => _showLogoutDialog(context),
-                ),
               ],
             ),
             const LuciSectionHeader('Device Management'),
@@ -272,6 +260,18 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                           : () => _showRebootDialog(context),
                       enabled: !isRebooting,
                       showSpinner: isRebooting,
+                    ),
+                    _buildMoreTile(
+                      context,
+                      icon: Icons.logout,
+                      iconColor: Theme.of(context).colorScheme.error,
+                      title: 'Logout',
+                      subtitle: 'End your session and sign out',
+                      titleColor: Theme.of(context).colorScheme.error,
+                      subtitleColor: Theme.of(
+                        context,
+                      ).colorScheme.error.withValues(alpha: 0.7),
+                      onTap: () => _showLogoutDialog(context),
                     ),
                   ],
                 );

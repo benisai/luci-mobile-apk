@@ -35,6 +35,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   static const Color _openwallaCyan = Color(0xFF18AEEA);
   static const Color _openwallaOrange = Color(0xFFF27C24);
   static const Color _openwallaGreen = Color(0xFF20CF70);
+  static const Color _shortcutDarkBlue = Color(0xFF2563EB);
+  static const Color _shortcutYellow = Color(0xFFEAB308);
+  static const Color _shortcutPurple = Color(0xFF8B5CF6);
+  static const Color _shortcutRed = Color(0xFFFF4D4F);
   static const Color _openwallaCardBorder = Color(0xFF313C52);
   static const double _openwallaRadius = 8;
   Timer? _summaryRefreshTimer;
@@ -1149,7 +1153,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       _DashboardShortcutData(
         label: 'DNS',
         icon: Icons.dns_rounded,
-        color: _openwallaGreen,
+        color: _shortcutYellow,
         onTap: () {
           Navigator.of(
             context,
@@ -1160,7 +1164,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         _DashboardShortcutData(
           label: 'Wi-Fi',
           icon: Icons.wifi_rounded,
-          color: Theme.of(context).colorScheme.primary,
+          color: _shortcutDarkBlue,
           onTap: () => _openNetworkPage(wirelessOnly: true),
         ),
       _DashboardShortcutData(
@@ -1177,7 +1181,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         _DashboardShortcutData(
           label: 'Smart Queue',
           icon: Icons.sync_alt_rounded,
-          color: _openwallaGreen,
+          color: _shortcutPurple,
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (context) => const SmartQueueScreen()),
@@ -1188,7 +1192,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         _DashboardShortcutData(
           label: 'AdBlock',
           icon: Icons.block_rounded,
-          color: _openwallaOrange,
+          color: _shortcutRed,
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(builder: (context) => const AdblockScreen()),
