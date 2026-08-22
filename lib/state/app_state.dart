@@ -1081,10 +1081,29 @@ class AppState extends ChangeNotifier {
 
   Future<bool> hasNetworkPerformanceSupport({BuildContext? context}) async {
     if (_reviewerModeEnabled) return true;
-    return _routerCommandSucceeds(
+    final hasInstalledScripts = await _routerCommandSucceeds(
       '[ -x /usr/bin/openwalla-ping-monitor ] && [ -x /usr/bin/openwalla-dns-monitor ] && [ -x /usr/bin/openwalla-speedtest-monitor ] && echo OK',
       context: context,
     );
+    if (hasInstalledScripts) return true;
+
+    try {
+      final values = await _fetchOpenwallaUciValues();
+      if (values is Map) {
+        final hasPingConfig = values['ping_monitor'] is Map;
+        final hasDnsConfig = values['dns_monitor'] is Map;
+        final hasSpeedtestConfig = values['speedtest_monitor'] is Map;
+        if (hasPingConfig || hasDnsConfig || hasSpeedtestConfig) {
+          return true;
+        }
+      }
+    } catch (e, stack) {
+      Logger.debug('Optional network monitor config check failed: $e');
+      Logger.debug('Optional network monitor config stack: $stack');
+    }
+
+    final pingSamples = await fetchPingMonitorSamples(limit: 1);
+    return pingSamples.isNotEmpty;
   }
 
   Future<bool> _routerCommandSucceeds(
