@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/screens/monthly_usage_screen.dart';
+import 'package:luci_mobile/screens/router_setup_screen.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/widgets/luci_refresh_components.dart';
@@ -26,6 +27,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
 
   _StatsUsageRange _usageRange = _StatsUsageRange.day;
   Future<MonthlyUsageSettings>? _monthlyUsageSettingsFuture;
+  Future<bool>? _statisticsSupportFuture;
   final Map<String, Future<List<VnstatUsageSample>>> _usageFutures = {};
 
   @override
@@ -55,24 +57,45 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
           onRefresh: () async {
             _usageFutures.clear();
             _monthlyUsageSettingsFuture = null;
+            _statisticsSupportFuture = null;
             await appState.fetchDashboardData();
           },
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
-              FutureBuilder<MonthlyUsageSettings>(
-                future: _monthlyUsageSettings(),
+              FutureBuilder<bool>(
+                future: _statisticsSupport(),
                 builder: (context, snapshot) {
-                  final interfaceName =
-                      (snapshot.data?.interfaceName.isNotEmpty ?? false)
-                      ? snapshot.data!.interfaceName
-                      : _primaryUsageInterfaceName(appState);
-                  return Column(
-                    children: [
-                      _buildMonthlyUsageCard(interfaceName),
-                      const SizedBox(height: 12),
-                      _buildUsageCard(interfaceName),
-                    ],
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                      padding: EdgeInsets.only(top: 80),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  if (snapshot.data != true) {
+                    return _SetupRequiredCard(
+                      title: 'Statistics tools are not installed',
+                      message:
+                          'Install vnStat or nlbwmon with the Openwalla helper scripts to enable usage graphs.',
+                      buttonLabel: 'Open Router Setup',
+                      onPressed: _openRouterSetup,
+                    );
+                  }
+                  return FutureBuilder<MonthlyUsageSettings>(
+                    future: _monthlyUsageSettings(),
+                    builder: (context, snapshot) {
+                      final interfaceName =
+                          (snapshot.data?.interfaceName.isNotEmpty ?? false)
+                          ? snapshot.data!.interfaceName
+                          : _primaryUsageInterfaceName(appState);
+                      return Column(
+                        children: [
+                          _buildMonthlyUsageCard(interfaceName),
+                          const SizedBox(height: 12),
+                          _buildUsageCard(interfaceName),
+                        ],
+                      );
+                    },
                   );
                 },
               ),
@@ -87,6 +110,18 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     return _monthlyUsageSettingsFuture ??= ref
         .read(appStateProvider)
         .fetchMonthlyUsageSettings();
+  }
+
+  Future<bool> _statisticsSupport() {
+    return _statisticsSupportFuture ??= ref
+        .read(appStateProvider)
+        .hasStatisticsSupport(context: context);
+  }
+
+  void _openRouterSetup() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const RouterSetupScreen()));
   }
 
   String _primaryUsageInterfaceName(AppState appState) {
@@ -756,5 +791,71 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     if (gb >= 100) return '${gb.toStringAsFixed(0)} GB';
     if (gb >= 10) return '${gb.toStringAsFixed(1)} GB';
     return '${gb.toStringAsFixed(2)} GB';
+  }
+}
+
+class _SetupRequiredCard extends StatelessWidget {
+  final String title;
+  final String message;
+  final String buttonLabel;
+  final VoidCallback onPressed;
+
+  const _SetupRequiredCard({
+    required this.title,
+    required this.message,
+    required this.buttonLabel,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.construction_rounded,
+                color: colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: onPressed,
+              icon: const Icon(Icons.router_rounded),
+              label: Text(buttonLabel),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

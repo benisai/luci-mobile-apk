@@ -1125,6 +1125,65 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   }
 
   Widget _buildDashboardShortcutGrid() {
+    final preferences = ref.watch(appStateProvider).dashboardPreferences;
+    final shortcuts = [
+      _DashboardShortcutData(
+        label: 'Network',
+        icon: Icons.public_rounded,
+        color: _openwallaCyan,
+        onTap: () => _openNetworkPage(wirelessOnly: false),
+      ),
+      _DashboardShortcutData(
+        label: 'DNS',
+        icon: Icons.dns_rounded,
+        color: _openwallaGreen,
+        onTap: () {
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (context) => const DnsScreen()));
+        },
+      ),
+      if (preferences.showWifiShortcut)
+        _DashboardShortcutData(
+          label: 'Wi-Fi',
+          icon: Icons.wifi_rounded,
+          color: Theme.of(context).colorScheme.primary,
+          onTap: () => _openNetworkPage(wirelessOnly: true),
+        ),
+      _DashboardShortcutData(
+        label: 'Routes',
+        icon: Icons.route_rounded,
+        color: _openwallaOrange,
+        onTap: () {
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (context) => const RoutesScreen()));
+        },
+      ),
+      if (preferences.showSmartQueueShortcut)
+        _DashboardShortcutData(
+          label: 'Smart Queue',
+          icon: Icons.sync_alt_rounded,
+          color: _openwallaGreen,
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (context) => const SmartQueueScreen()),
+            );
+          },
+        ),
+      if (preferences.showAdblockShortcut)
+        _DashboardShortcutData(
+          label: 'AdBlock',
+          icon: Icons.block_rounded,
+          color: _openwallaOrange,
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (context) => const AdblockScreen()),
+            );
+          },
+        ),
+    ];
+
     return _buildOpenwallaCard(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       child: GridView.count(
@@ -1134,62 +1193,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         childAspectRatio: 1.08,
         mainAxisSpacing: 8,
         crossAxisSpacing: 6,
-        children: [
-          _buildDashboardShortcut(
-            label: 'Network',
-            icon: Icons.public_rounded,
-            color: _openwallaCyan,
-            onTap: () => _openNetworkPage(wirelessOnly: false),
-          ),
-          _buildDashboardShortcut(
-            label: 'DNS',
-            icon: Icons.dns_rounded,
-            color: _openwallaGreen,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => const DnsScreen()),
-              );
-            },
-          ),
-          _buildDashboardShortcut(
-            label: 'Wi-Fi',
-            icon: Icons.wifi_rounded,
-            color: Theme.of(context).colorScheme.primary,
-            onTap: () => _openNetworkPage(wirelessOnly: true),
-          ),
-          _buildDashboardShortcut(
-            label: 'Routes',
-            icon: Icons.route_rounded,
-            color: _openwallaOrange,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => const RoutesScreen()),
-              );
-            },
-          ),
-          _buildDashboardShortcut(
-            label: 'Smart Queue',
-            icon: Icons.sync_alt_rounded,
-            color: _openwallaGreen,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => const SmartQueueScreen(),
-                ),
-              );
-            },
-          ),
-          _buildDashboardShortcut(
-            label: 'AdBlock',
-            icon: Icons.block_rounded,
-            color: _openwallaOrange,
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => const AdblockScreen()),
-              );
-            },
-          ),
-        ],
+        children: shortcuts
+            .map(
+              (shortcut) => _buildDashboardShortcut(
+                label: shortcut.label,
+                icon: shortcut.icon,
+                color: shortcut.color,
+                onTap: shortcut.onTap,
+              ),
+            )
+            .toList(),
       ),
     );
   }
@@ -1668,6 +1681,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       ),
     );
   }
+}
+
+class _DashboardShortcutData {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _DashboardShortcutData({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
 }
 
 class _PingHourBucket {

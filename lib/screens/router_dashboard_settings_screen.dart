@@ -542,6 +542,63 @@ class _RouterDashboardSettingsScreenState
                   _onPreferenceChanged();
                 },
               ),
+              _buildCardVisibilitySwitch(
+                title: 'Statistics',
+                subtitle: 'Show the Statistics tab in the bottom navigation',
+                icon: Icons.query_stats_rounded,
+                value: _preferences.showStatisticsTab,
+                onChanged: (value) {
+                  setState(() {
+                    _preferences = _preferences.copyWith(
+                      showStatisticsTab: value,
+                    );
+                  });
+                  _onPreferenceChanged();
+                },
+              ),
+              const Divider(height: 1),
+              _buildCardVisibilitySwitch(
+                title: 'Wi-Fi Shortcut',
+                subtitle: 'Show the Wi-Fi shortcut on the dashboard',
+                icon: Icons.wifi_rounded,
+                value: _preferences.showWifiShortcut,
+                onChanged: (value) {
+                  setState(() {
+                    _preferences = _preferences.copyWith(
+                      showWifiShortcut: value,
+                    );
+                  });
+                  _onPreferenceChanged();
+                },
+              ),
+              _buildCardVisibilitySwitch(
+                title: 'Smart Queue Shortcut',
+                subtitle: 'Show the SQM shortcut on the dashboard',
+                icon: Icons.sync_alt_rounded,
+                value: _preferences.showSmartQueueShortcut,
+                onChanged: (value) {
+                  setState(() {
+                    _preferences = _preferences.copyWith(
+                      showSmartQueueShortcut: value,
+                    );
+                  });
+                  _onPreferenceChanged();
+                },
+              ),
+              _buildCardVisibilitySwitch(
+                title: 'AdBlock Shortcut',
+                subtitle: 'Show the AdBlock shortcut on the dashboard',
+                icon: Icons.block_rounded,
+                value: _preferences.showAdblockShortcut,
+                onChanged: (value) {
+                  setState(() {
+                    _preferences = _preferences.copyWith(
+                      showAdblockShortcut: value,
+                    );
+                  });
+                  _onPreferenceChanged();
+                },
+              ),
             ],
           ),
         ),

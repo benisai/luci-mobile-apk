@@ -1067,6 +1067,48 @@ class AppState extends ChangeNotifier {
     return result.output;
   }
 
+  Future<bool> hasStatisticsSupport({BuildContext? context}) async {
+    if (_reviewerModeEnabled) return true;
+    return _routerCommandSucceeds(
+      'if command -v vnstat >/dev/null 2>&1 || command -v nlbw >/dev/null 2>&1 || command -v nlbwmon >/dev/null 2>&1; then echo OK; else exit 1; fi',
+      context: context,
+    );
+  }
+
+  Future<bool> hasNetworkPerformanceSupport({BuildContext? context}) async {
+    if (_reviewerModeEnabled) return true;
+    return _routerCommandSucceeds(
+      '[ -x /usr/bin/openwalla-ping-monitor ] && [ -x /usr/bin/openwalla-dns-monitor ] && [ -x /usr/bin/openwalla-speedtest-monitor ] && echo OK',
+      context: context,
+    );
+  }
+
+  Future<bool> _routerCommandSucceeds(
+    String command, {
+    BuildContext? context,
+  }) async {
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return false;
+    }
+    try {
+      final result = await _apiService!.systemExec(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        command: command,
+        context: context,
+      );
+      final output = _commandOutput(result).trim();
+      return output.contains('OK');
+    } catch (e, stack) {
+      Logger.debug('Optional router support check failed: $e');
+      Logger.debug('Optional router support check stack: $stack');
+      return false;
+    }
+  }
+
   String? get sysauth => _authService?.sysauth;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;

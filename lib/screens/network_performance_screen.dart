@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
+import 'package:luci_mobile/screens/router_setup_screen.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 
@@ -85,6 +86,7 @@ class _NetworkPerformanceScreenState
     extends ConsumerState<NetworkPerformanceScreen> {
   List<PingMonitorSample>? _freshSamples;
   List<SpeedtestMonitorSample>? _speedtestSamples;
+  Future<bool>? _supportFuture;
 
   @override
   void initState() {
@@ -93,6 +95,7 @@ class _NetworkPerformanceScreenState
   }
 
   Future<void> _refreshSamples() async {
+    _supportFuture = null;
     final appState = ref.read(appStateProvider);
     final results = await Future.wait([
       appState.fetchPingMonitorSamples(context: mounted ? context : null),
@@ -125,18 +128,50 @@ class _NetworkPerformanceScreenState
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
             children: [
-              _NetworkTimelineCard(samples: samples),
-              const SizedBox(height: 14),
-              _RecentEventsCard(samples: samples),
-              const SizedBox(height: 14),
-              _PingTestCard(samples: samples),
-              const SizedBox(height: 14),
-              _SpeedTestCard(samples: _speedtestSamples ?? const []),
+              FutureBuilder<bool>(
+                future: _networkPerformanceSupport(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                      padding: EdgeInsets.only(top: 80),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  if (snapshot.data != true) {
+                    return _NetworkSetupRequiredCard(
+                      onPressed: _openRouterSetup,
+                    );
+                  }
+                  return Column(
+                    children: [
+                      _NetworkTimelineCard(samples: samples),
+                      const SizedBox(height: 14),
+                      _RecentEventsCard(samples: samples),
+                      const SizedBox(height: 14),
+                      _PingTestCard(samples: samples),
+                      const SizedBox(height: 14),
+                      _SpeedTestCard(samples: _speedtestSamples ?? const []),
+                    ],
+                  );
+                },
+              ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<bool> _networkPerformanceSupport() {
+    return _supportFuture ??= ref
+        .read(appStateProvider)
+        .hasNetworkPerformanceSupport(context: context);
+  }
+
+  void _openRouterSetup() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const RouterSetupScreen()));
   }
 }
 
@@ -167,6 +202,61 @@ class _OpenwallaPanel extends StatelessWidget {
       ),
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
       child: child,
+    );
+  }
+}
+
+class _NetworkSetupRequiredCard extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _NetworkSetupRequiredCard({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return _OpenwallaPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              Icons.network_check_rounded,
+              color: colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Network monitoring is not installed',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Install the Openwalla ping, DNS, and speedtest helper scripts to enable the timeline and test graphs.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: onPressed,
+            icon: const Icon(Icons.router_rounded),
+            label: const Text('Open Router Setup'),
+          ),
+        ],
+      ),
     );
   }
 }

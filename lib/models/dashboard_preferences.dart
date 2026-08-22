@@ -9,6 +9,10 @@ class DashboardPreferences {
   final bool showFlowsCard;
   final bool showUsageCard;
   final bool showMonthlyUsageCard;
+  final bool showStatisticsTab;
+  final bool showWifiShortcut;
+  final bool showSmartQueueShortcut;
+  final bool showAdblockShortcut;
   final DashboardFlowMode flowMode;
 
   DashboardPreferences({
@@ -20,6 +24,10 @@ class DashboardPreferences {
     this.showFlowsCard = false,
     this.showUsageCard = false,
     this.showMonthlyUsageCard = false,
+    this.showStatisticsTab = true,
+    this.showWifiShortcut = true,
+    this.showSmartQueueShortcut = true,
+    this.showAdblockShortcut = true,
     this.flowMode = DashboardFlowMode.detailed,
   }) : enabledWirelessInterfaces = enabledWirelessInterfaces ?? {},
        enabledWiredInterfaces = enabledWiredInterfaces ?? {};
@@ -33,6 +41,10 @@ class DashboardPreferences {
     bool? showFlowsCard,
     bool? showUsageCard,
     bool? showMonthlyUsageCard,
+    bool? showStatisticsTab,
+    bool? showWifiShortcut,
+    bool? showSmartQueueShortcut,
+    bool? showAdblockShortcut,
     DashboardFlowMode? flowMode,
   }) {
     return DashboardPreferences(
@@ -48,6 +60,11 @@ class DashboardPreferences {
       showFlowsCard: showFlowsCard ?? this.showFlowsCard,
       showUsageCard: showUsageCard ?? this.showUsageCard,
       showMonthlyUsageCard: showMonthlyUsageCard ?? this.showMonthlyUsageCard,
+      showStatisticsTab: showStatisticsTab ?? this.showStatisticsTab,
+      showWifiShortcut: showWifiShortcut ?? this.showWifiShortcut,
+      showSmartQueueShortcut:
+          showSmartQueueShortcut ?? this.showSmartQueueShortcut,
+      showAdblockShortcut: showAdblockShortcut ?? this.showAdblockShortcut,
       flowMode: flowMode ?? this.flowMode,
     );
   }
@@ -61,6 +78,10 @@ class DashboardPreferences {
     'showFlowsCard': showFlowsCard,
     'showUsageCard': showUsageCard,
     'showMonthlyUsageCard': showMonthlyUsageCard,
+    'showStatisticsTab': showStatisticsTab,
+    'showWifiShortcut': showWifiShortcut,
+    'showSmartQueueShortcut': showSmartQueueShortcut,
+    'showAdblockShortcut': showAdblockShortcut,
     'flowMode': flowMode.name,
   };
 
@@ -78,6 +99,10 @@ class DashboardPreferences {
       showFlowsCard: json['showFlowsCard'] ?? false,
       showUsageCard: json['showUsageCard'] ?? false,
       showMonthlyUsageCard: json['showMonthlyUsageCard'] ?? false,
+      showStatisticsTab: json['showStatisticsTab'] ?? true,
+      showWifiShortcut: json['showWifiShortcut'] ?? true,
+      showSmartQueueShortcut: json['showSmartQueueShortcut'] ?? true,
+      showAdblockShortcut: json['showAdblockShortcut'] ?? true,
       flowMode: DashboardFlowMode.values.firstWhere(
         (mode) => mode.name == json['flowMode']?.toString(),
         orElse: () => DashboardFlowMode.detailed,

@@ -147,6 +147,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
       showUsageCard: true,
       showMonthlyUsageCard: true,
       showFlowsCard: true,
+      showStatisticsTab: true,
       flowMode: _installNetify
           ? DashboardFlowMode.detailed
           : DashboardFlowMode.simple,
