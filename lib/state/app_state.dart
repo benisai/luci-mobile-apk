@@ -1069,10 +1069,14 @@ class AppState extends ChangeNotifier {
 
   Future<bool> hasStatisticsSupport({BuildContext? context}) async {
     if (_reviewerModeEnabled) return true;
-    return _routerCommandSucceeds(
+    final hasInstalledCommand = await _routerCommandSucceeds(
       'if command -v vnstat >/dev/null 2>&1 || command -v nlbw >/dev/null 2>&1 || command -v nlbwmon >/dev/null 2>&1; then echo OK; else exit 1; fi',
       context: context,
     );
+    if (hasInstalledCommand) return true;
+
+    final vnstatInterfaces = await fetchVnstatInterfaceNames();
+    return vnstatInterfaces.isNotEmpty;
   }
 
   Future<bool> hasNetworkPerformanceSupport({BuildContext? context}) async {
@@ -1093,11 +1097,16 @@ class AppState extends ChangeNotifier {
       return false;
     }
     try {
-      final result = await _apiService!.systemExec(
+      final result = await _apiService!.call(
         router.ipAddress,
         sysauth,
         router.useHttps,
-        command: command,
+        object: 'file',
+        method: 'exec',
+        params: {
+          'command': '/bin/sh',
+          'params': ['-c', command],
+        },
         context: context,
       );
       final output = _commandOutput(result).trim();
