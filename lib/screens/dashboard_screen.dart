@@ -16,6 +16,7 @@ import 'package:luci_mobile/screens/interfaces_screen.dart';
 import 'package:luci_mobile/screens/network_performance_screen.dart';
 import 'package:luci_mobile/screens/notifications_screen.dart';
 import 'package:luci_mobile/screens/rules_screen.dart';
+import 'package:luci_mobile/screens/router_setup_screen.dart';
 import 'package:luci_mobile/screens/simple_flows_screen.dart';
 import 'package:luci_mobile/screens/routes_screen.dart';
 import 'package:luci_mobile/screens/smart_queue_screen.dart';
@@ -308,7 +309,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final provider = flowSummary is OpenwallaFlowSummary
         ? flowSummary.provider
         : appState.dashboardData?['flowProvider'];
-    if (provider == OpenwallaFlowProvider.none) {
+    final isDetailedFlow = flowMode == DashboardFlowMode.detailed;
+    final isMissingDetailedFlow =
+        isDetailedFlow && provider == OpenwallaFlowProvider.none;
+    if (provider == OpenwallaFlowProvider.none && !isMissingDetailedFlow) {
       return const SizedBox.shrink();
     }
     final flowCount = flowSummary is OpenwallaFlowSummary
@@ -317,7 +321,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final title = flowMode == DashboardFlowMode.simple
         ? 'Simple Flow'
         : 'Detailed Flow';
-    final sourceLabel = flowMode == DashboardFlowMode.simple
+    final sourceLabel = isMissingDetailedFlow
+        ? 'Netify not installed'
+        : flowMode == DashboardFlowMode.simple
         ? 'Conntrack'
         : 'Netify';
 
@@ -326,7 +332,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => flowMode == DashboardFlowMode.simple
+            builder: (context) => isMissingDetailedFlow
+                ? const RouterSetupScreen(netifyOnly: true)
+                : flowMode == DashboardFlowMode.simple
                 ? const SimpleFlowsScreen()
                 : const FlowsScreen(),
           ),
@@ -366,7 +374,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      _formatCompactCount(flowCount),
+                      isMissingDetailedFlow
+                          ? 'Install'
+                          : _formatCompactCount(flowCount),
                       style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(
                             color: colorScheme.onSurface,
@@ -403,6 +413,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   }
 
   bool _hasDashboardFlowsCard(AppState appState) {
+    if (appState.dashboardPreferences.flowMode == DashboardFlowMode.detailed) {
+      return true;
+    }
     final flowSummary = appState.dashboardData?['flowSummary'];
     final provider = flowSummary is OpenwallaFlowSummary
         ? flowSummary.provider

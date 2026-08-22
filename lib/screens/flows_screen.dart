@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
+import 'package:luci_mobile/screens/router_setup_screen.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 
@@ -170,6 +171,7 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
   bool _isLoading = true;
   bool _isLoadingMore = false;
   bool _hasMoreFlows = true;
+  bool _netifyMissing = false;
   String? _error;
   String? _selectedProtocolFilter;
   _FlowTimeRange _selectedTimeRange = _FlowTimeRange.twentyFourHours;
@@ -212,11 +214,26 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
       _isLoading = true;
       _isLoadingMore = false;
       _hasMoreFlows = true;
+      _netifyMissing = false;
       _error = null;
     });
 
     try {
       final appState = ref.read(appStateProvider);
+      final hasNetify = await appState.hasNetifySupport(
+        context: mounted ? context : null,
+      );
+      if (!hasNetify) {
+        if (!mounted) return;
+        setState(() {
+          _flowCount = 0;
+          _flows = const [];
+          _hasMoreFlows = false;
+          _netifyMissing = true;
+          _isLoading = false;
+        });
+        return;
+      }
       final hostnames = await _hostnameMaps(appState);
       final summary = await appState.fetchOpenwallaFlowSummary(
         provider: OpenwallaFlowProvider.netify,
@@ -363,6 +380,14 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
     );
   }
 
+  void _openNetifySetup() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const RouterSetupScreen(netifyOnly: true),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -448,6 +473,8 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
                   padding: EdgeInsets.symmetric(vertical: 40),
                   child: Center(child: CircularProgressIndicator()),
                 )
+              else if (_netifyMissing)
+                _FlowSetupCard(onPressed: _openNetifySetup)
               else if (_error != null)
                 _FlowEmptyCard(message: _error!, action: _loadFlows)
               else if (_flows.isEmpty)
@@ -516,6 +543,62 @@ class _FlowEmptyCard extends StatelessWidget {
             onPressed: action,
             icon: const Icon(Icons.refresh_rounded),
             label: const Text('Refresh'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FlowSetupCard extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _FlowSetupCard({required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 24, 18, 22),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.account_tree_rounded,
+            color: colorScheme.primary,
+            size: 32,
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Detailed Flow is not installed',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Install Netify and the Openwalla Netify collector to enable detailed flow data.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: onPressed,
+            icon: const Icon(Icons.download_rounded),
+            label: const Text('Install Netify'),
           ),
         ],
       ),

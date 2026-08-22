@@ -1106,6 +1106,37 @@ class AppState extends ChangeNotifier {
     return pingSamples.isNotEmpty;
   }
 
+  Future<bool> hasNetifySupport({BuildContext? context}) async {
+    if (_reviewerModeEnabled) return true;
+
+    final hasNetifyTable = await _sqliteTableExists(
+      dbExpression: _netifyDbExpression(),
+      tableName: 'flow_raw',
+      context: context,
+    );
+    if (hasNetifyTable) return true;
+
+    final hasNetifyInstall = await _routerCommandSucceeds(
+      'if [ -x /usr/bin/openwalla-netify-collector ] || [ -x /etc/init.d/openwalla-netify-collector ] || command -v netifyd >/dev/null 2>&1; then echo OK; else exit 1; fi',
+    );
+    if (hasNetifyInstall) return true;
+
+    try {
+      final values = await _fetchOpenwallaUciValues();
+      if (values is Map) {
+        final collector = values['collector'];
+        final features = values['features'];
+        final netifyFlag = features is Map ? features['netify'] : null;
+        return collector is Map || netifyFlag?.toString() == '1';
+      }
+    } catch (e, stack) {
+      Logger.debug('Optional Netify config check failed: $e');
+      Logger.debug('Optional Netify config stack: $stack');
+    }
+
+    return false;
+  }
+
   Future<bool> _routerCommandSucceeds(
     String command, {
     BuildContext? context,

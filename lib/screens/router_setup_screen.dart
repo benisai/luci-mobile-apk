@@ -6,7 +6,9 @@ import 'package:luci_mobile/models/dashboard_preferences.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 
 class RouterSetupScreen extends ConsumerStatefulWidget {
-  const RouterSetupScreen({super.key});
+  final bool netifyOnly;
+
+  const RouterSetupScreen({super.key, this.netifyOnly = false});
 
   @override
   ConsumerState<RouterSetupScreen> createState() => _RouterSetupScreenState();
@@ -41,6 +43,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
   String? _lastOutput;
 
   List<String> get _extraInstallers {
+    if (widget.netifyOnly) return const ['install-netify.sh'];
     return [
       if (_installAdblock) 'install-adblock.sh',
       if (_installQosScripts) 'install-qos-scripts.sh',
@@ -51,6 +54,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
   }
 
   List<String> get _selectedInstallers {
+    if (widget.netifyOnly) return const ['install-netify.sh'];
     return [
       _standardInstaller,
       ..._extraInstallers,
@@ -142,16 +146,21 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
 
   Future<void> _enableDashboardCardsForInstalledFeatures() async {
     final appState = ref.read(appStateProvider);
-    final prefs = appState.dashboardPreferences.copyWith(
-      showNetworkPerformanceCard: true,
-      showUsageCard: true,
-      showMonthlyUsageCard: true,
-      showFlowsCard: true,
-      showStatisticsTab: true,
-      flowMode: _installNetify
-          ? DashboardFlowMode.detailed
-          : DashboardFlowMode.simple,
-    );
+    final prefs = widget.netifyOnly
+        ? appState.dashboardPreferences.copyWith(
+            showFlowsCard: true,
+            flowMode: DashboardFlowMode.detailed,
+          )
+        : appState.dashboardPreferences.copyWith(
+            showNetworkPerformanceCard: true,
+            showUsageCard: true,
+            showMonthlyUsageCard: true,
+            showFlowsCard: true,
+            showStatisticsTab: true,
+            flowMode: _installNetify
+                ? DashboardFlowMode.detailed
+                : DashboardFlowMode.simple,
+          );
 
     await appState.saveDashboardPreferences(prefs);
   }
@@ -163,7 +172,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
   }
 
   void _nextStep() {
-    if (_wizardStep < 4) setState(() => _wizardStep += 1);
+    if (_wizardStep < _lastWizardStep) setState(() => _wizardStep += 1);
   }
 
   void _previousStep() {
@@ -175,6 +184,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final command = _setupCommand;
+    final totalSteps = widget.netifyOnly ? 2 : 5;
 
     return Scaffold(
       appBar: const LuciAppBar(title: 'Router Setup', showBack: true),
@@ -183,7 +193,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
           children: [
-            _WizardProgress(currentStep: _wizardStep, totalSteps: 5),
+            _WizardProgress(currentStep: _wizardStep, totalSteps: totalSteps),
             const SizedBox(height: 16),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 180),
@@ -208,7 +218,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
                   child: FilledButton.icon(
                     onPressed: _isInstalling
                         ? null
-                        : _wizardStep == 4
+                        : _wizardStep == _lastWizardStep
                         ? _runSetup
                         : _nextStep,
                     icon: _isInstalling
@@ -218,14 +228,14 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : Icon(
-                            _wizardStep == 4
+                            _wizardStep == _lastWizardStep
                                 ? Icons.verified_user_outlined
                                 : Icons.arrow_forward_rounded,
                           ),
                     label: Text(
                       _isInstalling
                           ? 'Installing'
-                          : _wizardStep == 4
+                          : _wizardStep == _lastWizardStep
                           ? 'Install via SSH'
                           : 'Next',
                     ),
@@ -233,7 +243,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
                 ),
               ],
             ),
-            if (_wizardStep == 4) ...[
+            if (_wizardStep == _lastWizardStep) ...[
               const SizedBox(height: 10),
               Center(
                 child: TextButton.icon(
@@ -243,7 +253,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
                 ),
               ),
             ],
-            if (_wizardStep == 4) ...[
+            if (_wizardStep == _lastWizardStep) ...[
               const SizedBox(height: 16),
               Align(
                 alignment: Alignment.center,
@@ -273,6 +283,22 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
   }
 
   Widget _buildWizardStep(ThemeData theme, ColorScheme colorScheme) {
+    if (widget.netifyOnly) {
+      return _wizardStep == 0
+          ? _WizardIntroCard(
+              title: 'Install Detailed Flow Support',
+              subtitle:
+                  'This focused setup installs Netify, sqlite support, the Openwalla Netify collector, and the helper service needed for Detailed Flow data.',
+              icon: Icons.account_tree_rounded,
+            )
+          : _SetupPermissionCard(
+              isInstalling: _isInstalling,
+              extraSoftware: 1,
+              scriptCount: 1,
+              onToggleDetails: () => setState(() => _showDetails = true),
+            );
+    }
+
     switch (_wizardStep) {
       case 0:
         return _WizardIntroCard(
@@ -390,6 +416,8 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
         );
     }
   }
+
+  int get _lastWizardStep => widget.netifyOnly ? 1 : 4;
 }
 
 class _SetupPermissionCard extends StatelessWidget {
