@@ -18,19 +18,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
   static const _rawSetupBase =
       'https://raw.githubusercontent.com/benisai/luci-mobile-apk/main/openwrt-setup';
 
-  static const _standardInstaller = 'install-standard-apps.sh';
-  static const _defaultScriptInstallers = [
-    'install-usage-monitoring.sh',
-    'install-ping-monitor.sh',
-    'install-dns-monitor.sh',
-    'install-speedtest-monitor.sh',
-    'install-notifications-db.sh',
-    'install-devices-collector.sh',
-    'install-device-bandwidth.sh',
-    'install-internet-blocking.sh',
-    'install-state-sync.sh',
-    'install-conntrack.sh',
-  ];
+  static const _defaultFeatures = ['monitoring', 'conntrack'];
 
   int _wizardStep = 0;
   bool _installAdblock = false;
@@ -42,47 +30,34 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
   bool _showDetails = false;
   String? _lastOutput;
 
-  List<String> get _extraInstallers {
-    if (widget.netifyOnly) return const ['install-netify.sh'];
+  List<String> get _extraFeatures {
+    if (widget.netifyOnly) return const ['netify'];
     return [
-      if (_installAdblock) 'install-adblock.sh',
-      if (_installQosScripts) 'install-qos-scripts.sh',
-      if (_installNetify) 'install-netify.sh',
-      if (_installBanip) 'install-banip.sh',
-      if (_installPbr) 'install-pbr.sh',
+      if (_installAdblock) 'adblock',
+      if (_installQosScripts) 'qos',
+      if (_installNetify) 'netify',
+      if (_installBanip) 'banip',
+      if (_installPbr) 'pbr',
     ];
   }
 
-  List<String> get _selectedInstallers {
-    if (widget.netifyOnly) return const ['install-netify.sh'];
-    return [
-      _standardInstaller,
-      ..._extraInstallers,
-      ..._defaultScriptInstallers,
-    ];
+  List<String> get _selectedFeatures {
+    if (widget.netifyOnly) return const ['netify'];
+    return [..._defaultFeatures, ..._extraFeatures];
   }
 
   String get _setupCommand {
-    final installers = _selectedInstallers;
-    final installerFetches = installers
-        .map(
-          (installer) =>
-              'fetch "\$OPENWALLA_RAW_BASE/standalone/$installer" "$installer"',
-        )
-        .join(' && ');
-    final installSteps = installers
-        .map((installer) => 'sh $installer')
-        .join(' && ');
+    final features = _selectedFeatures.join(' ');
     return [
       'export OPENWALLA_RAW_BASE=$_rawSetupBase',
+      'export OPENWALLA_ROOT=/tmp/openwalla-app-setup',
       'fetch() { if command -v wget >/dev/null 2>&1; then wget -qO "\$2" "\$1"; else curl -fsSL "\$1" -o "\$2"; fi; }',
       'cd /tmp',
-      'rm -rf openwalla-app-setup',
-      'mkdir -p openwalla-app-setup/lib openwalla-app-setup/files',
-      'cd openwalla-app-setup',
-      'fetch "\$OPENWALLA_RAW_BASE/standalone/lib/openwalla-standalone-common.sh" "lib/openwalla-standalone-common.sh"',
-      installerFetches,
-      installSteps,
+      'rm -rf "\$OPENWALLA_ROOT"',
+      'rm -f setup-openwrt-router.sh',
+      'fetch "\$OPENWALLA_RAW_BASE/setup-openwrt-router.sh" "setup-openwrt-router.sh"',
+      'chmod 0755 setup-openwrt-router.sh',
+      'sh ./setup-openwrt-router.sh $features',
     ].join(' && ');
   }
 
@@ -293,8 +268,8 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
             )
           : _SetupPermissionCard(
               isInstalling: _isInstalling,
-              extraSoftware: 1,
-              scriptCount: 1,
+              extraSoftware: 0,
+              featureCount: 1,
               onToggleDetails: () => setState(() => _showDetails = true),
             );
     }
@@ -392,26 +367,16 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
           icon: Icons.monitor_heart_outlined,
           title: 'Installing default Openwalla scripts',
           subtitle:
-              'The app downloads only the needed installers with wget, then each installer fetches its own files.',
+              'The app downloads the setup dispatcher with wget, then it fetches each selected feature bundle.',
           child: const _InstallerList(
-            items: [
-              'Ping Test',
-              'DNS Test',
-              'Speedtest',
-              'Notifications',
-              'Devices',
-              'Device Bandwidth',
-              'Internet Blocking',
-              'sync/backup',
-              'Simple Conntrack Flows',
-            ],
+            items: ['Monitoring Tools', 'Simple Conntrack Flows'],
           ),
         );
       default:
         return _SetupPermissionCard(
           isInstalling: _isInstalling,
-          extraSoftware: _extraInstallers.length,
-          scriptCount: _defaultScriptInstallers.length,
+          extraSoftware: _extraFeatures.length,
+          featureCount: _selectedFeatures.length,
           onToggleDetails: () => setState(() => _showDetails = true),
         );
     }
@@ -423,13 +388,13 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
 class _SetupPermissionCard extends StatelessWidget {
   final bool isInstalling;
   final int extraSoftware;
-  final int scriptCount;
+  final int featureCount;
   final VoidCallback onToggleDetails;
 
   const _SetupPermissionCard({
     required this.isInstalling,
     required this.extraSoftware,
-    required this.scriptCount,
+    required this.featureCount,
     required this.onToggleDetails,
   });
 
@@ -513,14 +478,14 @@ class _SetupPermissionCard extends StatelessWidget {
                   SizedBox(height: 10),
                   _PermissionLine(
                     icon: Icons.monitor_heart_outlined,
-                    text: 'Install default Openwalla monitoring scripts.',
+                    text: 'Install selected Openwalla feature bundles.',
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
             Text(
-              'Selected: $extraSoftware extra software option${extraSoftware == 1 ? '' : 's'} and $scriptCount Openwalla script installers.',
+              'Selected: $extraSoftware extra software option${extraSoftware == 1 ? '' : 's'} and $featureCount Openwalla feature bundle${featureCount == 1 ? '' : 's'}.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w800,
