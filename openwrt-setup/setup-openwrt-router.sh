@@ -33,15 +33,14 @@ usage() {
 	cat <<'EOF'
 Usage:
   sh setup-openwrt-router.sh [feature ...] [options]
-  sh install.sh [feature ...] [options]
 
 Examples:
-  sh install.sh netify
-  sh install.sh conntrack
-  sh install.sh ping dns speedtest
-  sh install.sh monitoring
-  sh install.sh stack --with-netify
-  sh install.sh --profile=3
+  sh setup-openwrt-router.sh netify
+  sh setup-openwrt-router.sh conntrack
+  sh setup-openwrt-router.sh ping dns speedtest
+  sh setup-openwrt-router.sh monitoring
+  sh setup-openwrt-router.sh stack --with-netify
+  sh setup-openwrt-router.sh --profile=3
 
 Feature groups:
   stack        Standard Openwrt apps plus Openwalla monitoring, usage,

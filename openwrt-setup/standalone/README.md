@@ -5,10 +5,10 @@ These scripts install individual Openwalla router helpers. The main installer at
 Use the dispatcher when you want a simple feature command:
 
 ```sh
-sh openwrt-setup/install.sh netify
-sh openwrt-setup/install.sh conntrack
-sh openwrt-setup/install.sh ping dns speedtest
-sh openwrt-setup/install.sh stack --with-netify
+sh openwrt-setup/setup-openwrt-router.sh netify
+sh openwrt-setup/setup-openwrt-router.sh conntrack
+sh openwrt-setup/setup-openwrt-router.sh ping dns speedtest
+sh openwrt-setup/setup-openwrt-router.sh stack --with-netify
 ```
 
 Run them from the repository root or from this folder on the router:
