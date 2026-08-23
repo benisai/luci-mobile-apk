@@ -1,6 +1,15 @@
 # Openwalla Standalone OpenWrt Installers
 
-These scripts install individual Openwalla router helpers without replacing the main all-in-one installer at `openwrt-setup/setup-openwrt-router.sh`.
+These scripts install individual Openwalla router helpers. The main installer at `openwrt-setup/setup-openwrt-router.sh` is a dispatcher that downloads and runs these feature bundles.
+
+Use the dispatcher when you want a simple feature command:
+
+```sh
+sh openwrt-setup/install.sh netify
+sh openwrt-setup/install.sh conntrack
+sh openwrt-setup/install.sh ping dns speedtest
+sh openwrt-setup/install.sh stack --with-netify
+```
 
 Run them from the repository root or from this folder on the router:
 
