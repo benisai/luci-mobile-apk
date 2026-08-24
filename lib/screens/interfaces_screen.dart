@@ -36,7 +36,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
   int _networkPanelIndex = 0;
   bool _isLoadingNetworkPanels = false;
   List<OpenwrtPortForward> _portForwards = const [];
-  List<OpenwrtFirewallRule> _firewallRules = const [];
+  List<OpenwrtFirewallZone> _firewallZones = const [];
 
   /// Safely extract a String from a UCI config value that may be a List or String.
   static String _uciString(dynamic value, [String fallback = '']) {
@@ -161,12 +161,12 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
       final appState = ref.read(appStateProvider);
       final results = await Future.wait([
         appState.fetchPortForwards(context: context),
-        appState.fetchFirewallRules(context: context),
+        appState.fetchFirewallZones(context: context),
       ]);
       if (!mounted) return;
       setState(() {
         _portForwards = results[0] as List<OpenwrtPortForward>;
-        _firewallRules = results[1] as List<OpenwrtFirewallRule>;
+        _firewallZones = results[1] as List<OpenwrtFirewallZone>;
         _isLoadingNetworkPanels = false;
       });
     } catch (_) {
@@ -568,10 +568,11 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
                                       isLoading: _isLoadingNetworkPanels,
                                       forwards: _portForwards,
                                       onRefresh: _loadNetworkPanels,
+                                      onAdd: _showAddPortForwardSheet,
                                     ),
-                                    _FirewallPanel(
+                                    _FirewallZonesPanel(
                                       isLoading: _isLoadingNetworkPanels,
-                                      rules: _firewallRules,
+                                      zones: _firewallZones,
                                       onRefresh: _loadNetworkPanels,
                                     ),
                                   ],
@@ -611,6 +612,16 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
     );
+  }
+
+  Future<void> _showAddPortForwardSheet() async {
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => const _AddPortForwardSheet(),
+    );
+    if (saved == true) await _loadNetworkPanels();
   }
 
   Widget _buildWiredInterfacesList() {
@@ -1302,7 +1313,7 @@ class _NetworkPanelSwitcher extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    const tabs = ['Interfaces', 'Port Forwarding', 'Firewall'];
+    const tabs = ['Interfaces', 'Port Forwarding', 'Zones'];
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 10),
       padding: const EdgeInsets.all(4),
@@ -1384,11 +1395,13 @@ class _PortForwardingPanel extends StatelessWidget {
   final bool isLoading;
   final List<OpenwrtPortForward> forwards;
   final Future<void> Function() onRefresh;
+  final VoidCallback onAdd;
 
   const _PortForwardingPanel({
     required this.isLoading,
     required this.forwards,
     required this.onRefresh,
+    required this.onAdd,
   });
 
   @override
@@ -1396,20 +1409,38 @@ class _PortForwardingPanel extends StatelessWidget {
     if (isLoading && forwards.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
+    final header = _NetworkPanelActionHeader(
+      title: 'Port Forwarding',
+      count: forwards.length,
+      buttonLabel: 'Add',
+      icon: Icons.add_rounded,
+      onPressed: onAdd,
+    );
     if (forwards.isEmpty) {
-      return _NetworkPanelEmptyState(
-        icon: Icons.low_priority_rounded,
-        title: 'No Port Forwards',
-        message: 'No firewall redirect rules were found on this router.',
-        onRefresh: onRefresh,
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: [
+          header,
+          _NetworkPanelEmptyState(
+            icon: Icons.low_priority_rounded,
+            title: 'No Port Forwards',
+            message: 'No firewall redirect rules were found on this router.',
+            onRefresh: onRefresh,
+          ),
+        ],
       );
     }
-    return ListView.separated(
+    return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      itemCount: forwards.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, index) =>
-          _PortForwardCard(forward: forwards[index]),
+      children: [
+        header,
+        ...forwards.map(
+          (forward) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _PortForwardCard(forward: forward),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1490,78 +1521,66 @@ class _PortForwardCard extends StatelessWidget {
   }
 }
 
-class _FirewallPanel extends StatelessWidget {
+class _FirewallZonesPanel extends StatelessWidget {
   final bool isLoading;
-  final List<OpenwrtFirewallRule> rules;
+  final List<OpenwrtFirewallZone> zones;
   final Future<void> Function() onRefresh;
 
-  const _FirewallPanel({
+  const _FirewallZonesPanel({
     required this.isLoading,
-    required this.rules,
+    required this.zones,
     required this.onRefresh,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (isLoading && rules.isEmpty) {
+    if (isLoading && zones.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (rules.isEmpty) {
+    if (zones.isEmpty) {
       return _NetworkPanelEmptyState(
         icon: Icons.security_rounded,
-        title: 'No Firewall Rules',
-        message: 'No firewall rule sections were found on this router.',
+        title: 'No Firewall Zones',
+        message: 'No firewall zone sections were found on this router.',
         onRefresh: onRefresh,
       );
     }
 
-    final openwallaRules = rules.where((rule) => rule.isOpenwallaRule).toList();
-    final openwrtRules = rules.where((rule) => !rule.isOpenwallaRule).toList();
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       children: [
-        _NetworkPanelHeader('Openwalla Rules', openwallaRules.length),
-        if (openwallaRules.isEmpty)
-          const _NetworkPanelNote('No Openwalla firewall rules found.')
-        else
-          ...openwallaRules.map((rule) => _NetworkFirewallRuleCard(rule: rule)),
-        const SizedBox(height: 10),
-        _NetworkPanelHeader('OpenWrt Rules', openwrtRules.length),
-        ...openwrtRules.map((rule) => _NetworkFirewallRuleCard(rule: rule)),
+        _NetworkPanelHeader('Firewall Zones', zones.length),
+        ...zones.map((zone) => _FirewallZoneCard(zone: zone)),
       ],
     );
   }
 }
 
-class _NetworkFirewallRuleCard extends StatelessWidget {
-  final OpenwrtFirewallRule rule;
+class _FirewallZoneCard extends StatelessWidget {
+  final OpenwrtFirewallZone zone;
 
-  const _NetworkFirewallRuleCard({required this.rule});
+  const _FirewallZoneCard({required this.zone});
 
-  Color _actionColor(BuildContext context) {
-    final action = rule.action.toUpperCase();
+  Color _policyColor(BuildContext context, String policy) {
+    final action = policy.toUpperCase();
     if (action == 'ACCEPT') return const Color(0xFF20CF70);
-    if (rule.isBlocked) return Theme.of(context).colorScheme.error;
+    if (action == 'REJECT' || action == 'DROP') {
+      return Theme.of(context).colorScheme.error;
+    }
     return Theme.of(context).colorScheme.primary;
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final backgroundColor = rule.isBlocked
-        ? colorScheme.error.withValues(alpha: 0.045)
-        : colorScheme.surface;
-
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: backgroundColor,
+        color: colorScheme.surface,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: rule.isOpenwallaRule
-              ? colorScheme.primary.withValues(alpha: 0.35)
-              : colorScheme.outlineVariant.withValues(alpha: 0.42),
+          color: colorScheme.outlineVariant.withValues(alpha: 0.42),
         ),
       ),
       child: Column(
@@ -1569,62 +1588,73 @@ class _NetworkFirewallRuleCard extends StatelessWidget {
         children: [
           Row(
             children: [
+              Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: colorScheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  zone.name.toLowerCase() == 'wan'
+                      ? Icons.public_rounded
+                      : Icons.device_hub_rounded,
+                  color: colorScheme.primary,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  rule.name,
+                  zone.name.toUpperCase(),
                   style: LuciTextStyles.cardTitle(context),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              _NetworkBadge(label: rule.action, color: _actionColor(context)),
+              if (zone.masquerading)
+                const _NetworkBadge(label: 'NAT', color: Color(0xFFF27C24)),
             ],
           ),
-          const SizedBox(height: 8),
-          Row(
+          const SizedBox(height: 10),
+          Text(
+            'Networks: ${zone.networks}',
+            style: LuciTextStyles.cardSubtitle(
+              context,
+            ).copyWith(fontWeight: FontWeight.w800),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              Expanded(
-                child: Text(
-                  '${_networkAny(rule.source)} ${_networkAny(rule.sourceIp)}',
-                  style: LuciTextStyles.cardSubtitle(
-                    context,
-                  ).copyWith(fontWeight: FontWeight.w800),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              _NetworkBadge(
+                label: 'Input ${zone.input}',
+                color: _policyColor(context, zone.input),
+              ),
+              _NetworkBadge(
+                label: 'Output ${zone.output}',
+                color: _policyColor(context, zone.output),
+              ),
+              _NetworkBadge(
+                label: 'Forward ${zone.forward}',
+                color: _policyColor(context, zone.forward),
+              ),
+              if (zone.mtuFix)
+                _NetworkBadge(
+                  label: 'MTU Fix',
+                  color: colorScheme.onSurfaceVariant,
                 ),
-              ),
-              Icon(
-                Icons.arrow_forward_rounded,
-                size: 14,
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _ruleDestination(rule),
-                  textAlign: TextAlign.right,
-                  style: LuciTextStyles.cardSubtitle(context).copyWith(
-                    color: colorScheme.onSurface,
-                    fontWeight: FontWeight.w800,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
             ],
           ),
         ],
       ),
     );
   }
-
-  String _ruleDestination(OpenwrtFirewallRule rule) {
-    final destination = _networkAny(rule.destination);
-    return rule.port == 'Any' ? destination : '$destination:${rule.port}';
-  }
 }
-
-String _networkAny(String value) => value == 'Any' ? '*' : value;
 
 class _NetworkPanelHeader extends StatelessWidget {
   final String title;
@@ -1648,16 +1678,44 @@ class _NetworkPanelHeader extends StatelessWidget {
   }
 }
 
-class _NetworkPanelNote extends StatelessWidget {
-  final String text;
+class _NetworkPanelActionHeader extends StatelessWidget {
+  final String title;
+  final int count;
+  final String buttonLabel;
+  final IconData icon;
+  final VoidCallback onPressed;
 
-  const _NetworkPanelNote(this.text);
+  const _NetworkPanelActionHeader({
+    required this.title,
+    required this.count,
+    required this.buttonLabel,
+    required this.icon,
+    required this.onPressed,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 4, 2, 8),
-      child: Text(text, style: LuciTextStyles.cardSubtitle(context)),
+      padding: const EdgeInsets.fromLTRB(2, 8, 2, 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '$title ($count)',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+          OutlinedButton.icon(
+            onPressed: onPressed,
+            icon: Icon(icon, size: 18),
+            label: Text(buttonLabel),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1678,35 +1736,37 @@ class _NetworkPanelEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return ListView(
+    return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(16, 60, 16, 16),
-      children: [
-        Icon(icon, size: 54, color: colorScheme.onSurfaceVariant),
-        const SizedBox(height: 18),
-        Text(
-          title,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            color: colorScheme.onSurface,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 0,
+      child: Column(
+        children: [
+          Icon(icon, size: 54, color: colorScheme.onSurfaceVariant),
+          const SizedBox(height: 18),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0,
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          message,
-          textAlign: TextAlign.center,
-          style: LuciTextStyles.cardSubtitle(context),
-        ),
-        const SizedBox(height: 16),
-        Center(
-          child: OutlinedButton.icon(
-            onPressed: onRefresh,
-            icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Refresh'),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: LuciTextStyles.cardSubtitle(context),
           ),
-        ),
-      ],
+          const SizedBox(height: 16),
+          Center(
+            child: OutlinedButton.icon(
+              onPressed: onRefresh,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Refresh'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1774,6 +1834,214 @@ class _NetworkValueBlock extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
       ],
+    );
+  }
+}
+
+class _AddPortForwardSheet extends ConsumerStatefulWidget {
+  const _AddPortForwardSheet();
+
+  @override
+  ConsumerState<_AddPortForwardSheet> createState() =>
+      _AddPortForwardSheetState();
+}
+
+class _AddPortForwardSheetState extends ConsumerState<_AddPortForwardSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _externalPortController = TextEditingController();
+  final _destinationIpController = TextEditingController();
+  final _internalPortController = TextEditingController();
+  String _sourceZone = 'wan';
+  String _destinationZone = 'lan';
+  String _protocol = 'tcp';
+  bool _isSaving = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _externalPortController.dispose();
+    _destinationIpController.dispose();
+    _internalPortController.dispose();
+    super.dispose();
+  }
+
+  String? _required(String? value) {
+    if (value == null || value.trim().isEmpty) return 'Required';
+    return null;
+  }
+
+  String? _portValidator(String? value) {
+    final error = _required(value);
+    if (error != null) return error;
+    final port = int.tryParse(value!.trim());
+    if (port == null || port < 1 || port > 65535) {
+      return 'Use a port from 1 to 65535';
+    }
+    return null;
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isSaving = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref
+          .read(appStateProvider)
+          .addPortForward(
+            name: _nameController.text,
+            sourceZone: _sourceZone,
+            externalPort: _externalPortController.text,
+            protocol: _protocol,
+            destinationZone: _destinationZone,
+            destinationIp: _destinationIpController.text,
+            internalPort: _internalPortController.text,
+          );
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Port forward added.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed to add port forward: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 0, 16, bottomInset + 16),
+      child: Form(
+        key: _formKey,
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Text(
+              'Add Port Forward',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _nameController,
+              decoration: const InputDecoration(labelText: 'Name'),
+              validator: _required,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _sourceZone,
+                    decoration: const InputDecoration(labelText: 'From Zone'),
+                    items: const [
+                      DropdownMenuItem(value: 'wan', child: Text('wan')),
+                      DropdownMenuItem(value: 'lan', child: Text('lan')),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _sourceZone = value ?? 'wan'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _destinationZone,
+                    decoration: const InputDecoration(labelText: 'To Zone'),
+                    items: const [
+                      DropdownMenuItem(value: 'lan', child: Text('lan')),
+                      DropdownMenuItem(value: 'wan', child: Text('wan')),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _destinationZone = value ?? 'lan'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _externalPortController,
+                    decoration: const InputDecoration(labelText: 'WAN Port'),
+                    keyboardType: TextInputType.number,
+                    validator: _portValidator,
+                    textInputAction: TextInputAction.next,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _protocol,
+                    decoration: const InputDecoration(labelText: 'Protocol'),
+                    items: const [
+                      DropdownMenuItem(value: 'tcp', child: Text('TCP')),
+                      DropdownMenuItem(value: 'udp', child: Text('UDP')),
+                      DropdownMenuItem(
+                        value: 'tcp udp',
+                        child: Text('TCP/UDP'),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _protocol = value ?? 'tcp'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _destinationIpController,
+              decoration: const InputDecoration(labelText: 'Destination IP'),
+              validator: _required,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _internalPortController,
+              decoration: const InputDecoration(labelText: 'Destination Port'),
+              keyboardType: TextInputType.number,
+              validator: _portValidator,
+              textInputAction: TextInputAction.done,
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _isSaving
+                        ? null
+                        : () => Navigator.of(context).pop(false),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _isSaving ? null : _save,
+                    icon: _isSaving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.add_rounded),
+                    label: Text(_isSaving ? 'Adding' : 'Add'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -192,6 +192,54 @@ class OpenwrtPortForward {
   }
 }
 
+class OpenwrtFirewallZone {
+  final String section;
+  final String name;
+  final String networks;
+  final String input;
+  final String output;
+  final String forward;
+  final bool masquerading;
+  final bool mtuFix;
+
+  const OpenwrtFirewallZone({
+    required this.section,
+    required this.name,
+    required this.networks,
+    required this.input,
+    required this.output,
+    required this.forward,
+    required this.masquerading,
+    required this.mtuFix,
+  });
+
+  factory OpenwrtFirewallZone.fromUciSection(
+    String section,
+    Map<dynamic, dynamic> values,
+  ) {
+    String read(String key, String fallback) {
+      final value = values[key];
+      if (value is List) {
+        final joined = value.map((entry) => entry.toString()).join(', ');
+        return joined.trim().isEmpty ? fallback : joined;
+      }
+      final text = value?.toString().trim();
+      return text == null || text.isEmpty ? fallback : text;
+    }
+
+    return OpenwrtFirewallZone(
+      section: section,
+      name: read('name', section),
+      networks: read('network', 'Any'),
+      input: read('input', 'REJECT').toUpperCase(),
+      output: read('output', 'REJECT').toUpperCase(),
+      forward: read('forward', 'REJECT').toUpperCase(),
+      masquerading: read('masq', '0') == '1',
+      mtuFix: read('mtu_fix', '0') == '1',
+    );
+  }
+}
+
 class OpenwrtStaticRoute {
   final String section;
   final String interfaceName;
@@ -2660,6 +2708,140 @@ class AppState extends ChangeNotifier {
     } catch (e, stack) {
       Logger.warning('Optional port forwards fetch failed: $e');
       Logger.debug('Optional port forwards stack: $stack');
+      return const [];
+    }
+  }
+
+  Future<void> addPortForward({
+    required String name,
+    required String sourceZone,
+    required String externalPort,
+    required String protocol,
+    required String destinationZone,
+    required String destinationIp,
+    required String internalPort,
+  }) async {
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    final addResult = await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'uci',
+      method: 'add',
+      params: {'config': 'firewall', 'type': 'redirect'},
+    );
+    final section = _extractAddedSection(addResult);
+    if (section == null || section.isEmpty) {
+      throw StateError('Unable to create port forward section');
+    }
+
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'firewall',
+      section: section,
+      values: {
+        'name': name.trim(),
+        'src': sourceZone.trim(),
+        'src_dport': externalPort.trim(),
+        'proto': protocol.trim(),
+        'dest': destinationZone.trim(),
+        'dest_ip': destinationIp.trim(),
+        'dest_port': internalPort.trim(),
+        'target': 'DNAT',
+      },
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'firewall',
+    );
+    await _reloadFirewall(router, sysauth);
+    notifyListeners();
+  }
+
+  List<OpenwrtFirewallZone> _mockFirewallZones() {
+    return const [
+      OpenwrtFirewallZone(
+        section: 'lan',
+        name: 'lan',
+        networks: 'lan',
+        input: 'ACCEPT',
+        output: 'ACCEPT',
+        forward: 'ACCEPT',
+        masquerading: false,
+        mtuFix: false,
+      ),
+      OpenwrtFirewallZone(
+        section: 'wan',
+        name: 'wan',
+        networks: 'wan, wan6',
+        input: 'REJECT',
+        output: 'ACCEPT',
+        forward: 'REJECT',
+        masquerading: true,
+        mtuFix: true,
+      ),
+    ];
+  }
+
+  Future<List<OpenwrtFirewallZone>> fetchFirewallZones({
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) return _mockFirewallZones();
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'get',
+        params: {'config': 'firewall'},
+        context: context,
+      );
+      final values = _firewallValuesFromResult(result);
+      final zones = values.entries
+          .where((entry) {
+            final value = entry.value;
+            return value is Map && value['.type'] == 'zone';
+          })
+          .map(
+            (entry) => OpenwrtFirewallZone.fromUciSection(
+              entry.key.toString(),
+              entry.value as Map<dynamic, dynamic>,
+            ),
+          )
+          .toList();
+      zones.sort((a, b) {
+        if (a.name == 'lan' && b.name != 'lan') return -1;
+        if (b.name == 'lan' && a.name != 'lan') return 1;
+        if (a.name == 'wan' && b.name != 'wan') return -1;
+        if (b.name == 'wan' && a.name != 'wan') return 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+      return zones;
+    } catch (e, stack) {
+      Logger.warning('Optional firewall zones fetch failed: $e');
+      Logger.debug('Optional firewall zones stack: $stack');
       return const [];
     }
   }
