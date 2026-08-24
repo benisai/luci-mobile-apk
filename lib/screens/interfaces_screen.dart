@@ -29,9 +29,14 @@ class InterfacesScreen extends ConsumerStatefulWidget {
 
 class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
   final ScrollController _scrollController = ScrollController();
+  final PageController _networkPageController = PageController();
   String? _targetInterface;
   String? _expandedInterface;
   final Map<String, GlobalKey> _interfaceKeys = {};
+  int _networkPanelIndex = 0;
+  bool _isLoadingNetworkPanels = false;
+  List<OpenwrtPortForward> _portForwards = const [];
+  List<OpenwrtFirewallRule> _firewallRules = const [];
 
   /// Safely extract a String from a UCI config value that may be a List or String.
   static String _uciString(dynamic value, [String fallback = '']) {
@@ -103,6 +108,9 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
   void initState() {
     super.initState();
     _targetInterface = widget.scrollToInterface;
+    if (!widget.wirelessOnly) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadNetworkPanels());
+    }
     if (_targetInterface != null) {
       // Delay scrolling to allow the widget to build
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -136,7 +144,35 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
   void dispose() {
     // Clear target interface when widget is disposed
     _targetInterface = null;
+    _scrollController.dispose();
+    _networkPageController.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshNetworkData() async {
+    await ref.read(appStateProvider).fetchDashboardData();
+    if (!widget.wirelessOnly) await _loadNetworkPanels();
+  }
+
+  Future<void> _loadNetworkPanels() async {
+    if (!mounted) return;
+    setState(() => _isLoadingNetworkPanels = true);
+    try {
+      final appState = ref.read(appStateProvider);
+      final results = await Future.wait([
+        appState.fetchPortForwards(context: context),
+        appState.fetchFirewallRules(context: context),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _portForwards = results[0] as List<OpenwrtPortForward>;
+        _firewallRules = results[1] as List<OpenwrtFirewallRule>;
+        _isLoadingNetworkPanels = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingNetworkPanels = false);
+    }
   }
 
   void _scrollToInterface(String interfaceName) {
@@ -450,7 +486,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
         child: Stack(
           children: [
             LuciPullToRefresh(
-              onRefresh: () => appState.fetchDashboardData(),
+              onRefresh: _refreshNetworkData,
               child: Builder(
                 builder: (context) {
                   final watchedAppState = ref.watch(appStateProvider);
@@ -511,14 +547,52 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
                       if (widget.wirelessOnly) ...[
                         _buildWirelessInterfacesList(),
                       ] else ...[
-                        _buildWiredInterfacesList(),
-                      ],
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.only(bottom: 16),
-                          child: SizedBox.shrink(),
+                        SliverFillRemaining(
+                          child: Column(
+                            children: [
+                              _NetworkPanelSwitcher(
+                                selectedIndex: _networkPanelIndex,
+                                onSelected: _selectNetworkPanel,
+                              ),
+                              Expanded(
+                                child: PageView(
+                                  controller: _networkPageController,
+                                  onPageChanged: (index) => setState(
+                                    () => _networkPanelIndex = index,
+                                  ),
+                                  children: [
+                                    CustomScrollView(
+                                      slivers: [_buildWiredInterfacesList()],
+                                    ),
+                                    _PortForwardingPanel(
+                                      isLoading: _isLoadingNetworkPanels,
+                                      forwards: _portForwards,
+                                      onRefresh: _loadNetworkPanels,
+                                    ),
+                                    _FirewallPanel(
+                                      isLoading: _isLoadingNetworkPanels,
+                                      rules: _firewallRules,
+                                      onRefresh: _loadNetworkPanels,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              _NetworkPanelDots(
+                                count: 3,
+                                currentIndex: _networkPanelIndex,
+                              ),
+                              const SizedBox(height: 12),
+                            ],
+                          ),
                         ),
-                      ),
+                      ],
+                      if (widget.wirelessOnly)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.only(bottom: 16),
+                            child: SizedBox.shrink(),
+                          ),
+                        ),
                     ],
                   );
                 },
@@ -527,6 +601,15 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  void _selectNetworkPanel(int index) {
+    setState(() => _networkPanelIndex = index);
+    _networkPageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
     );
   }
 
@@ -1203,6 +1286,494 @@ class LuciSectionHeader extends StatelessWidget {
           letterSpacing: 1.2,
         ),
       ),
+    );
+  }
+}
+
+class _NetworkPanelSwitcher extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  const _NetworkPanelSwitcher({
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    const tabs = ['Interfaces', 'Port Forwarding', 'Firewall'];
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.36),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Row(
+        children: List.generate(tabs.length, (index) {
+          final selected = selectedIndex == index;
+          return Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(7),
+              onTap: () => onSelected(index),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: selected ? colorScheme.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(
+                  tabs[index],
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: selected
+                        ? colorScheme.onPrimary
+                        : colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _NetworkPanelDots extends StatelessWidget {
+  final int count;
+  final int currentIndex;
+
+  const _NetworkPanelDots({required this.count, required this.currentIndex});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(
+        count,
+        (index) => AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          width: index == currentIndex ? 16 : 6,
+          height: 6,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          decoration: BoxDecoration(
+            color: index == currentIndex
+                ? colorScheme.primary
+                : colorScheme.onSurfaceVariant.withValues(alpha: 0.34),
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PortForwardingPanel extends StatelessWidget {
+  final bool isLoading;
+  final List<OpenwrtPortForward> forwards;
+  final Future<void> Function() onRefresh;
+
+  const _PortForwardingPanel({
+    required this.isLoading,
+    required this.forwards,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading && forwards.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (forwards.isEmpty) {
+      return _NetworkPanelEmptyState(
+        icon: Icons.low_priority_rounded,
+        title: 'No Port Forwards',
+        message: 'No firewall redirect rules were found on this router.',
+        onRefresh: onRefresh,
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      itemCount: forwards.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) =>
+          _PortForwardCard(forward: forwards[index]),
+    );
+  }
+}
+
+class _PortForwardCard extends StatelessWidget {
+  final OpenwrtPortForward forward;
+
+  const _PortForwardCard({required this.forward});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final statusColor = forward.enabled
+        ? const Color(0xFF20CF70)
+        : colorScheme.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  forward.name,
+                  style: LuciTextStyles.cardTitle(context),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              _NetworkBadge(
+                label: forward.enabled ? 'Enabled' : 'Disabled',
+                color: statusColor,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _NetworkValueBlock(
+                  label: '${forward.source.toUpperCase()} Port',
+                  value: forward.wanPort,
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_rounded,
+                size: 18,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _NetworkValueBlock(
+                  label: forward.destinationZone.toUpperCase(),
+                  value: '${forward.destinationIp}:${forward.destinationPort}',
+                  alignEnd: true,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            forward.protocol.toUpperCase(),
+            style: LuciTextStyles.cardSubtitle(
+              context,
+            ).copyWith(fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FirewallPanel extends StatelessWidget {
+  final bool isLoading;
+  final List<OpenwrtFirewallRule> rules;
+  final Future<void> Function() onRefresh;
+
+  const _FirewallPanel({
+    required this.isLoading,
+    required this.rules,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading && rules.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (rules.isEmpty) {
+      return _NetworkPanelEmptyState(
+        icon: Icons.security_rounded,
+        title: 'No Firewall Rules',
+        message: 'No firewall rule sections were found on this router.',
+        onRefresh: onRefresh,
+      );
+    }
+
+    final openwallaRules = rules.where((rule) => rule.isOpenwallaRule).toList();
+    final openwrtRules = rules.where((rule) => !rule.isOpenwallaRule).toList();
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      children: [
+        _NetworkPanelHeader('Openwalla Rules', openwallaRules.length),
+        if (openwallaRules.isEmpty)
+          const _NetworkPanelNote('No Openwalla firewall rules found.')
+        else
+          ...openwallaRules.map((rule) => _NetworkFirewallRuleCard(rule: rule)),
+        const SizedBox(height: 10),
+        _NetworkPanelHeader('OpenWrt Rules', openwrtRules.length),
+        ...openwrtRules.map((rule) => _NetworkFirewallRuleCard(rule: rule)),
+      ],
+    );
+  }
+}
+
+class _NetworkFirewallRuleCard extends StatelessWidget {
+  final OpenwrtFirewallRule rule;
+
+  const _NetworkFirewallRuleCard({required this.rule});
+
+  Color _actionColor(BuildContext context) {
+    final action = rule.action.toUpperCase();
+    if (action == 'ACCEPT') return const Color(0xFF20CF70);
+    if (rule.isBlocked) return Theme.of(context).colorScheme.error;
+    return Theme.of(context).colorScheme.primary;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final backgroundColor = rule.isBlocked
+        ? colorScheme.error.withValues(alpha: 0.045)
+        : colorScheme.surface;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: rule.isOpenwallaRule
+              ? colorScheme.primary.withValues(alpha: 0.35)
+              : colorScheme.outlineVariant.withValues(alpha: 0.42),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  rule.name,
+                  style: LuciTextStyles.cardTitle(context),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              _NetworkBadge(label: rule.action, color: _actionColor(context)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${_networkAny(rule.source)} ${_networkAny(rule.sourceIp)}',
+                  style: LuciTextStyles.cardSubtitle(
+                    context,
+                  ).copyWith(fontWeight: FontWeight.w800),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_rounded,
+                size: 14,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _ruleDestination(rule),
+                  textAlign: TextAlign.right,
+                  style: LuciTextStyles.cardSubtitle(context).copyWith(
+                    color: colorScheme.onSurface,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _ruleDestination(OpenwrtFirewallRule rule) {
+    final destination = _networkAny(rule.destination);
+    return rule.port == 'Any' ? destination : '$destination:${rule.port}';
+  }
+}
+
+String _networkAny(String value) => value == 'Any' ? '*' : value;
+
+class _NetworkPanelHeader extends StatelessWidget {
+  final String title;
+  final int count;
+
+  const _NetworkPanelHeader(this.title, this.count);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 12, 2, 8),
+      child: Text(
+        '$title ($count)',
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0,
+        ),
+      ),
+    );
+  }
+}
+
+class _NetworkPanelNote extends StatelessWidget {
+  final String text;
+
+  const _NetworkPanelNote(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 4, 2, 8),
+      child: Text(text, style: LuciTextStyles.cardSubtitle(context)),
+    );
+  }
+}
+
+class _NetworkPanelEmptyState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String message;
+  final Future<void> Function() onRefresh;
+
+  const _NetworkPanelEmptyState({
+    required this.icon,
+    required this.title,
+    required this.message,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 60, 16, 16),
+      children: [
+        Icon(icon, size: 54, color: colorScheme.onSurfaceVariant),
+        const SizedBox(height: 18),
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: LuciTextStyles.cardSubtitle(context),
+        ),
+        const SizedBox(height: 16),
+        Center(
+          child: OutlinedButton.icon(
+            onPressed: onRefresh,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Refresh'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _NetworkBadge extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _NetworkBadge({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0,
+        ),
+      ),
+    );
+  }
+}
+
+class _NetworkValueBlock extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool alignEnd;
+
+  const _NetworkValueBlock({
+    required this.label,
+    required this.value,
+    this.alignEnd = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: alignEnd
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: LuciTextStyles.detailLabel(context),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          textAlign: alignEnd ? TextAlign.right : TextAlign.left,
+          style: LuciTextStyles.detailValue(
+            context,
+          ).copyWith(color: colorScheme.onSurface, fontWeight: FontWeight.w900),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
     );
   }
 }

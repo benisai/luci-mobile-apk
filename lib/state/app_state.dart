@@ -138,6 +138,60 @@ class OpenwrtFirewallRule {
   }
 }
 
+class OpenwrtPortForward {
+  final String section;
+  final String name;
+  final String source;
+  final String wanPort;
+  final String protocol;
+  final String destinationZone;
+  final String destinationIp;
+  final String destinationPort;
+  final bool enabled;
+
+  const OpenwrtPortForward({
+    required this.section,
+    required this.name,
+    required this.source,
+    required this.wanPort,
+    required this.protocol,
+    required this.destinationZone,
+    required this.destinationIp,
+    required this.destinationPort,
+    required this.enabled,
+  });
+
+  factory OpenwrtPortForward.fromUciSection(
+    String section,
+    Map<dynamic, dynamic> values,
+  ) {
+    String read(String key, String fallback) {
+      final value = values[key];
+      if (value is List) {
+        final joined = value.map((entry) => entry.toString()).join(', ');
+        return joined.trim().isEmpty ? fallback : joined;
+      }
+      final text = value?.toString().trim();
+      return text == null || text.isEmpty ? fallback : text;
+    }
+
+    final disabled = read('disabled', '0') == '1';
+    final explicitlyDisabled = read('enabled', '1') == '0';
+
+    return OpenwrtPortForward(
+      section: section,
+      name: read('name', section),
+      source: read('src', 'wan'),
+      wanPort: read('src_dport', read('src_port', 'Any')),
+      protocol: read('proto', 'tcp udp'),
+      destinationZone: read('dest', 'lan'),
+      destinationIp: read('dest_ip', 'Any'),
+      destinationPort: read('dest_port', 'Any'),
+      enabled: !disabled && !explicitlyDisabled,
+    );
+  }
+}
+
 class OpenwrtStaticRoute {
   final String section;
   final String interfaceName;
@@ -2536,6 +2590,78 @@ class AppState extends ChangeNotifier {
     if (_reviewerModeEnabled) return _mockFirewallRules().length;
     final rules = await fetchFirewallRules(context: context);
     return rules.length;
+  }
+
+  List<OpenwrtPortForward> _mockPortForwards() {
+    return const [
+      OpenwrtPortForward(
+        section: 'cfg0fredirect',
+        name: 'Plex',
+        source: 'wan',
+        wanPort: '32400',
+        protocol: 'tcp',
+        destinationZone: 'lan',
+        destinationIp: '10.0.0.25',
+        destinationPort: '32400',
+        enabled: true,
+      ),
+      OpenwrtPortForward(
+        section: 'cfg10redirect',
+        name: 'Game Console',
+        source: 'wan',
+        wanPort: '3074',
+        protocol: 'udp',
+        destinationZone: 'lan',
+        destinationIp: '10.0.0.55',
+        destinationPort: '3074',
+        enabled: false,
+      ),
+    ];
+  }
+
+  Future<List<OpenwrtPortForward>> fetchPortForwards({
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) return _mockPortForwards();
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'get',
+        params: {'config': 'firewall'},
+        context: context,
+      );
+      final values = _firewallValuesFromResult(result);
+      final forwards = values.entries
+          .where((entry) {
+            final value = entry.value;
+            return value is Map && value['.type'] == 'redirect';
+          })
+          .map(
+            (entry) => OpenwrtPortForward.fromUciSection(
+              entry.key.toString(),
+              entry.value as Map<dynamic, dynamic>,
+            ),
+          )
+          .toList();
+      forwards.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+      return forwards;
+    } catch (e, stack) {
+      Logger.warning('Optional port forwards fetch failed: $e');
+      Logger.debug('Optional port forwards stack: $stack');
+      return const [];
+    }
   }
 
   Future<void> setFirewallRuleEnabled(

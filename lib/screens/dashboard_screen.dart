@@ -43,11 +43,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   static const double _openwallaRadius = 8;
   Timer? _summaryRefreshTimer;
   bool _summaryRefreshInFlight = false;
+  final ScrollController _shortcutScrollController = ScrollController();
+  int _shortcutPanelPage = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _shortcutScrollController.addListener(_handleShortcutScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(appStateProvider).fetchDashboardData();
       _startSummaryRefreshTimer();
@@ -57,8 +60,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   @override
   void dispose() {
     _summaryRefreshTimer?.cancel();
+    _shortcutScrollController.removeListener(_handleShortcutScroll);
+    _shortcutScrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _handleShortcutScroll() {
+    if (!_shortcutScrollController.hasClients) return;
+    final viewportWidth = _shortcutScrollController.position.viewportDimension;
+    if (viewportWidth <= 0) return;
+    final nextPage = (_shortcutScrollController.offset / viewportWidth).round();
+    if (nextPage != _shortcutPanelPage) {
+      setState(() => _shortcutPanelPage = nextPage);
+    }
   }
 
   @override
@@ -1231,28 +1246,62 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       builder: (context, constraints) {
         const spacing = 6.0;
         final itemWidth = (constraints.maxWidth - spacing * 2) / 3;
-        return SizedBox(
-          height: 98,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            itemCount: shortcuts.length,
-            separatorBuilder: (_, _) => const SizedBox(width: spacing),
-            itemBuilder: (context, index) {
-              final shortcut = shortcuts[index];
-              return SizedBox(
-                width: itemWidth.clamp(92.0, 136.0),
-                child: _buildDashboardShortcut(
-                  label: shortcut.label,
-                  icon: shortcut.icon,
-                  color: shortcut.color,
-                  onTap: shortcut.onTap,
-                ),
-              );
-            },
-          ),
+        final pageCount = (shortcuts.length / 3).ceil().clamp(1, 99);
+        final currentPage = _shortcutPanelPage.clamp(0, pageCount - 1);
+
+        return Column(
+          children: [
+            SizedBox(
+              height: 98,
+              child: ListView.separated(
+                controller: _shortcutScrollController,
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                itemCount: shortcuts.length,
+                separatorBuilder: (_, _) => const SizedBox(width: spacing),
+                itemBuilder: (context, index) {
+                  final shortcut = shortcuts[index];
+                  return SizedBox(
+                    width: itemWidth.clamp(92.0, 136.0),
+                    child: _buildDashboardShortcut(
+                      label: shortcut.label,
+                      icon: shortcut.icon,
+                      color: shortcut.color,
+                      onTap: shortcut.onTap,
+                    ),
+                  );
+                },
+              ),
+            ),
+            if (pageCount > 1) ...[
+              const SizedBox(height: 4),
+              _buildShortcutPageDots(pageCount, currentPage),
+            ],
+          ],
         );
       },
+    );
+  }
+
+  Widget _buildShortcutPageDots(int pageCount, int currentPage) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(
+        pageCount,
+        (index) => AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          width: index == currentPage ? 16 : 6,
+          height: 6,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          decoration: BoxDecoration(
+            color: index == currentPage
+                ? colorScheme.primary
+                : colorScheme.onSurfaceVariant.withValues(alpha: 0.34),
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+      ),
     );
   }
 
