@@ -707,6 +707,57 @@ class WireGuardServerSettings {
   );
 }
 
+class WireGuardClientSettings {
+  final bool installed;
+  final bool configured;
+  final bool enabled;
+  final String interfaceName;
+  final String address;
+  final String dns;
+  final String privateKey;
+  final String peerPublicKey;
+  final String presharedKey;
+  final String endpointHost;
+  final int endpointPort;
+  final String allowedIps;
+  final int persistentKeepalive;
+  final bool routeAllowedIps;
+
+  const WireGuardClientSettings({
+    required this.installed,
+    required this.configured,
+    required this.enabled,
+    required this.interfaceName,
+    required this.address,
+    required this.dns,
+    required this.privateKey,
+    required this.peerPublicKey,
+    required this.presharedKey,
+    required this.endpointHost,
+    required this.endpointPort,
+    required this.allowedIps,
+    required this.persistentKeepalive,
+    required this.routeAllowedIps,
+  });
+
+  static const defaults = WireGuardClientSettings(
+    installed: false,
+    configured: false,
+    enabled: false,
+    interfaceName: 'owrt_wg_client',
+    address: '',
+    dns: '',
+    privateKey: '',
+    peerPublicKey: '',
+    presharedKey: '',
+    endpointHost: '',
+    endpointPort: 51820,
+    allowedIps: '0.0.0.0/0, ::/0',
+    persistentKeepalive: 25,
+    routeAllowedIps: true,
+  );
+}
+
 class SystemStorageDetails {
   final int userTotalBytes;
   final int userFreeBytes;
@@ -5582,6 +5633,169 @@ class AppState extends ChangeNotifier {
         'uci commit firewall; '
         '/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1 || true; '
         'if [ "$disabled" = "0" ]; then ifup "\$IFACE" >/dev/null 2>&1 || /etc/init.d/network reload >/dev/null 2>&1 || true; else ifdown "\$IFACE" >/dev/null 2>&1 || true; fi';
+
+    await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'file',
+      method: 'exec',
+      params: {
+        'command': '/bin/sh',
+        'params': ['-c', command],
+      },
+      context: context,
+    );
+  }
+
+  Future<WireGuardClientSettings> fetchWireGuardClientSettings({
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      return const WireGuardClientSettings(
+        installed: true,
+        configured: true,
+        enabled: false,
+        interfaceName: 'owrt_wg_client',
+        address: '10.64.0.2/32',
+        dns: '10.64.0.1',
+        privateKey: 'reviewer-wireguard-client-private-key',
+        peerPublicKey: 'reviewer-wireguard-provider-public-key',
+        presharedKey: '',
+        endpointHost: 'vpn.example.com',
+        endpointPort: 51820,
+        allowedIps: '0.0.0.0/0, ::/0',
+        persistentKeepalive: 25,
+        routeAllowedIps: true,
+      );
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return WireGuardClientSettings.defaults;
+    }
+
+    const iface = 'owrt_wg_client';
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'file',
+        method: 'exec',
+        params: {
+          'command': '/bin/sh',
+          'params': [
+            '-c',
+            r'IFACE="owrt_wg_client"; PEER="owrt_wg_client_peer"; '
+                r'installed=0; command -v wg >/dev/null 2>&1 && installed=1; '
+                r'configured=0; [ "$(uci -q get network.$IFACE.proto 2>/dev/null)" = "wireguard" ] && configured=1; '
+                r'enabled=1; [ "$(uci -q get network.$IFACE.disabled 2>/dev/null)" = "1" ] && enabled=0; '
+                r'addr="$(uci -q get network.$IFACE.addresses 2>/dev/null | sed "s/ /, /g")"; '
+                r'dns="$(uci -q get network.$IFACE.dns 2>/dev/null | sed "s/ /, /g")"; '
+                r'private_key="$(uci -q get network.$IFACE.private_key 2>/dev/null || true)"; '
+                r'public_key="$(uci -q get network.$PEER.public_key 2>/dev/null || true)"; '
+                r'preshared_key="$(uci -q get network.$PEER.preshared_key 2>/dev/null || true)"; '
+                r'endpoint_host="$(uci -q get network.$PEER.endpoint_host 2>/dev/null || true)"; '
+                r'endpoint_port="$(uci -q get network.$PEER.endpoint_port 2>/dev/null || echo 51820)"; '
+                r'allowed_ips="$(uci -q get network.$PEER.allowed_ips 2>/dev/null | sed "s/ /, /g")"; '
+                r'keepalive="$(uci -q get network.$PEER.persistent_keepalive 2>/dev/null || echo 25)"; '
+                r'route_allowed="$(uci -q get network.$PEER.route_allowed_ips 2>/dev/null || echo 1)"; '
+                r'printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n" "$installed" "$configured" "$enabled" "$IFACE" "$addr" "$dns" "$private_key" "$public_key" "$preshared_key" "$endpoint_host" "$endpoint_port" "$allowed_ips" "$keepalive" "$route_allowed"',
+          ],
+        },
+        context: context,
+      );
+      final parts = _commandOutput(result).trim().split('|');
+      if (parts.length < 14) return WireGuardClientSettings.defaults;
+      return WireGuardClientSettings(
+        installed: parts[0] == '1',
+        configured: parts[1] == '1',
+        enabled: parts[2] != '0',
+        interfaceName: parts[3].isEmpty ? iface : parts[3],
+        address: parts[4],
+        dns: parts[5],
+        privateKey: parts[6],
+        peerPublicKey: parts[7],
+        presharedKey: parts[8],
+        endpointHost: parts[9],
+        endpointPort: int.tryParse(parts[10]) ?? 51820,
+        allowedIps: parts[11].isEmpty ? '0.0.0.0/0, ::/0' : parts[11],
+        persistentKeepalive: int.tryParse(parts[12]) ?? 25,
+        routeAllowedIps: parts[13] != '0',
+      );
+    } catch (e, stack) {
+      Logger.warning('Optional WireGuard client settings fetch failed: $e');
+      Logger.debug('Optional WireGuard client settings stack: $stack');
+      return WireGuardClientSettings.defaults;
+    }
+  }
+
+  Future<void> saveWireGuardClientSettings(
+    WireGuardClientSettings settings, {
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) return;
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw Exception('Router is not connected');
+    }
+
+    final disabled = settings.enabled ? '0' : '1';
+    final address = _shellQuote(settings.address.trim());
+    final dns = _shellQuote(settings.dns.trim());
+    final privateKey = _shellQuote(settings.privateKey.trim());
+    final peerPublicKey = _shellQuote(settings.peerPublicKey.trim());
+    final presharedKey = _shellQuote(settings.presharedKey.trim());
+    final endpointHost = _shellQuote(settings.endpointHost.trim());
+    final endpointPort = settings.endpointPort.clamp(1, 65535);
+    final allowedIps = _shellQuote(settings.allowedIps.trim());
+    final keepalive = settings.persistentKeepalive.clamp(0, 65535);
+    final routeAllowed = settings.routeAllowedIps ? '1' : '0';
+
+    final command =
+        'IFACE="owrt_wg_client"; '
+        'PEER="owrt_wg_client_peer"; '
+        'ADDRESSES=$address; '
+        'DNS_SERVERS=$dns; '
+        'PRIVATE_KEY=$privateKey; '
+        'PEER_PUBLIC_KEY=$peerPublicKey; '
+        'PRESHARED_KEY=$presharedKey; '
+        'ENDPOINT_HOST=$endpointHost; '
+        'ENDPOINT_PORT="$endpointPort"; '
+        'ALLOWED_IPS=$allowedIps; '
+        'KEEPALIVE="$keepalive"; '
+        'ROUTE_ALLOWED="$routeAllowed"; '
+        'command -v wg >/dev/null 2>&1 || { echo "wireguard-tools is not installed"; exit 1; }; '
+        '[ -n "\$PRIVATE_KEY" ] || { echo "WireGuard client private key is required"; exit 1; }; '
+        '[ -n "\$PEER_PUBLIC_KEY" ] || { echo "WireGuard peer public key is required"; exit 1; }; '
+        '[ -n "\$ENDPOINT_HOST" ] || { echo "WireGuard endpoint host is required"; exit 1; }; '
+        '[ -n "\$ADDRESSES" ] || { echo "WireGuard address is required"; exit 1; }; '
+        'uci -q delete network.\$IFACE; '
+        'uci -q delete network.\$PEER; '
+        'uci set network.\$IFACE="interface"; '
+        'uci set network.\$IFACE.proto="wireguard"; '
+        'uci set network.\$IFACE.private_key="\$PRIVATE_KEY"; '
+        'uci set network.\$IFACE.disabled="$disabled"; '
+        'for value in \$(printf "%s" "\$ADDRESSES" | tr "," " "); do [ -n "\$value" ] && uci add_list network.\$IFACE.addresses="\$value"; done; '
+        'if [ -n "\$DNS_SERVERS" ]; then uci set network.\$IFACE.peerdns="0"; for value in \$(printf "%s" "\$DNS_SERVERS" | tr "," " "); do [ -n "\$value" ] && uci add_list network.\$IFACE.dns="\$value"; done; fi; '
+        'uci set network.\$PEER="wireguard_\$IFACE"; '
+        'uci set network.\$PEER.public_key="\$PEER_PUBLIC_KEY"; '
+        '[ -n "\$PRESHARED_KEY" ] && uci set network.\$PEER.preshared_key="\$PRESHARED_KEY"; '
+        'uci set network.\$PEER.endpoint_host="\$ENDPOINT_HOST"; '
+        'uci set network.\$PEER.endpoint_port="\$ENDPOINT_PORT"; '
+        'uci set network.\$PEER.persistent_keepalive="\$KEEPALIVE"; '
+        'uci set network.\$PEER.route_allowed_ips="\$ROUTE_ALLOWED"; '
+        'for value in \$(printf "%s" "\$ALLOWED_IPS" | tr "," " "); do [ -n "\$value" ] && uci add_list network.\$PEER.allowed_ips="\$value"; done; '
+        'uci commit network; '
+        'uci -q del_list firewall.wan.network="\$IFACE" 2>/dev/null || true; '
+        'uci add_list firewall.wan.network="\$IFACE"; '
+        'uci commit firewall; '
+        '/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1 || true; '
+        'if [ "$disabled" = "0" ]; then ifdown "\$IFACE" >/dev/null 2>&1 || true; ifup "\$IFACE" >/dev/null 2>&1 || /etc/init.d/network reload >/dev/null 2>&1 || true; else ifdown "\$IFACE" >/dev/null 2>&1 || /etc/init.d/network reload >/dev/null 2>&1 || true; fi';
 
     await _apiService!.call(
       router.ipAddress,
