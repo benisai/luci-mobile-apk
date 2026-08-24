@@ -59,25 +59,42 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
     }
   }
 
-  Future<void> _restartService(OpenwallaServiceStatus service) async {
+  Future<void> _runServiceAction(
+    OpenwallaServiceStatus service,
+    String action,
+  ) async {
     setState(() => _busyService = service.name);
     try {
       await ref
           .read(appStateProvider)
-          .restartOpenwallaService(service.name, context: context);
+          .runOpenwallaServiceAction(
+            service.name,
+            action: action,
+            context: context,
+          );
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('${service.label} restarted.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${service.label} ${_pastTense(action)}.')),
+      );
       await _refresh();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to restart ${service.label}: $e')),
+        SnackBar(content: Text('Failed to $action ${service.label}: $e')),
       );
     } finally {
       if (mounted) setState(() => _busyService = null);
     }
+  }
+
+  String _pastTense(String action) {
+    return switch (action) {
+      'start' => 'started',
+      'stop' => 'stopped',
+      'restart' => 'restarted',
+      'reload' => 'reloaded',
+      _ => '$action complete',
+    };
   }
 
   @override
@@ -134,8 +151,14 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                   onToggle: service.installed
                       ? (enabled) => _toggleService(service, enabled)
                       : null,
+                  onStart: service.installed && _busyService == null
+                      ? () => _runServiceAction(service, 'start')
+                      : null,
+                  onStop: service.installed && _busyService == null
+                      ? () => _runServiceAction(service, 'stop')
+                      : null,
                   onRestart: service.installed && _busyService == null
-                      ? () => _restartService(service)
+                      ? () => _runServiceAction(service, 'restart')
                       : null,
                 );
               },
@@ -151,12 +174,16 @@ class _ServiceCard extends StatelessWidget {
   final OpenwallaServiceStatus service;
   final bool isBusy;
   final ValueChanged<bool>? onToggle;
+  final VoidCallback? onStart;
+  final VoidCallback? onStop;
   final VoidCallback? onRestart;
 
   const _ServiceCard({
     required this.service,
     required this.isBusy,
     required this.onToggle,
+    required this.onStart,
+    required this.onStop,
     required this.onRestart,
   });
 
@@ -179,74 +206,99 @@ class _ServiceCard extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: Row(
+        child: Column(
           children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                Icons.miscellaneous_services_rounded,
-                color: statusColor,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.miscellaneous_services_rounded,
+                    color: statusColor,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          service.label,
-                          style: LuciTextStyles.cardTitle(context),
-                          maxLines: 1,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              service.label,
+                              style: LuciTextStyles.cardTitle(context),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          _StatusPill(label: statusLabel, color: statusColor),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${service.category} / ${service.name}',
+                        style: LuciTextStyles.cardSubtitle(context),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (service.statusText.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          service.statusText,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: colorScheme.onSurfaceVariant),
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      _StatusPill(label: statusLabel, color: statusColor),
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    service.name,
-                    style: LuciTextStyles.cardSubtitle(context),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (service.statusText.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      service.statusText,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                if (isBusy)
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  Switch.adaptive(value: service.enabled, onChanged: onToggle),
+              ],
             ),
-            const SizedBox(width: 8),
-            if (isBusy)
-              const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else ...[
-              IconButton(
-                tooltip: 'Restart',
-                icon: const Icon(Icons.restart_alt_rounded),
-                onPressed: onRestart,
-              ),
-              Switch.adaptive(value: service.enabled, onChanged: onToggle),
-            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onStart,
+                    icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                    label: const Text('Start'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onStop,
+                    icon: const Icon(Icons.stop_rounded, size: 18),
+                    label: const Text('Stop'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: onRestart,
+                    icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                    label: const Text('Restart'),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),

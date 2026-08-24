@@ -38,6 +38,7 @@ class DnsMonitorSettings {
 class OpenwallaServiceStatus {
   final String name;
   final String label;
+  final String category;
   final bool installed;
   final bool enabled;
   final bool running;
@@ -46,6 +47,7 @@ class OpenwallaServiceStatus {
   const OpenwallaServiceStatus({
     required this.name,
     required this.label,
+    required this.category,
     required this.installed,
     required this.enabled,
     required this.running,
@@ -932,22 +934,50 @@ class NetifyFlow {
 
 class AppState extends ChangeNotifier {
   static AppState? _instance;
-  static const Map<String, String> _managedServiceLabels = {
-    'openwalla-ping-monitor': 'Ping Monitor',
-    'openwalla-dns-monitor': 'DNS Monitor',
-    'openwalla-speedtest-monitor': 'Speedtest Monitor',
-    'openwalla-devices-collector': 'Devices Collector',
-    'openwalla-device-bandwidth-collector': 'Bandwidth Collector',
-    'openwalla-connection-flows-collector': 'Simple Flow Collector',
-    'openwalla-netify-collector': 'Detailed Flow Collector',
-    'openwalla-device-quarantine': 'Device Quarantine',
-    'openwalla-state-sync': 'State Sync',
-    'netifyd': 'Netify',
-    'vnstat': 'vnStat',
-    'nlbwmon': 'nlbwmon',
-    'adblock': 'AdBlock',
-    'sqm': 'Smart Queue',
-  };
+  static const List<({String name, String label, String category})>
+  _managedServices = [
+    (
+      name: 'openwalla-ping-monitor',
+      label: 'Ping Monitor',
+      category: 'Openwalla',
+    ),
+    (
+      name: 'openwalla-dns-monitor',
+      label: 'DNS Monitor',
+      category: 'Openwalla',
+    ),
+    (
+      name: 'openwalla-devices-collector',
+      label: 'Devices Collector',
+      category: 'Openwalla',
+    ),
+    (
+      name: 'openwalla-device-bandwidth-collector',
+      label: 'Bandwidth Collector',
+      category: 'Openwalla',
+    ),
+    (
+      name: 'openwalla-connection-flows-collector',
+      label: 'Simple Flow Collector',
+      category: 'Openwalla',
+    ),
+    (
+      name: 'openwalla-netify-collector',
+      label: 'Detailed Flow Collector',
+      category: 'Openwalla',
+    ),
+    (
+      name: 'openwalla-device-quarantine',
+      label: 'Device Quarantine',
+      category: 'Openwalla',
+    ),
+    (name: 'openwalla-state-sync', label: 'State Sync', category: 'Openwalla'),
+    (name: 'netifyd', label: 'Netify', category: 'Router'),
+    (name: 'vnstat', label: 'vnStat', category: 'Router'),
+    (name: 'nlbwmon', label: 'nlbwmon', category: 'Router'),
+    (name: 'adblock', label: 'AdBlock', category: 'Router'),
+    (name: 'sqm', label: 'Smart Queue', category: 'Router'),
+  ];
 
   late final SecureStorageService _secureStorageService;
   IApiService? _apiService;
@@ -5255,11 +5285,12 @@ class AppState extends ChangeNotifier {
     BuildContext? context,
   }) async {
     if (_reviewerModeEnabled) {
-      return _managedServiceLabels.entries.map((entry) {
-        final running = entry.key != 'openwalla-netify-collector';
+      return _managedServices.map((service) {
+        final running = service.name != 'openwalla-netify-collector';
         return OpenwallaServiceStatus(
-          name: entry.key,
-          label: entry.value,
+          name: service.name,
+          label: service.label,
+          category: service.category,
           installed: true,
           enabled: running,
           running: running,
@@ -5274,21 +5305,40 @@ class AppState extends ChangeNotifier {
       return const [];
     }
 
-    final serviceNames = _managedServiceLabels.keys.join(' ');
-    final result = await _apiService!.systemExec(
+    final serviceNames = _managedServices
+        .map((service) => service.name)
+        .join(' ');
+    final command =
+        'for svc in $serviceNames; do '
+        'if [ -x "/etc/init.d/\$svc" ]; then '
+        'enabled=0; /etc/init.d/\$svc enabled >/dev/null 2>&1 && enabled=1; '
+        'status="\$(/etc/init.d/\$svc status 2>&1 || true)"; '
+        'running=0; '
+        '/etc/init.d/\$svc running >/dev/null 2>&1 && running=1; '
+        'echo "\$status" | grep -Eiq "running|active with|started" && running=1; '
+        'if [ "\$running" = "0" ]; then '
+        'case "\$svc" in '
+        'openwalla-connection-flows-collector) pgrep -f "/usr/bin/openwalla-connection-flow-collector" >/dev/null 2>&1 && running=1 ;; '
+        '*) pgrep -f "/usr/bin/\$svc" >/dev/null 2>&1 && running=1 ;; '
+        'esac; '
+        'fi; '
+        'status="\$(printf "%s" "\$status" | tr "\\n\\r|" "   " | sed "s/[[:space:]][[:space:]]*/ /g")"; '
+        '[ -n "\$status" ] || status="\$([ "\$running" = "1" ] && echo running || echo stopped)"; '
+        'printf "%s|1|%s|%s|%s\\n" "\$svc" "\$enabled" "\$running" "\$status"; '
+        'else printf "%s|0|0|0|not installed\\n" "\$svc"; fi; '
+        'done';
+
+    final result = await _apiService!.call(
       router.ipAddress,
       sysauth,
       router.useHttps,
-      command:
-          'for svc in $serviceNames; do '
-          'if [ -x "/etc/init.d/\$svc" ]; then '
-          'status="\$(/etc/init.d/\$svc status 2>&1 || true)"; '
-          'enabled=0; /etc/init.d/\$svc enabled >/dev/null 2>&1 && enabled=1; '
-          'running=0; echo "\$status" | grep -Eiq "running|active with|started" && running=1; '
-          'status="\$(printf "%s" "\$status" | tr "\\n\\r|" "   " | sed "s/[[:space:]][[:space:]]*/ /g")"; '
-          'printf "%s|1|%s|%s|%s\\n" "\$svc" "\$enabled" "\$running" "\$status"; '
-          'else printf "%s|0|0|0|not installed\\n" "\$svc"; fi; '
-          'done',
+      object: 'file',
+      method: 'exec',
+      params: {
+        'command': '/bin/sh',
+        'params': ['-c', command],
+      },
+      context: context,
     );
 
     final output = _commandOutput(result);
@@ -5305,11 +5355,12 @@ class AppState extends ChangeNotifier {
     final parts = line.split('|');
     if (parts.length < 5) return null;
     final name = parts[0];
-    final label = _managedServiceLabels[name];
-    if (label == null) return null;
+    final service = _managedService(name);
+    if (service == null) return null;
     return OpenwallaServiceStatus(
       name: name,
-      label: label,
+      label: service.label,
+      category: service.category,
       installed: parts[1] == '1',
       enabled: parts[2] == '1',
       running: parts[3] == '1',
@@ -5317,12 +5368,23 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  ({String name, String label, String category})? _managedService(String name) {
+    for (final service in _managedServices) {
+      if (service.name == name) return service;
+    }
+    return null;
+  }
+
+  bool _isManagedService(String serviceName) {
+    return _managedService(serviceName) != null;
+  }
+
   Future<void> setOpenwallaServiceEnabled(
     String serviceName,
     bool enabled, {
     BuildContext? context,
   }) async {
-    if (!_managedServiceLabels.containsKey(serviceName)) {
+    if (!_isManagedService(serviceName)) {
       throw Exception('Unsupported service: $serviceName');
     }
     if (_reviewerModeEnabled) return;
@@ -5343,12 +5405,16 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  Future<void> restartOpenwallaService(
+  Future<void> runOpenwallaServiceAction(
     String serviceName, {
+    required String action,
     BuildContext? context,
   }) async {
-    if (!_managedServiceLabels.containsKey(serviceName)) {
+    if (!_isManagedService(serviceName)) {
       throw Exception('Unsupported service: $serviceName');
+    }
+    if (!const {'start', 'stop', 'restart', 'reload'}.contains(action)) {
+      throw Exception('Unsupported service action: $action');
     }
     if (_reviewerModeEnabled) return;
 
@@ -5363,7 +5429,7 @@ class AppState extends ChangeNotifier {
       sysauth,
       router.useHttps,
       command:
-          '[ -x /etc/init.d/$serviceName ] && /etc/init.d/$serviceName restart',
+          '[ -x /etc/init.d/$serviceName ] && /etc/init.d/$serviceName $action',
     );
   }
 
