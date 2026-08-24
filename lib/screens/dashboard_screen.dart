@@ -22,6 +22,7 @@ import 'package:luci_mobile/screens/routes_screen.dart';
 import 'package:luci_mobile/screens/services_screen.dart';
 import 'package:luci_mobile/screens/smart_queue_screen.dart';
 import 'package:luci_mobile/screens/system_resources_screen.dart';
+import 'package:luci_mobile/screens/vpn_screen.dart';
 import 'package:luci_mobile/models/router.dart' as model;
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -1211,6 +1212,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           Navigator.of(context).push(
             MaterialPageRoute(builder: (context) => const ServicesScreen()),
           );
+        },
+      ),
+      _DashboardShortcutData(
+        label: 'VPN',
+        icon: Icons.vpn_key_rounded,
+        color: _shortcutDarkBlue,
+        onTap: () {
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (context) => const VpnScreen()));
         },
       ),
     ];
