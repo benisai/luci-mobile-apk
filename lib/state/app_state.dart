@@ -55,6 +55,22 @@ class OpenwallaServiceStatus {
   });
 }
 
+enum OpenwrtFeature { wireguard, adblock, sqm }
+
+class OpenwrtFeatureStatus {
+  final OpenwrtFeature feature;
+  final String label;
+  final bool installed;
+  final DateTime checkedAt;
+
+  const OpenwrtFeatureStatus({
+    required this.feature,
+    required this.label,
+    required this.installed,
+    required this.checkedAt,
+  });
+}
+
 class OpenwallaNotification {
   final int id;
   final DateTime timestamp;
@@ -1415,6 +1431,152 @@ class AppState extends ChangeNotifier {
     }
 
     return false;
+  }
+
+  Future<OpenwrtFeatureStatus> getOpenwrtFeatureStatus(
+    OpenwrtFeature feature, {
+    bool forceRefresh = false,
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      return OpenwrtFeatureStatus(
+        feature: feature,
+        label: _openwrtFeatureLabel(feature),
+        installed: true,
+        checkedAt: DateTime.now(),
+      );
+    }
+
+    final cacheKey = _openwrtFeatureCacheKey(feature);
+    if (!forceRefresh) {
+      final cached = await _secureStorageService.readValue(cacheKey);
+      final parsed = _parseOpenwrtFeatureCache(feature, cached);
+      if (parsed != null) return parsed;
+    }
+
+    final installed = await _routerCommandSucceeds(
+      _openwrtFeatureCheckCommand(feature),
+    );
+    final status = OpenwrtFeatureStatus(
+      feature: feature,
+      label: _openwrtFeatureLabel(feature),
+      installed: installed,
+      checkedAt: DateTime.now(),
+    );
+    await _saveOpenwrtFeatureStatus(status);
+    return status;
+  }
+
+  Future<OpenwrtFeatureStatus> installOpenwrtFeature(
+    OpenwrtFeature feature, {
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      final status = OpenwrtFeatureStatus(
+        feature: feature,
+        label: _openwrtFeatureLabel(feature),
+        installed: true,
+        checkedAt: DateTime.now(),
+      );
+      await _saveOpenwrtFeatureStatus(status);
+      return status;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw Exception('Router is not connected');
+    }
+
+    final command =
+        'opkg update && opkg install ${_openwrtFeaturePackages(feature)} && ${_openwrtFeatureCheckCommand(feature)}';
+    final result = await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'file',
+      method: 'exec',
+      params: {
+        'command': '/bin/sh',
+        'params': ['-c', command],
+      },
+      context: context,
+    );
+    final output = _commandOutput(result);
+    if (!output.contains('OK')) {
+      throw Exception(
+        output.trim().isEmpty ? 'Package install failed' : output,
+      );
+    }
+    final status = OpenwrtFeatureStatus(
+      feature: feature,
+      label: _openwrtFeatureLabel(feature),
+      installed: true,
+      checkedAt: DateTime.now(),
+    );
+    await _saveOpenwrtFeatureStatus(status);
+    return status;
+  }
+
+  String _openwrtFeatureLabel(OpenwrtFeature feature) {
+    return switch (feature) {
+      OpenwrtFeature.wireguard => 'WireGuard',
+      OpenwrtFeature.adblock => 'AdBlock',
+      OpenwrtFeature.sqm => 'SQM',
+    };
+  }
+
+  String _openwrtFeaturePackages(OpenwrtFeature feature) {
+    return switch (feature) {
+      OpenwrtFeature.wireguard => 'wireguard-tools',
+      OpenwrtFeature.adblock => 'adblock',
+      OpenwrtFeature.sqm => 'sqm-scripts',
+    };
+  }
+
+  String _openwrtFeatureCheckCommand(OpenwrtFeature feature) {
+    return switch (feature) {
+      OpenwrtFeature.wireguard => 'command -v wg >/dev/null 2>&1 && echo OK',
+      OpenwrtFeature.adblock => '[ -x /etc/init.d/adblock ] && echo OK',
+      OpenwrtFeature.sqm =>
+        '([ -x /etc/init.d/sqm ] || command -v sqm >/dev/null 2>&1) && echo OK',
+    };
+  }
+
+  String _openwrtFeatureCacheKey(OpenwrtFeature feature) {
+    final routerId = _routerService?.selectedRouter?.id ?? 'global';
+    return 'openwrt_feature:${feature.name}:$routerId';
+  }
+
+  OpenwrtFeatureStatus? _parseOpenwrtFeatureCache(
+    OpenwrtFeature feature,
+    String? value,
+  ) {
+    if (value == null || value.isEmpty) return null;
+    try {
+      final data = jsonDecode(value);
+      if (data is! Map) return null;
+      final checkedAt = DateTime.tryParse(data['checkedAt']?.toString() ?? '');
+      if (checkedAt == null) return null;
+      return OpenwrtFeatureStatus(
+        feature: feature,
+        label: _openwrtFeatureLabel(feature),
+        installed: data['installed'] == true,
+        checkedAt: checkedAt,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _saveOpenwrtFeatureStatus(OpenwrtFeatureStatus status) async {
+    await _secureStorageService.writeValue(
+      _openwrtFeatureCacheKey(status.feature),
+      jsonEncode({
+        'installed': status.installed,
+        'checkedAt': status.checkedAt.toIso8601String(),
+      }),
+    );
   }
 
   Future<bool> _routerCommandSucceeds(

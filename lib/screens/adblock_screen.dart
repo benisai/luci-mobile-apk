@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
+import 'package:luci_mobile/widgets/openwrt_feature_gate.dart';
 
 const List<_AdblockFeedOption> _adblockFeedOptions = [
   _AdblockFeedOption('adguard', 'AdGuard', 'L, general'),
@@ -47,12 +48,12 @@ class _AdblockScreenState extends ConsumerState<AdblockScreen> {
   OpenwrtAdblockSettings? _settings;
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _hasStartedLoad = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
   Future<void> _load() async {
@@ -152,25 +153,42 @@ class _AdblockScreenState extends ConsumerState<AdblockScreen> {
                 ),
               ),
               const SizedBox(height: 18),
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 48),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_error != null)
-                _AdblockEmptyCard(message: _error!, onRefresh: _load)
-              else if (settings != null)
-                _AdblockEditor(
-                  settings: settings,
-                  isSaving: _isSaving,
-                  onChanged: _update,
-                  onSave: _save,
-                  onAction: _runAction,
-                ),
+              OpenwrtFeatureGate(
+                feature: OpenwrtFeature.adblock,
+                title: 'AdBlock is not installed',
+                message:
+                    'Install the OpenWrt adblock package before managing DNS blocklists and AdBlock service actions.',
+                installLabel: 'Install AdBlock',
+                builder: (_) => _buildInstalledContent(settings),
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildInstalledContent(OpenwrtAdblockSettings? settings) {
+    if (!_hasStartedLoad) {
+      _hasStartedLoad = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    }
+    if (_isLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 48),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_error != null) {
+      return _AdblockEmptyCard(message: _error!, onRefresh: _load);
+    }
+    if (settings == null) return const SizedBox.shrink();
+    return _AdblockEditor(
+      settings: settings,
+      isSaving: _isSaving,
+      onChanged: _update,
+      onSave: _save,
+      onAction: _runAction,
     );
   }
 }

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
+import 'package:luci_mobile/widgets/openwrt_feature_gate.dart';
 
 enum _VpnPanel { server, client }
 
@@ -22,6 +23,7 @@ class _VpnScreenState extends ConsumerState<VpnScreen> {
   WireGuardClientSettings _clientSettings = WireGuardClientSettings.defaults;
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _hasStartedLoad = false;
   String? _error;
 
   final _portController = TextEditingController(text: '51820');
@@ -43,7 +45,6 @@ class _VpnScreenState extends ConsumerState<VpnScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
   @override
@@ -418,53 +419,72 @@ class _VpnScreenState extends ConsumerState<VpnScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              SegmentedButton<_VpnPanel>(
-                segments: const [
-                  ButtonSegment(
-                    value: _VpnPanel.server,
-                    label: Text('Server'),
-                    icon: Icon(Icons.dns_rounded),
-                  ),
-                  ButtonSegment(
-                    value: _VpnPanel.client,
-                    label: Text('Client'),
-                    icon: Icon(Icons.vpn_lock_rounded),
-                  ),
-                ],
-                selected: {_panel},
-                onSelectionChanged: (selection) {
-                  setState(() => _panel = selection.first);
-                },
+              OpenwrtFeatureGate(
+                feature: OpenwrtFeature.wireguard,
+                title: 'WireGuard is not installed',
+                message:
+                    'Install wireguard-tools on this OpenWrt router before configuring VPN server or client settings.',
+                installLabel: 'Install WireGuard',
+                builder: (_) => _buildInstalledContent(colorScheme),
               ),
-              const SizedBox(height: 16),
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 60),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_error != null)
-                _VpnPanelCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(_error!, style: TextStyle(color: colorScheme.error)),
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: _load,
-                        icon: const Icon(Icons.refresh_rounded),
-                        label: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
-              else if (_panel == _VpnPanel.server)
-                _buildServerPanel()
-              else
-                _buildClientPanel(),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildInstalledContent(ColorScheme colorScheme) {
+    if (!_hasStartedLoad) {
+      _hasStartedLoad = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    }
+    return Column(
+      children: [
+        SegmentedButton<_VpnPanel>(
+          segments: const [
+            ButtonSegment(
+              value: _VpnPanel.server,
+              label: Text('Server'),
+              icon: Icon(Icons.dns_rounded),
+            ),
+            ButtonSegment(
+              value: _VpnPanel.client,
+              label: Text('Client'),
+              icon: Icon(Icons.vpn_lock_rounded),
+            ),
+          ],
+          selected: {_panel},
+          onSelectionChanged: (selection) {
+            setState(() => _panel = selection.first);
+          },
+        ),
+        const SizedBox(height: 16),
+        if (_isLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 60),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_error != null)
+          _VpnPanelCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_error!, style: TextStyle(color: colorScheme.error)),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Retry'),
+                ),
+              ],
+            ),
+          )
+        else if (_panel == _VpnPanel.server)
+          _buildServerPanel()
+        else
+          _buildClientPanel(),
+      ],
     );
   }
 

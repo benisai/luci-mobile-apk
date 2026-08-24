@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
+import 'package:luci_mobile/widgets/openwrt_feature_gate.dart';
 
 class SmartQueueScreen extends ConsumerStatefulWidget {
   const SmartQueueScreen({super.key});
@@ -16,12 +17,12 @@ class _SmartQueueScreenState extends ConsumerState<SmartQueueScreen> {
   List<String> _interfaces = const ['eth1', 'wan'];
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _hasStartedLoad = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
   Future<void> _load() async {
@@ -121,25 +122,42 @@ class _SmartQueueScreenState extends ConsumerState<SmartQueueScreen> {
                 ),
               ),
               const SizedBox(height: 18),
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 48),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_error != null)
-                _SqmEmptyCard(message: _error!, onRefresh: _load)
-              else if (queue != null)
-                _SqmEditor(
-                  queue: queue,
-                  interfaces: _interfaces,
-                  isSaving: _isSaving,
-                  onChanged: _update,
-                  onSave: _save,
-                ),
+              OpenwrtFeatureGate(
+                feature: OpenwrtFeature.sqm,
+                title: 'SQM is not installed',
+                message:
+                    'Install sqm-scripts before configuring Smart Queue traffic shaping on this router.',
+                installLabel: 'Install sqm-scripts',
+                builder: (_) => _buildInstalledContent(queue),
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildInstalledContent(OpenwrtSqmQueue? queue) {
+    if (!_hasStartedLoad) {
+      _hasStartedLoad = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    }
+    if (_isLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 48),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_error != null) {
+      return _SqmEmptyCard(message: _error!, onRefresh: _load);
+    }
+    if (queue == null) return const SizedBox.shrink();
+    return _SqmEditor(
+      queue: queue,
+      interfaces: _interfaces,
+      isSaving: _isSaving,
+      onChanged: _update,
+      onSave: _save,
     );
   }
 }
