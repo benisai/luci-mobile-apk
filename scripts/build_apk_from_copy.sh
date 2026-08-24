@@ -15,7 +15,10 @@ UPLOAD_RELEASE=false
 COPY_APK_TEST=false
 SPLIT_PER_ABI=false
 GIT_APK_TEST=false
-APK_TEST_COMMIT_MESSAGE="${OPENWALLA_APK_TEST_COMMIT_MESSAGE:-Update APK test build}"
+PUBSPEC_VERSION="$(grep '^version:' "$PROJECT_ROOT/pubspec.yaml" | awk '{print $2}')"
+APP_VERSION="${PUBSPEC_VERSION%%+*}"
+APK_TEST_VERSION="${OPENWALLA_APK_TEST_VERSION:-v$APP_VERSION}"
+APK_TEST_COMMIT_MESSAGE="${OPENWALLA_APK_TEST_COMMIT_MESSAGE:-Update APK test build $APK_TEST_VERSION}"
 
 usage() {
   echo "Usage: $0 [debug|profile|release] [--upload] [--apk-test] [--split-per-abi] [--apk-test-git] [--pixel-test]" >&2
@@ -25,6 +28,7 @@ usage() {
   echo "  --apk-test-git  After --apk-test, git add/commit/push copied APK test artifacts." >&2
   echo "  --pixel-test  Shortcut for: debug --split-per-abi --apk-test --apk-test-git." >&2
   echo "Set OPENWALLA_APK_TEST_ABI to choose which split APK goes into APK-TEST (default: arm64-v8a)." >&2
+  echo "Set OPENWALLA_APK_TEST_VERSION to override the APK filename/commit suffix (default: v<pubspec version>)." >&2
   echo "Set OPENWALLA_APK_TEST_MAX_BYTES to override the git artifact size guard (default: 99000000)." >&2
   echo "Set OPENWALLA_APK_TEST_COMMIT_MESSAGE to override the APK test commit message." >&2
 }
@@ -177,6 +181,7 @@ done
 
 if [[ "$COPY_APK_TEST" == true ]]; then
   mkdir -p "$APK_TEST_DIR"
+  find "$APK_TEST_DIR" -maxdepth 1 -type f -name '*.apk' -delete
   for output_apk in "${OUTPUT_APKS[@]}"; do
     output_name="$(basename "$output_apk")"
     suffix="${output_name#openwalla-$BUILD_MODE}"
@@ -185,9 +190,9 @@ if [[ "$COPY_APK_TEST" == true ]]; then
       continue
     fi
     if [[ -n "$suffix" ]]; then
-      test_apk="$APK_TEST_DIR/openwalla-test$suffix.apk"
+      test_apk="$APK_TEST_DIR/openwalla-test-$APK_TEST_VERSION$suffix.apk"
     else
-      test_apk="$APK_TEST_DIR/openwalla-test.apk"
+      test_apk="$APK_TEST_DIR/openwalla-test-$APK_TEST_VERSION.apk"
     fi
     cp "$output_apk" "$test_apk"
     APK_TEST_PATHS+=("$test_apk")
@@ -215,9 +220,10 @@ if [[ "$GIT_APK_TEST" == true ]]; then
   done
 
   echo "Staging APK test artifacts"
+  git -C "$PROJECT_ROOT" add -u -- "$APK_TEST_DIR"
   git -C "$PROJECT_ROOT" add -- "${APK_TEST_PATHS[@]}"
 
-  if git -C "$PROJECT_ROOT" diff --cached --quiet -- "${APK_TEST_PATHS[@]}"; then
+  if git -C "$PROJECT_ROOT" diff --cached --quiet -- "$APK_TEST_DIR"; then
     echo "APK test artifacts are unchanged; skipping commit and push."
   else
     echo "Committing APK test artifacts"
