@@ -31,72 +31,6 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
     await _servicesFuture;
   }
 
-  Future<void> _toggleService(
-    OpenwallaServiceStatus service,
-    bool enabled,
-  ) async {
-    setState(() => _busyService = service.name);
-    try {
-      await ref
-          .read(appStateProvider)
-          .setOpenwallaServiceEnabled(service.name, enabled, context: context);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${service.label} ${enabled ? 'enabled' : 'disabled'}.',
-          ),
-        ),
-      );
-      await _refresh();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update ${service.label}: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _busyService = null);
-    }
-  }
-
-  Future<void> _runServiceAction(
-    OpenwallaServiceStatus service,
-    String action,
-  ) async {
-    setState(() => _busyService = service.name);
-    try {
-      await ref
-          .read(appStateProvider)
-          .runOpenwallaServiceAction(
-            service.name,
-            action: action,
-            context: context,
-          );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${service.label} ${_pastTense(action)}.')),
-      );
-      await _refresh();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to $action ${service.label}: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _busyService = null);
-    }
-  }
-
-  String _pastTense(String action) {
-    return switch (action) {
-      'start' => 'started',
-      'stop' => 'stopped',
-      'restart' => 'restarted',
-      'reload' => 'reloaded',
-      _ => '$action complete',
-    };
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -148,18 +82,7 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
                 return _ServiceCard(
                   service: service,
                   isBusy: _busyService == service.name,
-                  onToggle: service.installed
-                      ? (enabled) => _toggleService(service, enabled)
-                      : null,
-                  onStart: service.installed && _busyService == null
-                      ? () => _runServiceAction(service, 'start')
-                      : null,
-                  onStop: service.installed && _busyService == null
-                      ? () => _runServiceAction(service, 'stop')
-                      : null,
-                  onRestart: service.installed && _busyService == null
-                      ? () => _runServiceAction(service, 'restart')
-                      : null,
+                  onTap: () => _openServiceDetail(service),
                 );
               },
             ),
@@ -168,23 +91,26 @@ class _ServicesScreenState extends ConsumerState<ServicesScreen> {
       ),
     );
   }
+
+  Future<void> _openServiceDetail(OpenwallaServiceStatus service) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ServiceDetailScreen(initialService: service),
+      ),
+    );
+    if (mounted) await _refresh();
+  }
 }
 
 class _ServiceCard extends StatelessWidget {
   final OpenwallaServiceStatus service;
   final bool isBusy;
-  final ValueChanged<bool>? onToggle;
-  final VoidCallback? onStart;
-  final VoidCallback? onStop;
-  final VoidCallback? onRestart;
+  final VoidCallback onTap;
 
   const _ServiceCard({
     required this.service,
     required this.isBusy,
-    required this.onToggle,
-    required this.onStart,
-    required this.onStop,
-    required this.onRestart,
+    required this.onTap,
   });
 
   @override
@@ -203,104 +129,391 @@ class _ServiceCard extends StatelessWidget {
 
     return Card(
       elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.miscellaneous_services_rounded,
+                      color: statusColor,
+                    ),
                   ),
-                  child: Icon(
-                    Icons.miscellaneous_services_rounded,
-                    color: statusColor,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              service.label,
-                              style: LuciTextStyles.cardTitle(context),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                service.label,
+                                style: LuciTextStyles.cardTitle(context),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                          _StatusPill(label: statusLabel, color: statusColor),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${service.category} / ${service.name}',
-                        style: LuciTextStyles.cardSubtitle(context),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (service.statusText.isNotEmpty) ...[
+                            _StatusPill(label: statusLabel, color: statusColor),
+                          ],
+                        ),
                         const SizedBox(height: 4),
                         Text(
-                          service.statusText,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: colorScheme.onSurfaceVariant),
-                          maxLines: 2,
+                          '${service.category} / ${service.name}',
+                          style: LuciTextStyles.cardSubtitle(context),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        if (service.statusText.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            service.statusText,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: colorScheme.onSurfaceVariant),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
+                  if (isBusy)
+                    const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ServiceDetailScreen extends ConsumerStatefulWidget {
+  final OpenwallaServiceStatus initialService;
+
+  const ServiceDetailScreen({super.key, required this.initialService});
+
+  @override
+  ConsumerState<ServiceDetailScreen> createState() =>
+      _ServiceDetailScreenState();
+}
+
+class _ServiceDetailScreenState extends ConsumerState<ServiceDetailScreen> {
+  late OpenwallaServiceStatus _service = widget.initialService;
+  bool _isLoading = false;
+  bool _isBusy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+  }
+
+  Future<void> _refresh() async {
+    setState(() => _isLoading = true);
+    try {
+      final services = await ref
+          .read(appStateProvider)
+          .fetchOpenwallaServices(context: context);
+      final updated = services.where((item) => item.name == _service.name);
+      if (!mounted) return;
+      setState(() {
+        if (updated.isNotEmpty) _service = updated.first;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to refresh service: $e')));
+    }
+  }
+
+  Future<void> _toggle(bool enabled) async {
+    await _run(() async {
+      await ref
+          .read(appStateProvider)
+          .setOpenwallaServiceEnabled(_service.name, enabled, context: context);
+    }, '${_service.label} ${enabled ? 'enabled' : 'disabled'}.');
+  }
+
+  Future<void> _action(String action) async {
+    await _run(() async {
+      await ref
+          .read(appStateProvider)
+          .runOpenwallaServiceAction(
+            _service.name,
+            action: action,
+            context: context,
+          );
+    }, '${_service.label} ${_pastTense(action)}.');
+  }
+
+  Future<void> _run(Future<void> Function() action, String success) async {
+    setState(() => _isBusy = true);
+    try {
+      await action();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(success)));
+      await _refresh();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Service action failed: $e')));
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  String _pastTense(String action) {
+    return switch (action) {
+      'start' => 'started',
+      'stop' => 'stopped',
+      'restart' => 'restarted',
+      'reload' => 'reloaded',
+      _ => '$action complete',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final statusColor = !_service.installed
+        ? colorScheme.onSurfaceVariant
+        : _service.running
+        ? const Color(0xFF20CF70)
+        : const Color(0xFFFF4D4F);
+    final statusLabel = !_service.installed
+        ? 'Missing'
+        : _service.running
+        ? 'Running'
+        : 'Stopped';
+
+    return Scaffold(
+      appBar: LuciAppBar(
+        title: _service.label,
+        showBack: true,
+        actions: [
+          IconButton(
+            tooltip: 'Refresh service',
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _isBusy ? null : _refresh,
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: _refresh,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            _ServiceDetailCard(
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.miscellaneous_services_rounded,
+                        color: statusColor,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _service.label,
+                            style: LuciTextStyles.cardTitle(context),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _service.name,
+                            style: LuciTextStyles.cardSubtitle(context),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_isLoading)
+                      const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      _StatusPill(label: statusLabel, color: statusColor),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                if (isBusy)
-                  const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  Switch.adaptive(value: service.enabled, onChanged: onToggle),
+                const SizedBox(height: 18),
+                _ServiceDetailRow(label: 'Category', value: _service.category),
+                _ServiceDetailRow(
+                  label: 'Installed',
+                  value: _service.installed ? 'Yes' : 'No',
+                ),
+                _ServiceDetailRow(
+                  label: 'Enabled',
+                  value: _service.enabled ? 'Yes' : 'No',
+                ),
+                _ServiceDetailRow(
+                  label: 'Status',
+                  value: _service.statusText.isEmpty
+                      ? statusLabel
+                      : _service.statusText,
+                ),
               ],
             ),
             const SizedBox(height: 12),
-            Row(
+            _ServiceDetailCard(
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onStart,
-                    icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                    label: const Text('Start'),
-                  ),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Enable at Boot'),
+                  subtitle: const Text('Control the init.d enabled state.'),
+                  value: _service.enabled,
+                  onChanged: _service.installed && !_isBusy ? _toggle : null,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onStop,
-                    icon: const Icon(Icons.stop_rounded, size: 18),
-                    label: const Text('Stop'),
-                  ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _service.installed && !_isBusy
+                            ? () => _action('start')
+                            : null,
+                        icon: const Icon(Icons.play_arrow_rounded),
+                        label: const Text('Start'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _service.installed && !_isBusy
+                            ? () => _action('stop')
+                            : null,
+                        icon: const Icon(Icons.stop_rounded),
+                        label: const Text('Stop'),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.tonalIcon(
-                    onPressed: onRestart,
-                    icon: const Icon(Icons.restart_alt_rounded, size: 18),
-                    label: const Text('Restart'),
-                  ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: _service.installed && !_isBusy
+                            ? () => _action('restart')
+                            : null,
+                        icon: const Icon(Icons.restart_alt_rounded),
+                        label: const Text('Restart'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: _service.installed && !_isBusy
+                            ? () => _action('reload')
+                            : null,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Reload'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ServiceDetailCard extends StatelessWidget {
+  final List<Widget> children;
+
+  const _ServiceDetailCard({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children,
+      ),
+    );
+  }
+}
+
+class _ServiceDetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _ServiceDetailRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 92,
+            child: Text(label, style: LuciTextStyles.cardSubtitle(context)),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -5688,7 +5688,17 @@ class AppState extends ChangeNotifier {
           'command': '/bin/sh',
           'params': [
             '-c',
-            r'IFACE="owrt_wg_client"; PEER="owrt_wg_client_peer"; '
+            r"""find_peer() { uci -q show network | sed -n "s/^network\.\([^=]*\)=['\"]\{0,1\}wireguard_$1['\"]\{0,1\}$/\1/p" | head -n1; }; """
+                r'IFACE="owrt_wg_client"; PEER="$(find_peer "$IFACE")"; '
+                r'if [ "$(uci -q get network.$IFACE.proto 2>/dev/null)" != "wireguard" ]; then '
+                r"""for cand in $(uci -q show network | sed -n "s/^network\.\([^.=]*\)\.proto=['\"]\{0,1\}wireguard['\"]\{0,1\}$/\1/p"); do """
+                r'[ "$cand" = "owrt_wg_server" ] && continue; '
+                r'[ -n "$(uci -q get network.$cand.listen_port 2>/dev/null)" ] && continue; '
+                r'cand_peer="$(find_peer "$cand")"; [ -n "$cand_peer" ] || continue; '
+                r'IFACE="$cand"; PEER="$cand_peer"; break; '
+                r'done; '
+                r'fi; '
+                r'[ -n "$PEER" ] || PEER="$(find_peer "$IFACE")"; '
                 r'installed=0; command -v wg >/dev/null 2>&1 && installed=1; '
                 r'configured=0; [ "$(uci -q get network.$IFACE.proto 2>/dev/null)" = "wireguard" ] && configured=1; '
                 r'enabled=1; [ "$(uci -q get network.$IFACE.disabled 2>/dev/null)" = "1" ] && enabled=0; '

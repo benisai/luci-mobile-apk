@@ -603,7 +603,11 @@ class _VpnScreenState extends ConsumerState<VpnScreen> {
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
             title: const Text('Enable Client'),
-            subtitle: Text(_clientSettings.interfaceName),
+            subtitle: Text(
+              _clientSettings.interfaceName == 'owrt_wg_client'
+                  ? _clientSettings.interfaceName
+                  : 'Detected existing client: ${_clientSettings.interfaceName}',
+            ),
             value: _clientSettings.enabled,
             onChanged: _isSaving ? null : _updateClientEnabled,
           ),
@@ -757,7 +761,7 @@ class _VpnScreenState extends ConsumerState<VpnScreen> {
           const SizedBox(height: 14),
           _WarningBox(
             message:
-                'Saving places this Openwalla WireGuard client interface in the WAN firewall zone and does not modify LAN or WAN interfaces.',
+                'Saving places the Openwalla WireGuard client interface in the WAN firewall zone and does not modify LAN or WAN interfaces.',
           ),
           SizedBox(
             width: double.infinity,

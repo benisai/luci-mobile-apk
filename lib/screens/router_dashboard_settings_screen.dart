@@ -688,6 +688,20 @@ class _RouterDashboardSettingsScreenState
                   _onPreferenceChanged();
                 },
               ),
+              _buildCardVisibilitySwitch(
+                title: 'VPN Shortcut',
+                subtitle: 'Show the WireGuard VPN shortcut on the dashboard',
+                icon: Icons.vpn_key_rounded,
+                value: _preferences.showVpnShortcut,
+                onChanged: (value) {
+                  setState(() {
+                    _preferences = _preferences.copyWith(
+                      showVpnShortcut: value,
+                    );
+                  });
+                  _onPreferenceChanged();
+                },
+              ),
             ],
           ),
         ),

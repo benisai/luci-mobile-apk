@@ -13,6 +13,7 @@ class DashboardPreferences {
   final bool showWifiShortcut;
   final bool showSmartQueueShortcut;
   final bool showAdblockShortcut;
+  final bool showVpnShortcut;
   final int shortcutPanelVisibleCount;
   final DashboardFlowMode flowMode;
 
@@ -29,6 +30,7 @@ class DashboardPreferences {
     this.showWifiShortcut = true,
     this.showSmartQueueShortcut = true,
     this.showAdblockShortcut = true,
+    this.showVpnShortcut = true,
     this.shortcutPanelVisibleCount = 6,
     this.flowMode = DashboardFlowMode.detailed,
   }) : enabledWirelessInterfaces = enabledWirelessInterfaces ?? {},
@@ -47,6 +49,7 @@ class DashboardPreferences {
     bool? showWifiShortcut,
     bool? showSmartQueueShortcut,
     bool? showAdblockShortcut,
+    bool? showVpnShortcut,
     int? shortcutPanelVisibleCount,
     DashboardFlowMode? flowMode,
   }) {
@@ -68,6 +71,7 @@ class DashboardPreferences {
       showSmartQueueShortcut:
           showSmartQueueShortcut ?? this.showSmartQueueShortcut,
       showAdblockShortcut: showAdblockShortcut ?? this.showAdblockShortcut,
+      showVpnShortcut: showVpnShortcut ?? this.showVpnShortcut,
       shortcutPanelVisibleCount:
           shortcutPanelVisibleCount ?? this.shortcutPanelVisibleCount,
       flowMode: flowMode ?? this.flowMode,
@@ -87,6 +91,7 @@ class DashboardPreferences {
     'showWifiShortcut': showWifiShortcut,
     'showSmartQueueShortcut': showSmartQueueShortcut,
     'showAdblockShortcut': showAdblockShortcut,
+    'showVpnShortcut': showVpnShortcut,
     'shortcutPanelVisibleCount': shortcutPanelVisibleCount,
     'flowMode': flowMode.name,
   };
@@ -109,6 +114,7 @@ class DashboardPreferences {
       showWifiShortcut: json['showWifiShortcut'] ?? true,
       showSmartQueueShortcut: json['showSmartQueueShortcut'] ?? true,
       showAdblockShortcut: json['showAdblockShortcut'] ?? true,
+      showVpnShortcut: json['showVpnShortcut'] ?? true,
       shortcutPanelVisibleCount: _parseShortcutPanelVisibleCount(
         json['shortcutPanelVisibleCount'],
       ),

@@ -1214,16 +1214,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           );
         },
       ),
-      _DashboardShortcutData(
-        label: 'VPN',
-        icon: Icons.vpn_key_rounded,
-        color: _shortcutDarkBlue,
-        onTap: () {
-          Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (context) => const VpnScreen()));
-        },
-      ),
+      if (preferences.showVpnShortcut)
+        _DashboardShortcutData(
+          label: 'VPN',
+          icon: Icons.vpn_key_rounded,
+          color: _shortcutDarkBlue,
+          onTap: () {
+            Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (context) => const VpnScreen()));
+          },
+        ),
     ];
 
     return _buildOpenwallaCard(
