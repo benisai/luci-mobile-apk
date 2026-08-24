@@ -13,6 +13,7 @@ class DashboardPreferences {
   final bool showWifiShortcut;
   final bool showSmartQueueShortcut;
   final bool showAdblockShortcut;
+  final int shortcutPanelVisibleCount;
   final DashboardFlowMode flowMode;
 
   DashboardPreferences({
@@ -28,6 +29,7 @@ class DashboardPreferences {
     this.showWifiShortcut = true,
     this.showSmartQueueShortcut = true,
     this.showAdblockShortcut = true,
+    this.shortcutPanelVisibleCount = 6,
     this.flowMode = DashboardFlowMode.detailed,
   }) : enabledWirelessInterfaces = enabledWirelessInterfaces ?? {},
        enabledWiredInterfaces = enabledWiredInterfaces ?? {};
@@ -45,6 +47,7 @@ class DashboardPreferences {
     bool? showWifiShortcut,
     bool? showSmartQueueShortcut,
     bool? showAdblockShortcut,
+    int? shortcutPanelVisibleCount,
     DashboardFlowMode? flowMode,
   }) {
     return DashboardPreferences(
@@ -65,6 +68,8 @@ class DashboardPreferences {
       showSmartQueueShortcut:
           showSmartQueueShortcut ?? this.showSmartQueueShortcut,
       showAdblockShortcut: showAdblockShortcut ?? this.showAdblockShortcut,
+      shortcutPanelVisibleCount:
+          shortcutPanelVisibleCount ?? this.shortcutPanelVisibleCount,
       flowMode: flowMode ?? this.flowMode,
     );
   }
@@ -82,6 +87,7 @@ class DashboardPreferences {
     'showWifiShortcut': showWifiShortcut,
     'showSmartQueueShortcut': showSmartQueueShortcut,
     'showAdblockShortcut': showAdblockShortcut,
+    'shortcutPanelVisibleCount': shortcutPanelVisibleCount,
     'flowMode': flowMode.name,
   };
 
@@ -103,11 +109,19 @@ class DashboardPreferences {
       showWifiShortcut: json['showWifiShortcut'] ?? true,
       showSmartQueueShortcut: json['showSmartQueueShortcut'] ?? true,
       showAdblockShortcut: json['showAdblockShortcut'] ?? true,
+      shortcutPanelVisibleCount: _parseShortcutPanelVisibleCount(
+        json['shortcutPanelVisibleCount'],
+      ),
       flowMode: DashboardFlowMode.values.firstWhere(
         (mode) => mode.name == json['flowMode']?.toString(),
         orElse: () => DashboardFlowMode.detailed,
       ),
     );
+  }
+
+  static int _parseShortcutPanelVisibleCount(dynamic value) {
+    final parsed = value is int ? value : int.tryParse(value?.toString() ?? '');
+    return parsed == 3 ? 3 : 6;
   }
 
   static DashboardPreferences get defaultPreferences => DashboardPreferences();

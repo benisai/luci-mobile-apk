@@ -401,6 +401,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
                     title: 'Network Interfaces',
                     showThroughput: false,
                     showDashboardCards: false,
+                    showShortcutPanel: false,
                     showWirelessInterfaces: false,
                     embedded: true,
                   ),

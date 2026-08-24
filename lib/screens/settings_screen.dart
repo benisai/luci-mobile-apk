@@ -131,6 +131,23 @@ class SettingsScreen extends ConsumerWidget {
                       const RouterDashboardSettingsScreen(
                         title: 'Dashboard Cards',
                         showThroughput: false,
+                        showShortcutPanel: false,
+                        showWirelessInterfaces: false,
+                        showWiredInterfaces: false,
+                      ),
+                    ),
+                  ),
+                  _buildSettingsCard(
+                    context: context,
+                    icon: Icons.apps_rounded,
+                    title: 'Shortcut Panel',
+                    subtitle: 'Choose shortcut density and visible shortcuts',
+                    onTap: () => _openSettingsPage(
+                      context,
+                      const RouterDashboardSettingsScreen(
+                        title: 'Shortcut Panel',
+                        showThroughput: false,
+                        showDashboardCards: false,
                         showWirelessInterfaces: false,
                         showWiredInterfaces: false,
                       ),
@@ -149,6 +166,7 @@ class SettingsScreen extends ConsumerWidget {
                       const RouterDashboardSettingsScreen(
                         title: 'Live Throughput Monitoring',
                         showDashboardCards: false,
+                        showShortcutPanel: false,
                         showWirelessInterfaces: false,
                         showWiredInterfaces: false,
                       ),

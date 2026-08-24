@@ -1203,24 +1203,56 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
     return _buildOpenwallaCard(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      child: GridView.count(
-        crossAxisCount: 3,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        childAspectRatio: 1.08,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 6,
-        children: shortcuts
-            .map(
-              (shortcut) => _buildDashboardShortcut(
-                label: shortcut.label,
-                icon: shortcut.icon,
-                color: shortcut.color,
-                onTap: shortcut.onTap,
-              ),
-            )
-            .toList(),
-      ),
+      child: preferences.shortcutPanelVisibleCount == 3
+          ? _buildScrollableShortcutPanel(shortcuts)
+          : GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              childAspectRatio: 1.08,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 6,
+              children: shortcuts
+                  .map(
+                    (shortcut) => _buildDashboardShortcut(
+                      label: shortcut.label,
+                      icon: shortcut.icon,
+                      color: shortcut.color,
+                      onTap: shortcut.onTap,
+                    ),
+                  )
+                  .toList(),
+            ),
+    );
+  }
+
+  Widget _buildScrollableShortcutPanel(List<_DashboardShortcutData> shortcuts) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 6.0;
+        final itemWidth = (constraints.maxWidth - spacing * 2) / 3;
+        return SizedBox(
+          height: 98,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            itemCount: shortcuts.length,
+            separatorBuilder: (_, _) => const SizedBox(width: spacing),
+            itemBuilder: (context, index) {
+              final shortcut = shortcuts[index];
+              return SizedBox(
+                width: itemWidth.clamp(92.0, 136.0),
+                child: _buildDashboardShortcut(
+                  label: shortcut.label,
+                  icon: shortcut.icon,
+                  color: shortcut.color,
+                  onTap: shortcut.onTap,
+                ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 

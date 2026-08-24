@@ -13,6 +13,7 @@ class RouterDashboardSettingsScreen extends ConsumerStatefulWidget {
   final String? routerId;
   final bool showThroughput;
   final bool showDashboardCards;
+  final bool showShortcutPanel;
   final bool showWirelessInterfaces;
   final bool showWiredInterfaces;
   final String? title;
@@ -23,6 +24,7 @@ class RouterDashboardSettingsScreen extends ConsumerStatefulWidget {
     this.routerId,
     this.showThroughput = true,
     this.showDashboardCards = true,
+    this.showShortcutPanel = true,
     this.showWirelessInterfaces = true,
     this.showWiredInterfaces = true,
     this.title,
@@ -556,6 +558,93 @@ class _RouterDashboardSettingsScreenState
                   _onPreferenceChanged();
                 },
               ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildShortcutPanelSection() {
+    return _buildSection(
+      title: 'Shortcut Panel',
+      subtitle: 'Choose the panel density and visible dashboard shortcuts',
+      icon: Icons.apps_rounded,
+      initiallyExpanded: true,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: [
+              RadioListTile<int>(
+                title: Text(
+                  'Compact',
+                  style: LuciTextStyles.detailValue(
+                    context,
+                  ).copyWith(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  'Show 3 shortcuts at a time in a scrolling row',
+                  style: LuciTextStyles.cardSubtitle(context),
+                ),
+                secondary: Icon(
+                  Icons.view_week_rounded,
+                  size: 22,
+                  color: _preferences.shortcutPanelVisibleCount == 3
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                value: 3,
+                groupValue: _preferences.shortcutPanelVisibleCount,
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _preferences = _preferences.copyWith(
+                      shortcutPanelVisibleCount: value,
+                    );
+                  });
+                  _onPreferenceChanged();
+                },
+                activeColor: Theme.of(context).colorScheme.primary,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+              RadioListTile<int>(
+                title: Text(
+                  'Standard',
+                  style: LuciTextStyles.detailValue(
+                    context,
+                  ).copyWith(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  'Show 6 shortcuts in the dashboard panel',
+                  style: LuciTextStyles.cardSubtitle(context),
+                ),
+                secondary: Icon(
+                  Icons.grid_view_rounded,
+                  size: 22,
+                  color: _preferences.shortcutPanelVisibleCount == 6
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                value: 6,
+                groupValue: _preferences.shortcutPanelVisibleCount,
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _preferences = _preferences.copyWith(
+                      shortcutPanelVisibleCount: value,
+                    );
+                  });
+                  _onPreferenceChanged();
+                },
+                activeColor: Theme.of(context).colorScheme.primary,
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
               const Divider(height: 1),
               _buildCardVisibilitySwitch(
                 title: 'Wi-Fi Shortcut',
@@ -857,6 +946,7 @@ class _RouterDashboardSettingsScreenState
           children: [
             if (widget.showThroughput) _buildThroughputSection(),
             if (widget.showDashboardCards) _buildDashboardCardsSection(),
+            if (widget.showShortcutPanel) _buildShortcutPanelSection(),
             if (widget.showWirelessInterfaces)
               _buildWirelessInterfacesSection(),
             if (widget.showWiredInterfaces) _buildWiredInterfacesSection(),
