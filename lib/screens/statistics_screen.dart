@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/screens/monthly_usage_screen.dart';
 import 'package:luci_mobile/screens/router_setup_screen.dart';
+import 'package:luci_mobile/screens/usage_settings_screen.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/widgets/luci_refresh_components.dart';
@@ -44,13 +45,23 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
 
     if (appState.isDashboardLoading && appState.dashboardData == null) {
       return const Scaffold(
-        appBar: LuciAppBar(title: 'Statistics'),
+        appBar: LuciAppBar(title: 'Statistics', showBack: true),
         body: LuciLoadingWidget(),
       );
     }
 
     return Scaffold(
-      appBar: const LuciAppBar(title: 'Statistics'),
+      appBar: LuciAppBar(
+        title: 'Statistics',
+        showBack: true,
+        actions: [
+          IconButton(
+            tooltip: 'Usage settings',
+            icon: const Icon(Icons.settings_rounded),
+            onPressed: _openUsageSettings,
+          ),
+        ],
+      ),
       body: SafeArea(
         bottom: false,
         child: LuciPullToRefresh(
@@ -122,6 +133,12 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (context) => const RouterSetupScreen()));
+  }
+
+  void _openUsageSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const UsageSettingsScreen()),
+    );
   }
 
   String _primaryUsageInterfaceName(AppState appState) {

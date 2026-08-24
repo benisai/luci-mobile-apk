@@ -35,6 +35,24 @@ class DnsMonitorSettings {
   const DnsMonitorSettings({required this.hostname});
 }
 
+class OpenwallaServiceStatus {
+  final String name;
+  final String label;
+  final bool installed;
+  final bool enabled;
+  final bool running;
+  final String statusText;
+
+  const OpenwallaServiceStatus({
+    required this.name,
+    required this.label,
+    required this.installed,
+    required this.enabled,
+    required this.running,
+    required this.statusText,
+  });
+}
+
 class OpenwallaNotification {
   final int id;
   final DateTime timestamp;
@@ -884,6 +902,22 @@ class NetifyFlow {
 
 class AppState extends ChangeNotifier {
   static AppState? _instance;
+  static const Map<String, String> _managedServiceLabels = {
+    'openwalla-ping-monitor': 'Ping Monitor',
+    'openwalla-dns-monitor': 'DNS Monitor',
+    'openwalla-speedtest-monitor': 'Speedtest Monitor',
+    'openwalla-devices-collector': 'Devices Collector',
+    'openwalla-device-bandwidth-collector': 'Bandwidth Collector',
+    'openwalla-connection-flows-collector': 'Simple Flow Collector',
+    'openwalla-netify-collector': 'Detailed Flow Collector',
+    'openwalla-device-quarantine': 'Device Quarantine',
+    'openwalla-state-sync': 'State Sync',
+    'netifyd': 'Netify',
+    'vnstat': 'vnStat',
+    'nlbwmon': 'nlbwmon',
+    'adblock': 'AdBlock',
+    'sqm': 'Smart Queue',
+  };
 
   late final SecureStorageService _secureStorageService;
   IApiService? _apiService;
@@ -5002,6 +5036,122 @@ class AppState extends ChangeNotifier {
       sysauth,
       router.useHttps,
       config: 'openwalla',
+    );
+  }
+
+  Future<List<OpenwallaServiceStatus>> fetchOpenwallaServices({
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      return _managedServiceLabels.entries.map((entry) {
+        final running = entry.key != 'openwalla-netify-collector';
+        return OpenwallaServiceStatus(
+          name: entry.key,
+          label: entry.value,
+          installed: true,
+          enabled: running,
+          running: running,
+          statusText: running ? 'running' : 'stopped',
+        );
+      }).toList();
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    final serviceNames = _managedServiceLabels.keys.join(' ');
+    final result = await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command:
+          'for svc in $serviceNames; do '
+          'if [ -x "/etc/init.d/\$svc" ]; then '
+          'status="\$(/etc/init.d/\$svc status 2>&1 || true)"; '
+          'enabled=0; /etc/init.d/\$svc enabled >/dev/null 2>&1 && enabled=1; '
+          'running=0; echo "\$status" | grep -Eiq "running|active with|started" && running=1; '
+          'status="\$(printf "%s" "\$status" | tr "\\n\\r|" "   " | sed "s/[[:space:]][[:space:]]*/ /g")"; '
+          'printf "%s|1|%s|%s|%s\\n" "\$svc" "\$enabled" "\$running" "\$status"; '
+          'else printf "%s|0|0|0|not installed\\n" "\$svc"; fi; '
+          'done',
+    );
+
+    final output = _commandOutput(result);
+    return output
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .map(_parseServiceStatusLine)
+        .whereType<OpenwallaServiceStatus>()
+        .toList();
+  }
+
+  OpenwallaServiceStatus? _parseServiceStatusLine(String line) {
+    final parts = line.split('|');
+    if (parts.length < 5) return null;
+    final name = parts[0];
+    final label = _managedServiceLabels[name];
+    if (label == null) return null;
+    return OpenwallaServiceStatus(
+      name: name,
+      label: label,
+      installed: parts[1] == '1',
+      enabled: parts[2] == '1',
+      running: parts[3] == '1',
+      statusText: parts.sublist(4).join('|').trim(),
+    );
+  }
+
+  Future<void> setOpenwallaServiceEnabled(
+    String serviceName,
+    bool enabled, {
+    BuildContext? context,
+  }) async {
+    if (!_managedServiceLabels.containsKey(serviceName)) {
+      throw Exception('Unsupported service: $serviceName');
+    }
+    if (_reviewerModeEnabled) return;
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw Exception('Router is not connected');
+    }
+
+    final action = enabled ? 'enable' : 'disable';
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command:
+          '[ -x /etc/init.d/$serviceName ] && /etc/init.d/$serviceName $action',
+    );
+  }
+
+  Future<void> restartOpenwallaService(
+    String serviceName, {
+    BuildContext? context,
+  }) async {
+    if (!_managedServiceLabels.containsKey(serviceName)) {
+      throw Exception('Unsupported service: $serviceName');
+    }
+    if (_reviewerModeEnabled) return;
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw Exception('Router is not connected');
+    }
+
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command:
+          '[ -x /etc/init.d/$serviceName ] && /etc/init.d/$serviceName restart',
     );
   }
 

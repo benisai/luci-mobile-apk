@@ -172,46 +172,6 @@ class SettingsScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  _buildSettingsCard(
-                    context: context,
-                    icon: Icons.network_ping_rounded,
-                    title: 'Ping Settings',
-                    subtitle:
-                        'Configure latency monitoring and alert thresholds',
-                    onTap: () =>
-                        _openSettingsPage(context, const _PingSettingsScreen()),
-                  ),
-                  _buildSettingsCard(
-                    context: context,
-                    icon: Icons.dns_rounded,
-                    title: 'DNS Test Settings',
-                    subtitle: 'Configure DNS hostname monitoring',
-                    onTap: () => _openSettingsPage(
-                      context,
-                      const _DnsTestSettingsScreen(),
-                    ),
-                  ),
-                  _buildSettingsCard(
-                    context: context,
-                    icon: Icons.speed_rounded,
-                    title: 'Speedtest Settings',
-                    subtitle: 'Configure scheduled speed tests',
-                    onTap: () => _openSettingsPage(
-                      context,
-                      const _SpeedtestSettingsScreen(),
-                    ),
-                  ),
-                  _buildSettingsCard(
-                    context: context,
-                    icon: Icons.bar_chart_rounded,
-                    title: 'Usage Settings',
-                    subtitle:
-                        'Choose the vnStat interface used for usage graphs',
-                    onTap: () => _openSettingsPage(
-                      context,
-                      const _MonthlyUsageSettingsScreen(),
-                    ),
-                  ),
                   if (appState.reviewerModeEnabled) ...[
                     const Divider(height: 32),
                     Padding(

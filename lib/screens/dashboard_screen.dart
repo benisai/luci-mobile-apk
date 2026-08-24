@@ -19,6 +19,7 @@ import 'package:luci_mobile/screens/rules_screen.dart';
 import 'package:luci_mobile/screens/router_setup_screen.dart';
 import 'package:luci_mobile/screens/simple_flows_screen.dart';
 import 'package:luci_mobile/screens/routes_screen.dart';
+import 'package:luci_mobile/screens/services_screen.dart';
 import 'package:luci_mobile/screens/smart_queue_screen.dart';
 import 'package:luci_mobile/screens/system_resources_screen.dart';
 import 'package:luci_mobile/models/router.dart' as model;
@@ -1214,6 +1215,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             );
           },
         ),
+      _DashboardShortcutData(
+        label: 'Services',
+        icon: Icons.miscellaneous_services_rounded,
+        color: _openwallaGreen,
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (context) => const ServicesScreen()),
+          );
+        },
+      ),
     ];
 
     return _buildOpenwallaCard(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
+import 'package:luci_mobile/screens/network_performance_settings_screen.dart';
 import 'package:luci_mobile/screens/router_setup_screen.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
@@ -120,7 +121,17 @@ class _NetworkPerformanceScreenState
     final samples = _freshSamples ?? dashboardSamples;
 
     return Scaffold(
-      appBar: const LuciAppBar(title: 'Network Performance', showBack: true),
+      appBar: LuciAppBar(
+        title: 'Network Performance',
+        showBack: true,
+        actions: [
+          IconButton(
+            tooltip: 'Performance settings',
+            icon: const Icon(Icons.settings_rounded),
+            onPressed: _openPerformanceSettings,
+          ),
+        ],
+      ),
       body: SafeArea(
         top: false,
         child: RefreshIndicator(
@@ -172,6 +183,14 @@ class _NetworkPerformanceScreenState
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (context) => const RouterSetupScreen()));
+  }
+
+  void _openPerformanceSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const NetworkPerformanceSettingsScreen(),
+      ),
+    );
   }
 }
 

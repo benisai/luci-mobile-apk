@@ -470,6 +470,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
     return Scaffold(
       appBar: LuciAppBar(
         title: widget.wirelessOnly ? 'Wi-Fi' : 'Network',
+        showBack: true,
         actions: widget.wirelessOnly
             ? null
             : [
