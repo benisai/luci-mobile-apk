@@ -32,6 +32,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   Future<List<NlbwDeviceUsage>>? _topDevicesFuture;
   Future<List<NlbwProtocolUsage>>? _protocolUsageFuture;
   final Map<String, Future<List<VnstatUsageSample>>> _usageFutures = {};
+  final PageController _usageRangeController = PageController(
+    initialPage: _StatsUsageRange.day.index,
+  );
 
   @override
   void initState() {
@@ -42,12 +45,22 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   }
 
   @override
+  void dispose() {
+    _usageRangeController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final appState = ref.watch(appStateProvider);
 
     if (appState.isDashboardLoading && appState.dashboardData == null) {
-      return const Scaffold(
-        appBar: LuciAppBar(title: 'Statistics', showBack: true),
+      return Scaffold(
+        appBar: LuciAppBar(
+          title: 'Statistics',
+          showBack: true,
+          onBack: _backToDashboard,
+        ),
         body: LuciLoadingWidget(),
       );
     }
@@ -56,6 +69,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
       appBar: LuciAppBar(
         title: 'Statistics',
         showBack: true,
+        onBack: _backToDashboard,
         actions: [
           IconButton(
             tooltip: 'Usage settings',
@@ -161,6 +175,10 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     );
   }
 
+  void _backToDashboard() {
+    ref.read(appStateProvider).requestTab(0);
+  }
+
   String _primaryUsageInterfaceName(AppState appState) {
     final interfaces =
         appState.dashboardData?['interfaceDump']?['interface']
@@ -219,31 +237,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _titleRow('$interfaceName Daily Usage', trailing: _rangePicker()),
-          const SizedBox(height: 8),
-          Text(
-            _usageSubtitle(_usageRange),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(
-                context,
-              ).colorScheme.onSurfaceVariant.withValues(alpha: 0.78),
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0,
-            ),
-          ),
-          const SizedBox(height: 20),
-          FutureBuilder<List<VnstatUsageSample>>(
-            future: _usageFuture(_usageRange, interfaceName),
-            builder: (context, snapshot) {
-              final samples = _usageSamplesForRange(
-                _usageRange,
-                snapshot.data ?? const [],
-              );
-              return _usageLineGraph(samples);
-            },
-          ),
-          const SizedBox(height: 18),
-          _usageLegend(),
+          _titleRow('$interfaceName Usage'),
+          const SizedBox(height: 14),
+          _usageRangePager(interfaceName),
         ],
       ),
     );
@@ -466,46 +462,92 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     };
   }
 
-  Widget _rangePicker() {
-    final colorScheme = Theme.of(context).colorScheme;
-    return PopupMenuButton<_StatsUsageRange>(
-      initialValue: _usageRange,
-      onSelected: (range) => setState(() => _usageRange = range),
-      itemBuilder: (context) => _StatsUsageRange.values
-          .map(
-            (range) => PopupMenuItem<_StatsUsageRange>(
-              value: range,
-              child: Text(_usageRangeLabel(range)),
-            ),
-          )
-          .toList(),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.34),
-          border: Border.all(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.55),
+  Widget _usageRangePager(String interfaceName) {
+    return Column(
+      children: [
+        SizedBox(
+          height: 336,
+          child: PageView.builder(
+            controller: _usageRangeController,
+            physics: const BouncingScrollPhysics(),
+            onPageChanged: (index) {
+              setState(() => _usageRange = _StatsUsageRange.values[index]);
+            },
+            itemCount: _StatsUsageRange.values.length,
+            itemBuilder: (context, index) {
+              final range = _StatsUsageRange.values[index];
+              return _usageRangePage(interfaceName, range);
+            },
           ),
-          borderRadius: BorderRadius.circular(20),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        const SizedBox(height: 6),
+        _usageRangeDots(),
+      ],
+    );
+  }
+
+  Widget _usageRangePage(String interfaceName, _StatsUsageRange range) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
+            Expanded(
+              child: Text(
+                _usageRangeLabel(range),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                ),
+              ),
+            ),
             Text(
-              _usageRangeLabel(_usageRange),
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: FontWeight.w800,
+              _usageSubtitle(range),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurfaceVariant.withValues(alpha: 0.78),
+                fontWeight: FontWeight.w700,
                 letterSpacing: 0,
               ),
             ),
-            const SizedBox(width: 6),
-            Icon(
-              Icons.keyboard_arrow_down_rounded,
-              size: 18,
-              color: colorScheme.onSurfaceVariant,
-            ),
           ],
+        ),
+        const SizedBox(height: 16),
+        FutureBuilder<List<VnstatUsageSample>>(
+          future: _usageFuture(range, interfaceName),
+          builder: (context, snapshot) {
+            final samples = _usageSamplesForRange(
+              range,
+              snapshot.data ?? const [],
+            );
+            return _usageLineGraph(samples);
+          },
+        ),
+        const SizedBox(height: 12),
+        _usageLegend(),
+      ],
+    );
+  }
+
+  Widget _usageRangeDots() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(
+        _StatsUsageRange.values.length,
+        (index) => AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          width: _usageRange.index == index ? 16 : 6,
+          height: 6,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          decoration: BoxDecoration(
+            color: _usageRange.index == index
+                ? colorScheme.primary
+                : colorScheme.onSurfaceVariant.withValues(alpha: 0.34),
+            borderRadius: BorderRadius.circular(999),
+          ),
         ),
       ),
     );

@@ -915,18 +915,26 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
           child: _buildStatsRow(context, interface.stats),
         ),
         if (canEditLan) ...[
-          const SizedBox(height: 6),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: OutlinedButton.icon(
-                onPressed: () => _showEditInterfaceSheet(interface),
-                icon: const Icon(Icons.edit_rounded, size: 18),
-                label: const Text('Edit LAN'),
+          const SizedBox(height: 8),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          const SizedBox(height: 12),
+          Center(
+            child: FilledButton.tonalIcon(
+              onPressed: () => _showEditInterfaceSheet(interface),
+              icon: const Icon(Icons.tune_rounded, size: 18),
+              label: const Text('Edit LAN Settings'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
               ),
             ),
           ),
+          const SizedBox(height: 14),
         ],
       ],
     );

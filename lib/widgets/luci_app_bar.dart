@@ -9,6 +9,7 @@ class LuciAppBar extends StatelessWidget implements PreferredSizeWidget {
   final List<Widget>? actions;
   final Color? backgroundColor;
   final double elevation;
+  final VoidCallback? onBack;
 
   const LuciAppBar({
     super.key,
@@ -19,6 +20,7 @@ class LuciAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.actions,
     this.backgroundColor,
     this.elevation = 0.0,
+    this.onBack,
   });
 
   @override
@@ -37,7 +39,7 @@ class LuciAppBar extends StatelessWidget implements PreferredSizeWidget {
                 Icons.arrow_back_ios_new_rounded,
                 color: theme.colorScheme.onSurface,
               ),
-              onPressed: () => Navigator.of(context).maybePop(),
+              onPressed: onBack ?? () => Navigator.of(context).maybePop(),
               tooltip: 'Back',
             )
           : null,

@@ -691,7 +691,7 @@ class _RouterDashboardSettingsScreenState
               _buildCardVisibilitySwitch(
                 title: 'VPN Shortcut',
                 subtitle: 'Show the WireGuard VPN shortcut on the dashboard',
-                icon: Icons.vpn_key_rounded,
+                icon: Icons.security_rounded,
                 value: _preferences.showVpnShortcut,
                 onChanged: (value) {
                   setState(() {
@@ -702,11 +702,84 @@ class _RouterDashboardSettingsScreenState
                   _onPreferenceChanged();
                 },
               ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Shortcut Order',
+                    style: LuciTextStyles.detailValue(
+                      context,
+                    ).copyWith(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+              ReorderableListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
+                itemCount: _preferences.shortcutOrder.length,
+                onReorder: (oldIndex, newIndex) {
+                  setState(() {
+                    final order = [..._preferences.shortcutOrder];
+                    if (newIndex > oldIndex) newIndex -= 1;
+                    final item = order.removeAt(oldIndex);
+                    order.insert(newIndex, item);
+                    _preferences = _preferences.copyWith(shortcutOrder: order);
+                  });
+                  _onPreferenceChanged();
+                },
+                itemBuilder: (context, index) {
+                  final id = _preferences.shortcutOrder[index];
+                  return ListTile(
+                    key: ValueKey('shortcut-order-$id'),
+                    dense: true,
+                    leading: Icon(_shortcutIcon(id), size: 20),
+                    title: Text(_shortcutLabel(id)),
+                    trailing: ReorderableDragStartListener(
+                      index: index,
+                      child: Icon(
+                        Icons.drag_handle_rounded,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  );
+                },
+              ),
             ],
           ),
         ),
       ],
     );
+  }
+
+  String _shortcutLabel(String id) {
+    return switch (id) {
+      'network' => 'Network',
+      'dns' => 'DNS',
+      'wifi' => 'Wi-Fi',
+      'routes' => 'Routes',
+      'smart_queue' => 'Smart Queue',
+      'adblock' => 'AdBlock',
+      'services' => 'Services',
+      'vpn' => 'VPN',
+      _ => id,
+    };
+  }
+
+  IconData _shortcutIcon(String id) {
+    return switch (id) {
+      'network' => Icons.public_rounded,
+      'dns' => Icons.dns_rounded,
+      'wifi' => Icons.wifi_rounded,
+      'routes' => Icons.route_rounded,
+      'smart_queue' => Icons.sync_alt_rounded,
+      'adblock' => Icons.block_rounded,
+      'services' => Icons.miscellaneous_services_rounded,
+      'vpn' => Icons.security_rounded,
+      _ => Icons.apps_rounded,
+    };
   }
 
   Widget _buildWirelessInterfacesSection() {

@@ -1148,84 +1148,103 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   Widget _buildDashboardShortcutGrid() {
     final preferences = ref.watch(appStateProvider).dashboardPreferences;
-    final shortcuts = [
-      _DashboardShortcutData(
-        label: 'Network',
-        icon: Icons.public_rounded,
-        color: _openwallaCyan,
-        onTap: () => _openNetworkPage(wirelessOnly: false),
-      ),
-      _DashboardShortcutData(
-        label: 'DNS',
-        icon: Icons.dns_rounded,
-        color: _shortcutYellow,
-        onTap: () {
-          Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (context) => const DnsScreen()));
-        },
-      ),
-      if (preferences.showWifiShortcut)
-        _DashboardShortcutData(
-          label: 'Wi-Fi',
-          icon: Icons.wifi_rounded,
-          color: _shortcutDarkBlue,
-          onTap: () => _openNetworkPage(wirelessOnly: true),
-        ),
-      _DashboardShortcutData(
-        label: 'Routes',
-        icon: Icons.route_rounded,
-        color: _openwallaOrange,
-        onTap: () {
-          Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (context) => const RoutesScreen()));
-        },
-      ),
-      if (preferences.showSmartQueueShortcut)
-        _DashboardShortcutData(
-          label: 'Smart Queue',
-          icon: Icons.sync_alt_rounded,
-          color: _shortcutPurple,
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (context) => const SmartQueueScreen()),
-            );
-          },
-        ),
-      if (preferences.showAdblockShortcut)
-        _DashboardShortcutData(
-          label: 'AdBlock',
-          icon: Icons.block_rounded,
-          color: _shortcutRed,
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (context) => const AdblockScreen()),
-            );
-          },
-        ),
-      _DashboardShortcutData(
-        label: 'Services',
-        icon: Icons.miscellaneous_services_rounded,
-        color: _openwallaGreen,
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (context) => const ServicesScreen()),
-          );
-        },
-      ),
-      if (preferences.showVpnShortcut)
-        _DashboardShortcutData(
-          label: 'VPN',
-          icon: Icons.vpn_key_rounded,
-          color: _shortcutDarkBlue,
-          onTap: () {
-            Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (context) => const VpnScreen()));
-          },
-        ),
-    ];
+    final shortcuts =
+        [
+          _DashboardShortcutData(
+            id: 'network',
+            label: 'Network',
+            icon: Icons.public_rounded,
+            color: _openwallaCyan,
+            onTap: () => _openNetworkPage(wirelessOnly: false),
+          ),
+          _DashboardShortcutData(
+            id: 'dns',
+            label: 'DNS',
+            icon: Icons.dns_rounded,
+            color: _shortcutYellow,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const DnsScreen()),
+              );
+            },
+          ),
+          if (preferences.showWifiShortcut)
+            _DashboardShortcutData(
+              id: 'wifi',
+              label: 'Wi-Fi',
+              icon: Icons.wifi_rounded,
+              color: _shortcutDarkBlue,
+              onTap: () => _openNetworkPage(wirelessOnly: true),
+            ),
+          _DashboardShortcutData(
+            id: 'routes',
+            label: 'Routes',
+            icon: Icons.route_rounded,
+            color: _openwallaOrange,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const RoutesScreen()),
+              );
+            },
+          ),
+          if (preferences.showSmartQueueShortcut)
+            _DashboardShortcutData(
+              id: 'smart_queue',
+              label: 'Smart Queue',
+              icon: Icons.sync_alt_rounded,
+              color: _shortcutPurple,
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const SmartQueueScreen(),
+                  ),
+                );
+              },
+            ),
+          if (preferences.showAdblockShortcut)
+            _DashboardShortcutData(
+              id: 'adblock',
+              label: 'AdBlock',
+              icon: Icons.block_rounded,
+              color: _shortcutRed,
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => const AdblockScreen(),
+                  ),
+                );
+              },
+            ),
+          _DashboardShortcutData(
+            id: 'services',
+            label: 'Services',
+            icon: Icons.miscellaneous_services_rounded,
+            color: _openwallaGreen,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (context) => const ServicesScreen()),
+              );
+            },
+          ),
+          if (preferences.showVpnShortcut)
+            _DashboardShortcutData(
+              id: 'vpn',
+              label: 'VPN',
+              icon: Icons.security_rounded,
+              color: _shortcutDarkBlue,
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (context) => const VpnScreen()),
+                );
+              },
+            ),
+        ]..sort((a, b) {
+          final aIndex = preferences.shortcutOrder.indexOf(a.id);
+          final bIndex = preferences.shortcutOrder.indexOf(b.id);
+          final safeA = aIndex == -1 ? 999 : aIndex;
+          final safeB = bIndex == -1 ? 999 : bIndex;
+          return safeA.compareTo(safeB);
+        });
 
     return _buildOpenwallaCard(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
@@ -1797,12 +1816,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 }
 
 class _DashboardShortcutData {
+  final String id;
   final String label;
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
 
   const _DashboardShortcutData({
+    required this.id,
     required this.label,
     required this.icon,
     required this.color,

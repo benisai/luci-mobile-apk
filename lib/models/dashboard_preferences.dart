@@ -15,6 +15,7 @@ class DashboardPreferences {
   final bool showAdblockShortcut;
   final bool showVpnShortcut;
   final int shortcutPanelVisibleCount;
+  final List<String> shortcutOrder;
   final DashboardFlowMode flowMode;
 
   DashboardPreferences({
@@ -32,9 +33,22 @@ class DashboardPreferences {
     this.showAdblockShortcut = true,
     this.showVpnShortcut = true,
     this.shortcutPanelVisibleCount = 6,
+    List<String>? shortcutOrder,
     this.flowMode = DashboardFlowMode.detailed,
   }) : enabledWirelessInterfaces = enabledWirelessInterfaces ?? {},
-       enabledWiredInterfaces = enabledWiredInterfaces ?? {};
+       enabledWiredInterfaces = enabledWiredInterfaces ?? {},
+       shortcutOrder = shortcutOrder ?? defaultShortcutOrder;
+
+  static const defaultShortcutOrder = [
+    'network',
+    'dns',
+    'wifi',
+    'routes',
+    'smart_queue',
+    'adblock',
+    'services',
+    'vpn',
+  ];
 
   DashboardPreferences copyWith({
     Set<String>? enabledWirelessInterfaces,
@@ -51,6 +65,7 @@ class DashboardPreferences {
     bool? showAdblockShortcut,
     bool? showVpnShortcut,
     int? shortcutPanelVisibleCount,
+    List<String>? shortcutOrder,
     DashboardFlowMode? flowMode,
   }) {
     return DashboardPreferences(
@@ -74,6 +89,7 @@ class DashboardPreferences {
       showVpnShortcut: showVpnShortcut ?? this.showVpnShortcut,
       shortcutPanelVisibleCount:
           shortcutPanelVisibleCount ?? this.shortcutPanelVisibleCount,
+      shortcutOrder: shortcutOrder ?? this.shortcutOrder,
       flowMode: flowMode ?? this.flowMode,
     );
   }
@@ -93,6 +109,7 @@ class DashboardPreferences {
     'showAdblockShortcut': showAdblockShortcut,
     'showVpnShortcut': showVpnShortcut,
     'shortcutPanelVisibleCount': shortcutPanelVisibleCount,
+    'shortcutOrder': shortcutOrder,
     'flowMode': flowMode.name,
   };
 
@@ -118,6 +135,7 @@ class DashboardPreferences {
       shortcutPanelVisibleCount: _parseShortcutPanelVisibleCount(
         json['shortcutPanelVisibleCount'],
       ),
+      shortcutOrder: _parseShortcutOrder(json['shortcutOrder']),
       flowMode: DashboardFlowMode.values.firstWhere(
         (mode) => mode.name == json['flowMode']?.toString(),
         orElse: () => DashboardFlowMode.detailed,
@@ -128,6 +146,20 @@ class DashboardPreferences {
   static int _parseShortcutPanelVisibleCount(dynamic value) {
     final parsed = value is int ? value : int.tryParse(value?.toString() ?? '');
     return parsed == 3 ? 3 : 6;
+  }
+
+  static List<String> _parseShortcutOrder(dynamic value) {
+    final raw = value is List
+        ? value.map((item) => item.toString()).toList()
+        : const <String>[];
+    final clean = raw
+        .where((item) => defaultShortcutOrder.contains(item))
+        .toSet()
+        .toList();
+    return [
+      ...clean,
+      ...defaultShortcutOrder.where((item) => !clean.contains(item)),
+    ];
   }
 
   static DashboardPreferences get defaultPreferences => DashboardPreferences();
