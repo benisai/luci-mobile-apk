@@ -44,14 +44,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   static const double _openwallaRadius = 8;
   Timer? _summaryRefreshTimer;
   bool _summaryRefreshInFlight = false;
-  final ScrollController _shortcutScrollController = ScrollController();
+  final PageController _shortcutPageController = PageController();
   int _shortcutPanelPage = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _shortcutScrollController.addListener(_handleShortcutScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(appStateProvider).fetchDashboardData();
       _startSummaryRefreshTimer();
@@ -61,20 +60,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   @override
   void dispose() {
     _summaryRefreshTimer?.cancel();
-    _shortcutScrollController.removeListener(_handleShortcutScroll);
-    _shortcutScrollController.dispose();
+    _shortcutPageController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
-  }
-
-  void _handleShortcutScroll() {
-    if (!_shortcutScrollController.hasClients) return;
-    final viewportWidth = _shortcutScrollController.position.viewportDimension;
-    if (viewportWidth <= 0) return;
-    final nextPage = (_shortcutScrollController.offset / viewportWidth).round();
-    if (nextPage != _shortcutPanelPage) {
-      setState(() => _shortcutPanelPage = nextPage);
-    }
   }
 
   @override
@@ -1229,57 +1217,61 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
     return _buildOpenwallaCard(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      child: preferences.shortcutPanelVisibleCount == 3
-          ? _buildScrollableShortcutPanel(shortcuts)
-          : GridView.count(
-              crossAxisCount: 3,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: 1.08,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 6,
-              children: shortcuts
-                  .map(
-                    (shortcut) => _buildDashboardShortcut(
-                      label: shortcut.label,
-                      icon: shortcut.icon,
-                      color: shortcut.color,
-                      onTap: shortcut.onTap,
-                    ),
-                  )
-                  .toList(),
-            ),
+      child: _buildPagedShortcutPanel(
+        shortcuts,
+        visibleCount: preferences.shortcutPanelVisibleCount,
+      ),
     );
   }
 
-  Widget _buildScrollableShortcutPanel(List<_DashboardShortcutData> shortcuts) {
+  Widget _buildPagedShortcutPanel(
+    List<_DashboardShortcutData> shortcuts, {
+    required int visibleCount,
+  }) {
     return LayoutBuilder(
       builder: (context, constraints) {
         const spacing = 6.0;
-        final itemWidth = (constraints.maxWidth - spacing * 2) / 3;
-        final pageCount = (shortcuts.length / 3).ceil().clamp(1, 99);
+        final perPage = visibleCount == 3 ? 3 : 6;
+        final pageCount = (shortcuts.length / perPage).ceil().clamp(1, 99);
         final currentPage = _shortcutPanelPage.clamp(0, pageCount - 1);
+        final height = perPage == 3 ? 98.0 : 202.0;
 
         return Column(
           children: [
             SizedBox(
-              height: 98,
-              child: ListView.separated(
-                controller: _shortcutScrollController,
-                scrollDirection: Axis.horizontal,
+              height: height,
+              child: PageView.builder(
+                controller: _shortcutPageController,
                 physics: const BouncingScrollPhysics(),
-                itemCount: shortcuts.length,
-                separatorBuilder: (_, _) => const SizedBox(width: spacing),
-                itemBuilder: (context, index) {
-                  final shortcut = shortcuts[index];
-                  return SizedBox(
-                    width: itemWidth.clamp(92.0, 136.0),
-                    child: _buildDashboardShortcut(
-                      label: shortcut.label,
-                      icon: shortcut.icon,
-                      color: shortcut.color,
-                      onTap: shortcut.onTap,
-                    ),
+                onPageChanged: (page) {
+                  setState(() => _shortcutPanelPage = page);
+                },
+                itemCount: pageCount,
+                itemBuilder: (context, pageIndex) {
+                  final start = pageIndex * perPage;
+                  final pageShortcuts = shortcuts
+                      .skip(start)
+                      .take(perPage)
+                      .toList();
+                  return GridView.count(
+                    crossAxisCount: 3,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    childAspectRatio: 1.08,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: spacing,
+                    children: [
+                      ...pageShortcuts.map(
+                        (shortcut) => _buildDashboardShortcut(
+                          label: shortcut.label,
+                          icon: shortcut.icon,
+                          color: shortcut.color,
+                          onTap: shortcut.onTap,
+                        ),
+                      ),
+                      for (var i = pageShortcuts.length; i < perPage; i++)
+                        const SizedBox.shrink(),
+                    ],
                   );
                 },
               ),

@@ -642,6 +642,36 @@ class VnstatUsageSample {
   });
 }
 
+class NlbwDeviceUsage {
+  final String mac;
+  final String label;
+  final int downloadBytes;
+  final int uploadBytes;
+
+  const NlbwDeviceUsage({
+    required this.mac,
+    required this.label,
+    required this.downloadBytes,
+    required this.uploadBytes,
+  });
+
+  int get totalBytes => downloadBytes + uploadBytes;
+}
+
+class NlbwProtocolUsage {
+  final String protocol;
+  final int downloadBytes;
+  final int uploadBytes;
+
+  const NlbwProtocolUsage({
+    required this.protocol,
+    required this.downloadBytes,
+    required this.uploadBytes,
+  });
+
+  int get totalBytes => downloadBytes + uploadBytes;
+}
+
 class SystemStorageDetails {
   final int userTotalBytes;
   final int userFreeBytes;
@@ -4600,6 +4630,188 @@ class AppState extends ChangeNotifier {
     }
 
     return const [];
+  }
+
+  Future<List<NlbwDeviceUsage>> fetchNlbwTopDevices({
+    int limit = 5,
+    BuildContext? context,
+  }) async {
+    final safeLimit = limit.clamp(1, 20).toInt();
+    if (_reviewerModeEnabled) {
+      return [
+        const NlbwDeviceUsage(
+          mac: 'd0:3f:27:81:6c:17',
+          label: 'WYZE_Living_Room',
+          downloadBytes: 7423913984,
+          uploadBytes: 491782144,
+        ),
+        const NlbwDeviceUsage(
+          mac: '8c:85:90:aa:10:44',
+          label: 'Pixel',
+          downloadBytes: 2193629184,
+          uploadBytes: 71303168,
+        ),
+        const NlbwDeviceUsage(
+          mac: '54:ef:44:20:a9:71',
+          label: 'Laptop',
+          downloadBytes: 914358272,
+          uploadBytes: 129499136,
+        ),
+      ].take(safeLimit).toList();
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'file',
+        method: 'exec',
+        params: {
+          'command': '/bin/sh',
+          'params': [
+            '-c',
+            'command -v nlbw >/dev/null 2>&1 || exit 0; '
+                'nlbw -c csv -g mac -o -rx_bytes -q 2>/dev/null | '
+                'awk -v limit="$safeLimit" \''
+                'BEGIN { OFS="|" } '
+                'NR == 1 { for (i = 1; i <= NF; i++) idx[\$i] = i; next } '
+                'NF > 0 && rows < limit { '
+                'mac=tolower(\$idx["mac"]); rx=\$idx["rx_bytes"]+0; tx=\$idx["tx_bytes"]+0; '
+                'if (mac ~ /^([0-9a-f][0-9a-f]:){5}[0-9a-f][0-9a-f]\$/ && mac != "00:00:00:00:00:00") { print mac, rx, tx; rows++ } '
+                '}\'',
+          ],
+        },
+        context: context,
+      );
+      return _parseNlbwDeviceUsage(_commandOutput(result));
+    } catch (e, stack) {
+      Logger.warning('Optional nlbw top devices fetch failed: $e');
+      Logger.debug('Optional nlbw top devices stack: $stack');
+      return const [];
+    }
+  }
+
+  Future<List<NlbwProtocolUsage>> fetchNlbwProtocolUsage({
+    int limit = 5,
+    BuildContext? context,
+  }) async {
+    final safeLimit = limit.clamp(1, 20).toInt();
+    if (_reviewerModeEnabled) {
+      return [
+        const NlbwProtocolUsage(
+          protocol: 'Web & Streaming',
+          downloadBytes: 8430000000,
+          uploadBytes: 411000000,
+        ),
+        const NlbwProtocolUsage(
+          protocol: 'Other',
+          downloadBytes: 432350000,
+          uploadBytes: 21200000,
+        ),
+        const NlbwProtocolUsage(
+          protocol: 'Communication',
+          downloadBytes: 12330000,
+          uploadBytes: 4812000,
+        ),
+      ].take(safeLimit).toList();
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    for (final group in const ['layer7', 'proto', 'port']) {
+      try {
+        final result = await _apiService!.call(
+          router.ipAddress,
+          sysauth,
+          router.useHttps,
+          object: 'file',
+          method: 'exec',
+          params: {
+            'command': '/bin/sh',
+            'params': [
+              '-c',
+              'command -v nlbw >/dev/null 2>&1 || exit 0; '
+                  'nlbw -c csv -g $group -o -rx_bytes -q 2>/dev/null | '
+                  'awk -v limit="$safeLimit" -v group="$group" \''
+                  'BEGIN { OFS="|" } '
+                  'NR == 1 { for (i = 1; i <= NF; i++) idx[\$i] = i; next } '
+                  'NF > 0 && rows < limit { '
+                  'name=\$idx[group]; '
+                  'if (name == "" && group == "layer7") name=\$idx["layer7"]; '
+                  'if (name == "" && group == "proto") name=\$idx["proto"]; '
+                  'if (name == "" && group == "port") name=\$idx["port"]; '
+                  'rx=\$idx["rx_bytes"]+0; tx=\$idx["tx_bytes"]+0; '
+                  'if (name != "" && (rx > 0 || tx > 0)) { print name, rx, tx; rows++ } '
+                  '}\'',
+            ],
+          },
+          context: context,
+        );
+        final rows = _parseNlbwProtocolUsage(_commandOutput(result));
+        if (rows.isNotEmpty) return rows;
+      } catch (e, stack) {
+        Logger.debug('Optional nlbw protocol group $group failed: $e');
+        Logger.debug('Optional nlbw protocol stack: $stack');
+      }
+    }
+
+    return const [];
+  }
+
+  List<NlbwDeviceUsage> _parseNlbwDeviceUsage(String output) {
+    return output
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .map((line) {
+          final parts = line.split('|');
+          if (parts.length < 3) return null;
+          final mac = parts[0].trim();
+          final download = int.tryParse(parts[1].trim()) ?? 0;
+          final upload = int.tryParse(parts[2].trim()) ?? 0;
+          return NlbwDeviceUsage(
+            mac: mac,
+            label: mac,
+            downloadBytes: download,
+            uploadBytes: upload,
+          );
+        })
+        .whereType<NlbwDeviceUsage>()
+        .where((row) => row.totalBytes > 0)
+        .toList();
+  }
+
+  List<NlbwProtocolUsage> _parseNlbwProtocolUsage(String output) {
+    return output
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .map((line) {
+          final parts = line.split('|');
+          if (parts.length < 3) return null;
+          final protocol = parts[0].trim();
+          final download = int.tryParse(parts[1].trim()) ?? 0;
+          final upload = int.tryParse(parts[2].trim()) ?? 0;
+          return NlbwProtocolUsage(
+            protocol: protocol.isEmpty ? 'Other' : protocol,
+            downloadBytes: download,
+            uploadBytes: upload,
+          );
+        })
+        .whereType<NlbwProtocolUsage>()
+        .where((row) => row.totalBytes > 0)
+        .toList();
   }
 
   List<String> _parseVnstatIfList(String output) {

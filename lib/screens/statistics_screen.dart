@@ -29,6 +29,8 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   _StatsUsageRange _usageRange = _StatsUsageRange.day;
   Future<MonthlyUsageSettings>? _monthlyUsageSettingsFuture;
   Future<bool>? _statisticsSupportFuture;
+  Future<List<NlbwDeviceUsage>>? _topDevicesFuture;
+  Future<List<NlbwProtocolUsage>>? _protocolUsageFuture;
   final Map<String, Future<List<VnstatUsageSample>>> _usageFutures = {};
 
   @override
@@ -69,6 +71,8 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
             _usageFutures.clear();
             _monthlyUsageSettingsFuture = null;
             _statisticsSupportFuture = null;
+            _topDevicesFuture = null;
+            _protocolUsageFuture = null;
             await appState.fetchDashboardData();
           },
           child: ListView(
@@ -104,6 +108,10 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                           _buildMonthlyUsageCard(interfaceName),
                           const SizedBox(height: 12),
                           _buildUsageCard(interfaceName),
+                          const SizedBox(height: 12),
+                          _buildTopDevicesCard(),
+                          const SizedBox(height: 12),
+                          _buildActivityAnalysisCard(),
                         ],
                       );
                     },
@@ -127,6 +135,18 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     return _statisticsSupportFuture ??= ref
         .read(appStateProvider)
         .hasStatisticsSupport(context: context);
+  }
+
+  Future<List<NlbwDeviceUsage>> _topDevices() {
+    return _topDevicesFuture ??= ref
+        .read(appStateProvider)
+        .fetchNlbwTopDevices(limit: 5);
+  }
+
+  Future<List<NlbwProtocolUsage>> _protocolUsage() {
+    return _protocolUsageFuture ??= ref
+        .read(appStateProvider)
+        .fetchNlbwProtocolUsage(limit: 5);
   }
 
   void _openRouterSetup() {
@@ -284,6 +304,100 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
             builder: (context, snapshot) {
               final summary = _monthlySummary(snapshot.data ?? const []);
               return _progressBar(summary.progress);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopDevicesCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _titleRow('Top Devices'),
+          const SizedBox(height: 16),
+          FutureBuilder<List<NlbwDeviceUsage>>(
+            future: _topDevices(),
+            builder: (context, snapshot) {
+              final rows = snapshot.data ?? const <NlbwDeviceUsage>[];
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  rows.isEmpty) {
+                return const SizedBox(
+                  height: 92,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (rows.isEmpty) {
+                return _emptyStatText('No nlbwmon device usage yet');
+              }
+
+              final maxBytes = rows.map((row) => row.totalBytes).reduce(max);
+              return Column(
+                children: rows
+                    .map(
+                      (row) => _usageBreakdownRow(
+                        icon: Icons.devices_rounded,
+                        iconColor: _cyan,
+                        title: row.label,
+                        subtitle:
+                            'Down ${_formatUsageTotal(row.downloadBytes)}  Up ${_formatUsageTotal(row.uploadBytes)}',
+                        totalBytes: row.totalBytes,
+                        maxBytes: maxBytes,
+                      ),
+                    )
+                    .toList(),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActivityAnalysisCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _titleRow('Activity Analysis'),
+          const SizedBox(height: 16),
+          FutureBuilder<List<NlbwProtocolUsage>>(
+            future: _protocolUsage(),
+            builder: (context, snapshot) {
+              final rows = snapshot.data ?? const <NlbwProtocolUsage>[];
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  rows.isEmpty) {
+                return const SizedBox(
+                  height: 92,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (rows.isEmpty) {
+                return _emptyStatText('No nlbwmon protocol usage yet');
+              }
+
+              final totalBytes = rows.fold<int>(
+                0,
+                (sum, row) => sum + row.totalBytes,
+              );
+              final maxBytes = rows.map((row) => row.totalBytes).reduce(max);
+              return Column(
+                children: rows
+                    .map(
+                      (row) => _usageBreakdownRow(
+                        icon: _protocolIcon(row.protocol),
+                        iconColor: _protocolColor(row.protocol),
+                        title: _protocolLabel(row.protocol),
+                        subtitle:
+                            '${_formatPercent(row.totalBytes, totalBytes)} of shown traffic',
+                        totalBytes: row.totalBytes,
+                        maxBytes: maxBytes,
+                      ),
+                    )
+                    .toList(),
+              );
             },
           ),
         ],
@@ -625,6 +739,145 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
         color: color.withValues(alpha: 0.12),
       ),
     );
+  }
+
+  Widget _usageBreakdownRow({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required int totalBytes,
+    required int maxBytes,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final progress = maxBytes <= 0 ? 0.0 : totalBytes / maxBytes;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: iconColor, size: 24),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatUsageTotal(totalBytes),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    minHeight: 5,
+                    value: progress.clamp(0, 1),
+                    backgroundColor: colorScheme.surfaceContainerHighest,
+                    valueColor: AlwaysStoppedAnimation<Color>(iconColor),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: _mutedTextStyle(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyStatText(String message) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: Center(child: Text(message, style: _mutedTextStyle())),
+    );
+  }
+
+  IconData _protocolIcon(String protocol) {
+    final label = protocol.toLowerCase();
+    if (label.contains('web') ||
+        label.contains('http') ||
+        label.contains('stream')) {
+      return Icons.public_rounded;
+    }
+    if (label.contains('dns')) return Icons.dns_rounded;
+    if (label.contains('mail') || label.contains('chat')) {
+      return Icons.forum_rounded;
+    }
+    if (label.contains('video')) return Icons.play_circle_outline_rounded;
+    return Icons.help_outline_rounded;
+  }
+
+  Color _protocolColor(String protocol) {
+    final label = protocol.toLowerCase();
+    if (label.contains('web') ||
+        label.contains('http') ||
+        label.contains('stream')) {
+      return _cyan;
+    }
+    if (label.contains('dns')) return const Color(0xFFEAB308);
+    if (label.contains('mail') || label.contains('chat')) {
+      return const Color(0xFF20CF70);
+    }
+    return Theme.of(context).colorScheme.onSurfaceVariant;
+  }
+
+  String _protocolLabel(String protocol) {
+    final raw = protocol.trim();
+    if (raw.isEmpty || raw == '-') return 'Other';
+    final lower = raw.toLowerCase();
+    if (lower == 'http' || lower == 'https' || lower == 'http/s') {
+      return 'Web & Streaming';
+    }
+    return raw
+        .split(RegExp(r'[_\s-]+'))
+        .where((part) => part.isNotEmpty)
+        .map(
+          (part) => part.length == 1
+              ? part.toUpperCase()
+              : '${part[0].toUpperCase()}${part.substring(1)}',
+        )
+        .join(' ');
+  }
+
+  String _formatPercent(int value, int total) {
+    if (total <= 0) return '0%';
+    final percent = value / total * 100;
+    if (percent >= 10) return '${percent.toStringAsFixed(0)}%';
+    return '${percent.toStringAsFixed(1)}%';
   }
 
   Widget _titleRow(String title, {Widget? trailing}) {

@@ -463,26 +463,17 @@ class _RecentEventsCard extends StatelessWidget {
         .reversed
         .take(2)
         .toList();
-    final events = recentProblems.isEmpty
-        ? [
-            ('internet_monitor', 'No recent latency events', 'Ping monitor'),
-            (
-              'speedtest',
-              'Speed test history will appear here',
-              'Pending data source',
-            ),
-          ]
-        : recentProblems
-              .map(
-                (sample) => (
-                  'ping_monitor',
-                  sample.isOk
-                      ? 'High latency detected: ${NetworkPerformanceScreen.formatLatency(sample.latencyMs)}'
-                      : 'Ping outage detected: ${sample.message}',
-                  sample.timestamp.toLocal().toString(),
-                ),
-              )
-              .toList();
+    final events = recentProblems
+        .map(
+          (sample) => (
+            'ping_monitor',
+            sample.isOk
+                ? 'High latency detected: ${NetworkPerformanceScreen.formatLatency(sample.latencyMs)}'
+                : 'Ping outage detected: ${sample.message}',
+            sample.timestamp.toLocal().toString(),
+          ),
+        )
+        .toList();
 
     return _OpenwallaPanel(
       child: Column(
@@ -490,60 +481,69 @@ class _RecentEventsCard extends StatelessWidget {
         children: [
           const _SectionTitle('Recent Events'),
           const SizedBox(height: 14),
-          ...events.map(
-            (event) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.circle_rounded,
-                    size: 9,
-                    color: colorScheme.primary,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          event.$1,
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(
-                                color: colorScheme.onSurface,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0,
-                              ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          event.$2,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0,
-                              ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          event.$3,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: colorScheme.onSurfaceVariant.withValues(
-                                  alpha: 0.68,
-                                ),
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0,
-                              ),
-                        ),
-                      ],
+          if (events.isEmpty)
+            Text(
+              'No recent events',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0,
+              ),
+            )
+          else
+            ...events.map(
+              (event) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.circle_rounded,
+                      size: 9,
+                      color: colorScheme.primary,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            event.$1,
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
+                                  color: colorScheme.onSurface,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0,
+                                ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            event.$2,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0,
+                                ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            event.$3,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: colorScheme.onSurfaceVariant
+                                      .withValues(alpha: 0.68),
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
