@@ -87,6 +87,7 @@ class _NetworkPerformanceScreenState
     extends ConsumerState<NetworkPerformanceScreen> {
   List<PingMonitorSample>? _freshSamples;
   List<SpeedtestMonitorSample>? _speedtestSamples;
+  List<OpenwallaNotification>? _recentNotifications;
   Future<bool>? _supportFuture;
 
   @override
@@ -104,11 +105,13 @@ class _NetworkPerformanceScreenState
         limit: 30,
         context: mounted ? context : null,
       ),
+      appState.fetchNotifications(limit: 8, context: mounted ? context : null),
     ]);
     if (!mounted) return;
     setState(() {
       _freshSamples = results[0] as List<PingMonitorSample>;
       _speedtestSamples = results[1] as List<SpeedtestMonitorSample>;
+      _recentNotifications = results[2] as List<OpenwallaNotification>;
     });
   }
 
@@ -157,7 +160,9 @@ class _NetworkPerformanceScreenState
                     children: [
                       _NetworkTimelineCard(samples: samples),
                       const SizedBox(height: 14),
-                      _RecentEventsCard(samples: samples),
+                      _RecentEventsCard(
+                        notifications: _recentNotifications ?? const [],
+                      ),
                       const SizedBox(height: 14),
                       _PingTestCard(samples: samples),
                       const SizedBox(height: 14),
@@ -205,6 +210,7 @@ class _OpenwallaPanel extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
+      width: double.infinity,
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(8),
@@ -450,37 +456,67 @@ class _PingHourBucket {
 }
 
 class _RecentEventsCard extends StatelessWidget {
-  final List<PingMonitorSample> samples;
+  final List<OpenwallaNotification> notifications;
 
-  const _RecentEventsCard({required this.samples});
+  const _RecentEventsCard({required this.notifications});
+
+  Color _eventColor(OpenwallaNotification notification) {
+    final app = notification.app.toLowerCase();
+    final message = notification.message.toLowerCase();
+    if (message.contains('restored') ||
+        message.contains('connected') ||
+        message.contains('ok')) {
+      return NetworkPerformanceScreen._green;
+    }
+    if (message.contains('threshold') ||
+        message.contains('latency') ||
+        message.contains('dropped')) {
+      return NetworkPerformanceScreen._yellow;
+    }
+    if (message.contains('disconnect') ||
+        message.contains('failed') ||
+        message.contains('outage') ||
+        message.contains('blocked') ||
+        app.contains('quarantine')) {
+      return const Color(0xFFFF4D4F);
+    }
+    return NetworkPerformanceScreen._cyan;
+  }
+
+  String _formatTimestamp(DateTime timestamp) {
+    final local = timestamp.toLocal();
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final month = months[(local.month - 1).clamp(0, 11)];
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final suffix = local.hour >= 12 ? 'PM' : 'AM';
+    return '$month ${local.day}, ${local.year} $hour:$minute $suffix';
+  }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final recentProblems = samples
-        .where((sample) => !sample.isOk || (sample.latencyMs ?? 0) >= 100)
-        .toList()
-        .reversed
-        .take(2)
-        .toList();
-    final events = recentProblems
-        .map(
-          (sample) => (
-            'ping_monitor',
-            sample.isOk
-                ? 'High latency detected: ${NetworkPerformanceScreen.formatLatency(sample.latencyMs)}'
-                : 'Ping outage detected: ${sample.message}',
-            sample.timestamp.toLocal().toString(),
-          ),
-        )
-        .toList();
+    final events = notifications.take(8).toList();
 
     return _OpenwallaPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const _SectionTitle('Recent Events'),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           if (events.isEmpty)
             Text(
               'No recent events',
@@ -491,48 +527,62 @@ class _RecentEventsCard extends StatelessWidget {
               ),
             )
           else
-            ...events.map(
-              (event) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
+            ...List.generate(events.length, (index) {
+              final event = events[index];
+              final color = _eventColor(event);
+              final isLast = index == events.length - 1;
+              return Padding(
+                padding: EdgeInsets.only(bottom: isLast ? 0 : 14),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.circle_rounded,
-                      size: 9,
-                      color: colorScheme.primary,
+                    SizedBox(
+                      width: 16,
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          if (!isLast)
+                            Container(
+                              width: 1,
+                              height: 44,
+                              margin: const EdgeInsets.only(top: 4),
+                              color: colorScheme.outlineVariant.withValues(
+                                alpha: 0.42,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            event.$1,
-                            style: Theme.of(context).textTheme.titleSmall
+                            event.message,
+                            style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(
                                   color: colorScheme.onSurface,
                                   fontWeight: FontWeight.w900,
                                   letterSpacing: 0,
                                 ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 3),
+                          const SizedBox(height: 5),
                           Text(
-                            event.$2,
+                            _formatTimestamp(event.timestamp),
                             style: Theme.of(context).textTheme.bodyMedium
                                 ?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0,
-                                ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            event.$3,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
                                   color: colorScheme.onSurfaceVariant
-                                      .withValues(alpha: 0.68),
+                                      .withValues(alpha: 0.86),
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 0,
                                 ),
@@ -542,8 +592,8 @@ class _RecentEventsCard extends StatelessWidget {
                     ),
                   ],
                 ),
-              ),
-            ),
+              );
+            }),
         ],
       ),
     );
