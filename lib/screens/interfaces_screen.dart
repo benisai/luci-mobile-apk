@@ -10,6 +10,7 @@ import 'package:luci_mobile/screens/router_dashboard_settings_screen.dart';
 import 'package:luci_mobile/design/luci_design_system.dart';
 import 'package:luci_mobile/widgets/luci_loading_states.dart';
 import 'package:luci_mobile/widgets/luci_refresh_components.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 class InterfacesScreen extends ConsumerStatefulWidget {
   final String? scrollToInterface;
@@ -476,6 +477,50 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
     }
   }
 
+  Future<void> _showShareWifiDialog(Map<String, dynamic> iface) async {
+    final ssid = iface['ssid']?.toString() ?? '';
+    if (ssid.trim().isEmpty) return;
+    final password = iface['password']?.toString() ?? '';
+    final encryption = iface['encryption']?.toString() ?? '';
+    final hidden = iface['hidden'] == true;
+    final qrData = _wifiQrPayload(
+      ssid: ssid,
+      password: password,
+      encryption: encryption,
+      hidden: hidden,
+    );
+    await showDialog<void>(
+      context: context,
+      builder: (context) =>
+          _ShareWifiDialog(ssid: ssid, password: password, qrData: qrData),
+    );
+  }
+
+  String _wifiQrPayload({
+    required String ssid,
+    required String password,
+    required String encryption,
+    required bool hidden,
+  }) {
+    final normalized = encryption.toLowerCase();
+    final authType = normalized.contains('wep')
+        ? 'WEP'
+        : normalized == 'none' || normalized == 'nopass'
+        ? 'nopass'
+        : 'WPA';
+    final escapedSsid = _escapeWifiQrValue(ssid);
+    final escapedPassword = _escapeWifiQrValue(password);
+    return 'WIFI:T:$authType;S:$escapedSsid;P:$escapedPassword;H:${hidden ? 'true' : 'false'};;';
+  }
+
+  String _escapeWifiQrValue(String value) {
+    return value
+        .replaceAll(r'\', r'\\')
+        .replaceAll(';', r'\;')
+        .replaceAll(',', r'\,')
+        .replaceAll(':', r'\:');
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = ref.read(appStateProvider);
@@ -758,6 +803,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
             final isEnabled = isRadioEnabled && isIfaceEnabled;
             final hidden = _uciString(ifaceConfig['hidden'], '0') == '1';
             final encryption = _uciString(ifaceConfig['encryption'], 'N/A');
+            final password = _uciString(ifaceConfig['key']);
             final txPower = _uciString(uciRadios[radioName]?['txpower']);
 
             final name = iface['name'] ?? '';
@@ -780,6 +826,9 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
               'deviceName': deviceName,
               'radioName': radioName,
               'ssid': ssid,
+              'password': password,
+              'encryption': encryption,
+              'hidden': hidden,
               'interfaceName': name,
               'details': {
                 'Device': _uciString(ifaceConfig['device'], radioName),
@@ -812,6 +861,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
 
         final name = _uciString(config['ssid'], 'Unnamed');
         final hidden = _uciString(config['hidden'], '0') == '1';
+        final encryption = _uciString(config['encryption'], 'N/A');
         final txPower = _uciString(uciRadios[radioName]?['txpower']);
         interfacesList.add({
           'section': uciName,
@@ -822,6 +872,9 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
           'deviceName': radioName,
           'radioName': radioName,
           'ssid': name,
+          'password': _uciString(config['key']),
+          'encryption': encryption,
+          'hidden': hidden,
           'interfaceName': name,
           'details': {
             'Device': radioName,
@@ -830,7 +883,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
             'Network': (config['network'] is List)
                 ? (config['network'] as List).join(', ')
                 : _uciString(config['network'], 'N/A'),
-            'Security': _uciString(config['encryption'], 'N/A'),
+            'Security': encryption,
             'SSID Visibility': hidden ? 'Hidden' : 'Visible',
             'TX Power': txPower.isEmpty ? 'Auto' : '$txPower dBm',
           },
@@ -838,51 +891,118 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
       }
     });
 
-    final interfaces = interfacesList;
-    if (interfaces.isEmpty) {
+    final activeInterfaces = interfacesList
+        .where((iface) => iface['isEnabled'] == true)
+        .toList();
+    final disabledInterfaces = interfacesList
+        .where((iface) => iface['isEnabled'] != true)
+        .toList();
+    if (activeInterfaces.isEmpty && disabledInterfaces.isEmpty) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
     }
     return SliverList(
-      delegate: SliverChildBuilderDelegate((context, index) {
-        final iface = interfaces[index];
-        final deviceName = iface['deviceName'] ?? '';
-        final radioName = iface['radioName'] ?? '';
-        final ssid = iface['ssid'] ?? '';
-        final name = iface['interfaceName'] ?? '';
-        final keyStr = _interfaceKeyForWireless(
-          ssid: ssid,
-          radioName: radioName,
-          deviceName: deviceName,
-          name: name,
-        );
-        final key = _interfaceKeys.putIfAbsent(keyStr, () => GlobalKey());
-        final displayName = ssid.toString().isNotEmpty
-            ? ssid.toString()
-            : deviceName.toString();
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          if (index >= activeInterfaces.length) {
+            return _buildDisabledWirelessSection(context, disabledInterfaces);
+          }
+          final iface = activeInterfaces[index];
+          return _buildWirelessCard(context, iface);
+        },
+        childCount:
+            activeInterfaces.length + (disabledInterfaces.isEmpty ? 0 : 1),
+      ),
+    );
+  }
 
-        final isTargetInterface =
-            _targetInterface != null &&
-            (_normalizeInterfaceKey(ssid) ==
-                    _normalizeInterfaceKey(_targetInterface!) ||
-                _normalizeInterfaceKey(deviceName) ==
-                    _normalizeInterfaceKey(_targetInterface!) ||
-                _normalizeInterfaceKey(name) ==
-                    _normalizeInterfaceKey(_targetInterface!));
+  Widget _buildWirelessCard(BuildContext context, Map<String, dynamic> iface) {
+    final deviceName = iface['deviceName'] ?? '';
+    final radioName = iface['radioName'] ?? '';
+    final ssid = iface['ssid'] ?? '';
+    final name = iface['interfaceName'] ?? '';
+    final keyStr = _interfaceKeyForWireless(
+      ssid: ssid,
+      radioName: radioName,
+      deviceName: deviceName,
+      name: name,
+    );
+    final key = _interfaceKeys.putIfAbsent(keyStr, () => GlobalKey());
+    final displayName = ssid.toString().isNotEmpty
+        ? ssid.toString()
+        : deviceName.toString();
 
-        final shouldExpand = isTargetInterface || _expandedInterface == keyStr;
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: _UnifiedNetworkCard(
-            key: key,
-            name: displayName,
-            subtitle: iface['subtitle'],
-            isUp: iface['isEnabled'],
-            icon: Icons.wifi,
-            details: _buildWirelessDetails(context, iface),
-            initiallyExpanded: shouldExpand,
+    final isTargetInterface =
+        _targetInterface != null &&
+        (_normalizeInterfaceKey(ssid) ==
+                _normalizeInterfaceKey(_targetInterface!) ||
+            _normalizeInterfaceKey(deviceName) ==
+                _normalizeInterfaceKey(_targetInterface!) ||
+            _normalizeInterfaceKey(name) ==
+                _normalizeInterfaceKey(_targetInterface!));
+
+    final shouldExpand = isTargetInterface || _expandedInterface == keyStr;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: _UnifiedNetworkCard(
+        key: key,
+        name: displayName,
+        subtitle: iface['subtitle'],
+        isUp: iface['isEnabled'],
+        icon: Icons.wifi,
+        details: _buildWirelessDetails(context, iface),
+        initiallyExpanded: shouldExpand,
+      ),
+    );
+  }
+
+  Widget _buildDisabledWirelessSection(
+    BuildContext context,
+    List<Map<String, dynamic>> disabledInterfaces,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Container(
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.42),
           ),
-        );
-      }, childCount: interfaces.length),
+        ),
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            collapsedShape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            leading: Icon(
+              Icons.wifi_off_rounded,
+              color: colorScheme.onSurfaceVariant,
+            ),
+            title: Text(
+              'Disabled Wi-Fi',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            subtitle: Text(
+              '${disabledInterfaces.length} radio or SSID ${disabledInterfaces.length == 1 ? 'is' : 'are'} off',
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            ),
+            children: [
+              for (final iface in disabledInterfaces)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
+                  child: _buildWirelessCard(context, iface),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -891,26 +1011,53 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
     Map<String, dynamic> iface,
   ) {
     final section = iface['section']?.toString() ?? '';
+    final canShare =
+        iface['isEnabled'] == true &&
+        (iface['ssid']?.toString().trim().isNotEmpty ?? false);
     return Column(
       children: [
         _buildGenericDetails(context, iface['details']),
-        if (section.isNotEmpty) ...[
+        if (section.isNotEmpty || canShare) ...[
           const Divider(height: 1, indent: 16, endIndent: 16),
           const SizedBox(height: 12),
-          Center(
-            child: FilledButton.tonalIcon(
-              onPressed: () => _showEditWirelessSheet(section),
-              icon: const Icon(Icons.tune_rounded, size: 18),
-              label: const Text('Edit Wi-Fi Settings'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 12,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                if (section.isNotEmpty)
+                  FilledButton.tonalIcon(
+                    onPressed: () => _showEditWirelessSheet(section),
+                    icon: const Icon(Icons.tune_rounded, size: 18),
+                    label: const Text('Edit Wi-Fi'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                if (canShare)
+                  FilledButton.icon(
+                    onPressed: () => _showShareWifiDialog(iface),
+                    icon: const Icon(Icons.qr_code_rounded, size: 18),
+                    label: const Text('Share Wi-Fi'),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           const SizedBox(height: 14),
@@ -2113,6 +2260,100 @@ class _AddPortForwardSheetState extends ConsumerState<_AddPortForwardSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ShareWifiDialog extends StatelessWidget {
+  final String ssid;
+  final String password;
+  final String qrData;
+
+  const _ShareWifiDialog({
+    required this.ssid,
+    required this.password,
+    required this.qrData,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: const Text('Share Wi-Fi'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            ssid,
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: QrImageView(
+              data: qrData,
+              version: QrVersions.auto,
+              size: 220,
+              backgroundColor: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Password',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.45,
+              ),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+              ),
+            ),
+            child: SelectableText(
+              password.isEmpty ? 'No password set' : password,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: password.isEmpty
+              ? null
+              : () {
+                  Clipboard.setData(ClipboardData(text: password));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Wi-Fi password copied.')),
+                  );
+                },
+          child: const Text('Copy Password'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Done'),
+        ),
+      ],
     );
   }
 }
