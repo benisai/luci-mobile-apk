@@ -762,6 +762,24 @@ class NlbwProtocolUsage {
   int get totalBytes => downloadBytes + uploadBytes;
 }
 
+class OpenwallaDeviceRecord {
+  final String mac;
+  final String ip;
+  final String hostname;
+  final int totalUploadBytes;
+  final int totalDownloadBytes;
+  final String staticIpAddress;
+
+  const OpenwallaDeviceRecord({
+    required this.mac,
+    required this.ip,
+    required this.hostname,
+    required this.totalUploadBytes,
+    required this.totalDownloadBytes,
+    required this.staticIpAddress,
+  });
+}
+
 class WireGuardServerSettings {
   final bool installed;
   final bool configured;
@@ -2763,6 +2781,168 @@ class AppState extends ChangeNotifier {
         Logger.debug('Optional aggregated devices DB name map failed: $e');
         Logger.debug('Optional aggregated devices DB name map stack: $stack');
         return (<String, String>{}, <String, String>{});
+      }
+    }).toList();
+
+    final results = await Future.wait(tasks);
+    for (final maps in results) {
+      byMac.addAll(maps.$1);
+      byIp.addAll(maps.$2);
+    }
+    return (byMac, byIp);
+  }
+
+  (Map<String, OpenwallaDeviceRecord>, Map<String, OpenwallaDeviceRecord>)
+  _parseDeviceRecordsOutput(String output) {
+    final byMac = <String, OpenwallaDeviceRecord>{};
+    final byIp = <String, OpenwallaDeviceRecord>{};
+
+    for (final line in output.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+      final parts = trimmed.split('|');
+      if (parts.length < 5) continue;
+
+      final mac = _normalizeMacAddress(parts[0]);
+      final ip = parts[1].trim();
+      final hostname = parts[2].trim();
+      final totalUp = int.tryParse(parts[3].trim()) ?? 0;
+      final totalDown = int.tryParse(parts[4].trim()) ?? 0;
+      final staticIp = parts.length > 5
+          ? parts.sublist(5).join('|').trim()
+          : '';
+      final record = OpenwallaDeviceRecord(
+        mac: mac,
+        ip: ip,
+        hostname: hostname,
+        totalUploadBytes: totalUp,
+        totalDownloadBytes: totalDown,
+        staticIpAddress: staticIp,
+      );
+      if (mac.isNotEmpty && mac != 'N/A') byMac[mac] = record;
+      if (ip.isNotEmpty) byIp[ip] = record;
+    }
+
+    return (byMac, byIp);
+  }
+
+  Future<
+    (Map<String, OpenwallaDeviceRecord>, Map<String, OpenwallaDeviceRecord>)
+  >
+  fetchDeviceRecords({
+    bool aggregateAllRouters = false,
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      final record = OpenwallaDeviceRecord(
+        mac: _mockQuarantineMac,
+        ip: '10.0.0.250',
+        hostname: 'Mock Quarantined Device',
+        totalUploadBytes: 1960837,
+        totalDownloadBytes: 192020,
+        staticIpAddress: '10.0.0.250',
+      );
+      return ({record.mac: record}, {record.ip: record});
+    }
+
+    Future<
+      (Map<String, OpenwallaDeviceRecord>, Map<String, OpenwallaDeviceRecord>)
+    >
+    readFor({model.Router? router, String? sysauth, bool? useHttps}) async {
+      final sqlWithStatic =
+          "SELECT mac, ip, hostname, total_up, total_down, static_ip FROM devices ORDER BY last_seen DESC;";
+      final sqlFallback =
+          "SELECT mac, ip, hostname, total_up, total_down, '' FROM devices ORDER BY last_seen DESC;";
+      try {
+        final output = router == null || sysauth == null || useHttps == null
+            ? await _sqliteQueryOutput(
+                dbExpression: _devicesDbExpression(),
+                sql: sqlWithStatic,
+                context: context,
+              )
+            : await _sqliteQueryOutputForRouter(
+                router: router,
+                sysauth: sysauth,
+                useHttps: useHttps,
+                dbExpression: _devicesDbExpression(),
+                sql: sqlWithStatic,
+              );
+        return _parseDeviceRecordsOutput(output);
+      } catch (_) {
+        final output = router == null || sysauth == null || useHttps == null
+            ? await _sqliteQueryOutput(
+                dbExpression: _devicesDbExpression(),
+                sql: sqlFallback,
+              )
+            : await _sqliteQueryOutputForRouter(
+                router: router,
+                sysauth: sysauth,
+                useHttps: useHttps,
+                dbExpression: _devicesDbExpression(),
+                sql: sqlFallback,
+              );
+        return _parseDeviceRecordsOutput(output);
+      }
+    }
+
+    if (!aggregateAllRouters) {
+      try {
+        return await readFor();
+      } catch (e, stack) {
+        Logger.debug('Optional devices DB record read failed: $e');
+        Logger.debug('Optional devices DB record stack: $stack');
+        return (
+          <String, OpenwallaDeviceRecord>{},
+          <String, OpenwallaDeviceRecord>{},
+        );
+      }
+    }
+
+    final routers = _routerService?.routers ?? const <model.Router>[];
+    if (routers.isEmpty || _apiService == null) {
+      return (
+        <String, OpenwallaDeviceRecord>{},
+        <String, OpenwallaDeviceRecord>{},
+      );
+    }
+
+    final byMac = <String, OpenwallaDeviceRecord>{};
+    final byIp = <String, OpenwallaDeviceRecord>{};
+    final tasks = routers.map((router) async {
+      try {
+        String? token;
+        var useHttps = router.useHttps;
+        if (_apiService is RealApiService) {
+          final real = _apiService as RealApiService;
+          final login = await real.loginWithProtocolDetection(
+            router.ipAddress,
+            router.username,
+            router.password,
+            router.useHttps,
+          );
+          token = login.token;
+          useHttps = login.actualUseHttps;
+        } else {
+          token = _authService?.sysauth;
+        }
+        if (token == null) {
+          return (
+            <String, OpenwallaDeviceRecord>{},
+            <String, OpenwallaDeviceRecord>{},
+          );
+        }
+        return await readFor(
+          router: router,
+          sysauth: token,
+          useHttps: useHttps,
+        );
+      } catch (e, stack) {
+        Logger.debug('Optional aggregated devices DB record read failed: $e');
+        Logger.debug('Optional aggregated devices DB record stack: $stack');
+        return (
+          <String, OpenwallaDeviceRecord>{},
+          <String, OpenwallaDeviceRecord>{},
+        );
       }
     }).toList();
 
@@ -6792,9 +6972,7 @@ class AppState extends ChangeNotifier {
   Future<List<Client>> fetchAggregatedClients() async {
     try {
       final quarantinedMacsFuture = fetchAggregatedQuarantinedMacs();
-      final deviceNameMapsFuture = fetchDeviceNameMaps(
-        aggregateAllRouters: true,
-      );
+      final deviceRecordsFuture = fetchDeviceRecords(aggregateAllRouters: true);
       // Build a union of wireless MACs across all routers
       final wirelessMacs = await fetchAllAssociatedWirelessMacsAggregated();
       final normalizedWireless = wirelessMacs
@@ -6831,9 +7009,9 @@ class AppState extends ChangeNotifier {
       }
 
       final quarantinedMacs = await quarantinedMacsFuture;
-      final deviceNameMaps = await deviceNameMapsFuture;
+      final deviceRecords = await deviceRecordsFuture;
       final list = _applyQuarantineState(
-        _applyDeviceDbNames(clients.values, deviceNameMaps),
+        _applyDeviceDbRecords(clients.values, deviceRecords),
         quarantinedMacs,
       );
 
@@ -6869,7 +7047,7 @@ class AppState extends ChangeNotifier {
     try {
       if (_reviewerModeEnabled) {
         final quarantinedMacs = await fetchQuarantinedMacsForSelectedRouter();
-        final deviceNameMaps = await fetchDeviceNameMaps();
+        final deviceRecords = await fetchDeviceRecords();
         final stationsMap = await _apiService!.fetchAssociatedStations();
         final macs = <String>{};
         stationsMap.forEach((_, stations) {
@@ -6908,7 +7086,7 @@ class AppState extends ChangeNotifier {
           }
         }
         final reviewerClients = _applyQuarantineState(
-          _applyDeviceDbNames(clientMap.values, deviceNameMaps),
+          _applyDeviceDbRecords(clientMap.values, deviceRecords),
           quarantinedMacs,
           includeMockDevice: true,
         );
@@ -6993,10 +7171,10 @@ class AppState extends ChangeNotifier {
       }
 
       final clients = clientMap.values.toList();
-      final deviceNameMaps = await fetchDeviceNameMaps();
+      final deviceRecords = await fetchDeviceRecords();
       final quarantinedMacs = await fetchQuarantinedMacsForSelectedRouter();
       final markedClients = _applyQuarantineState(
-        _applyDeviceDbNames(clients, deviceNameMaps),
+        _applyDeviceDbRecords(clients, deviceRecords),
         quarantinedMacs,
       );
 
@@ -7079,20 +7257,29 @@ class AppState extends ChangeNotifier {
     return clientMap.values.toList();
   }
 
-  Iterable<Client> _applyDeviceDbNames(
+  Iterable<Client> _applyDeviceDbRecords(
     Iterable<Client> clients,
-    (Map<String, String>, Map<String, String>) deviceNameMaps,
+    (Map<String, OpenwallaDeviceRecord>, Map<String, OpenwallaDeviceRecord>)
+    deviceRecords,
   ) sync* {
-    final byMac = deviceNameMaps.$1;
-    final byIp = deviceNameMaps.$2;
+    final byMac = deviceRecords.$1;
+    final byIp = deviceRecords.$2;
     for (final client in clients) {
       final mac = _normalizeMacAddress(client.macAddress);
-      final dbName = byMac[mac] ?? byIp[client.ipAddress];
-      if (dbName == null || dbName.trim().isEmpty) {
+      final record = byMac[mac] ?? byIp[client.ipAddress];
+      if (record == null) {
         yield client;
-      } else {
-        yield client.copyWith(hostname: dbName.trim());
+        continue;
       }
+      final hostname = record.hostname.trim();
+      yield client.copyWith(
+        hostname: hostname.isEmpty ? client.hostname : hostname,
+        totalUploadBytes: record.totalUploadBytes,
+        totalDownloadBytes: record.totalDownloadBytes,
+        staticIpAddress: record.staticIpAddress.isEmpty
+            ? null
+            : record.staticIpAddress,
+      );
     }
   }
 
@@ -7370,6 +7557,158 @@ class AppState extends ChangeNotifier {
           '/etc/init.d/firewall reload 2>/dev/null || /etc/init.d/firewall restart 2>/dev/null || true',
     );
     notifyListeners();
+  }
+
+  Future<void> saveClientDeviceSettings(
+    Client client, {
+    required String hostname,
+    required bool staticIpEnabled,
+    required String staticIpAddress,
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    final normalizedMac = _normalizeMacAddress(client.macAddress);
+    if (!RegExp(r'^([0-9A-F]{2}:){5}[0-9A-F]{2}$').hasMatch(normalizedMac)) {
+      throw ArgumentError('A valid device MAC address is required');
+    }
+
+    final cleanName = hostname.trim().isEmpty
+        ? client.hostname
+        : hostname.trim();
+    final cleanStaticIp = staticIpEnabled ? staticIpAddress.trim() : '';
+    if (cleanStaticIp.isNotEmpty && !_isValidIpAddress(cleanStaticIp)) {
+      throw ArgumentError('A valid static IP address is required');
+    }
+
+    final dbCommand = _deviceSettingsDbCommand(
+      mac: normalizedMac,
+      ip: client.ipAddress == 'N/A' ? '' : client.ipAddress,
+      hostname: cleanName,
+      staticIpAddress: cleanStaticIp,
+    );
+    await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'file',
+      method: 'exec',
+      params: {
+        'command': '/bin/sh',
+        'params': ['-c', dbCommand],
+      },
+      context: context,
+    );
+
+    final dhcp = await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'uci',
+      method: 'get',
+      params: {'config': 'dhcp'},
+    );
+    final dhcpValues = _extractUciValues(dhcp);
+    String? hostSection;
+    dhcpValues.forEach((section, values) {
+      if (hostSection != null) return;
+      if (values['.type']?.toString() != 'host') return;
+      final mac = _normalizeMacAddress(values['mac']?.toString() ?? '');
+      if (mac == normalizedMac) hostSection = section;
+    });
+
+    if (cleanStaticIp.isNotEmpty) {
+      if (hostSection == null || hostSection!.isEmpty) {
+        final addResult = await _apiService!.call(
+          router.ipAddress,
+          sysauth,
+          router.useHttps,
+          object: 'uci',
+          method: 'add',
+          params: {'config': 'dhcp', 'type': 'host'},
+        );
+        hostSection = _extractAddedSection(addResult);
+      }
+      if (hostSection == null || hostSection!.isEmpty) {
+        throw StateError('Unable to create DHCP host reservation');
+      }
+      await _apiService!.uciSet(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        config: 'dhcp',
+        section: hostSection!,
+        values: {
+          'name': _sanitizeDhcpHostName(cleanName),
+          'mac': normalizedMac,
+          'ip': cleanStaticIp,
+        },
+      );
+    } else if (hostSection != null && hostSection!.isNotEmpty) {
+      await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'delete',
+        params: {'config': 'dhcp', 'section': hostSection, 'option': 'ip'},
+      );
+    }
+
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'dhcp',
+    );
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command:
+          '/etc/init.d/dnsmasq restart 2>/dev/null || /etc/init.d/odhcpd restart 2>/dev/null || true',
+    );
+    await fetchDashboardData();
+  }
+
+  String _deviceSettingsDbCommand({
+    required String mac,
+    required String ip,
+    required String hostname,
+    required String staticIpAddress,
+  }) {
+    final escMac = mac.replaceAll("'", "''");
+    final escIp = ip.replaceAll("'", "''");
+    final escHostname = hostname.replaceAll("'", "''");
+    final escStaticIp = staticIpAddress.replaceAll("'", "''");
+    const createSql =
+        "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline');";
+    final upsertSql =
+        "INSERT INTO devices (mac, ip, hostname, static_ip, last_seen, status) VALUES ('$escMac', '$escIp', '$escHostname', '$escStaticIp', strftime('%s','now'), 'online') ON CONFLICT(mac) DO UPDATE SET hostname=excluded.hostname, ip=CASE WHEN excluded.ip != '' THEN excluded.ip ELSE devices.ip END, static_ip=excluded.static_ip, last_seen=excluded.last_seen;";
+    return 'db="${_devicesDbExpression()}"; '
+        'if command -v sqlite3 >/dev/null 2>&1; then sqlite=sqlite3; '
+        'elif command -v sqlite3-cli >/dev/null 2>&1; then sqlite=sqlite3-cli; '
+        'else echo "sqlite3 not installed" >&2; exit 127; fi; '
+        '"\$sqlite" "\$db" ${_shellQuote(createSql)}; '
+        '"\$sqlite" "\$db" "ALTER TABLE devices ADD COLUMN static_ip TEXT NOT NULL DEFAULT \'\';" 2>/dev/null || true; '
+        '"\$sqlite" "\$db" ${_shellQuote(upsertSql)}';
+  }
+
+  String _sanitizeDhcpHostName(String hostname) {
+    final sanitized = hostname
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '-')
+        .replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '');
+    return sanitized.isEmpty ? 'openwalla-device' : sanitized;
   }
 
   Map<String, Map<String, dynamic>> _extractUciValues(dynamic result) {

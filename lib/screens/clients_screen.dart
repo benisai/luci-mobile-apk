@@ -258,6 +258,8 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                                                 client,
                                                 blocked,
                                               ),
+                                          onOpenSettings: () =>
+                                              _showDeviceSettingsSheet(client),
                                           onTap: () {
                                             setState(() {
                                               if (isExpanded) {
@@ -440,6 +442,20 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
     }
   }
 
+  Future<void> _showDeviceSettingsSheet(Client client) async {
+    final updated = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _DeviceSettingsSheet(client: client),
+    );
+    if (updated == true && mounted) {
+      setState(() {
+        _computeClientsFuture();
+      });
+    }
+  }
+
   Widget _buildClientStatCard(
     BuildContext context, {
     required IconData icon,
@@ -507,11 +523,322 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
   }
 }
 
+class _DeviceSettingsSheet extends ConsumerStatefulWidget {
+  final Client client;
+
+  const _DeviceSettingsSheet({required this.client});
+
+  @override
+  ConsumerState<_DeviceSettingsSheet> createState() =>
+      _DeviceSettingsSheetState();
+}
+
+class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
+  final _nameController = TextEditingController();
+  final _ipController = TextEditingController();
+  bool _staticIpEnabled = false;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController.text = widget.client.hostname;
+    _ipController.text = widget.client.staticIpAddress?.isNotEmpty == true
+        ? widget.client.staticIpAddress!
+        : widget.client.ipAddress == 'N/A'
+        ? ''
+        : widget.client.ipAddress;
+    _staticIpEnabled = widget.client.staticIpAddress?.isNotEmpty == true;
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _ipController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      _showError('Device name is required.');
+      return;
+    }
+    if (_staticIpEnabled && _ipController.text.trim().isEmpty) {
+      _showError('Static IP address is required.');
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      await ref
+          .read(appStateProvider)
+          .saveClientDeviceSettings(
+            widget.client,
+            hostname: name,
+            staticIpEnabled: _staticIpEnabled,
+            staticIpAddress: _ipController.text.trim(),
+            context: context,
+          );
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      _showError('Failed to save device settings: $e');
+      setState(() => _isSaving = false);
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          18,
+          0,
+          18,
+          MediaQuery.of(context).viewInsets.bottom + 18,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 58,
+                    height: 58,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: colorScheme.primary.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.devices_other_rounded,
+                      color: colorScheme.primary,
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Device Settings',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.client.macAddress,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: _isSaving
+                        ? null
+                        : () => Navigator.of(context).pop(false),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              _DeviceUsagePanel(client: widget.client),
+              const SizedBox(height: 18),
+              Text(
+                'Device Name',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _nameController,
+                enabled: !_isSaving,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.edit_rounded),
+                  hintText: 'Device name',
+                ),
+              ),
+              const SizedBox(height: 18),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Static IP Address'),
+                subtitle: const Text('Reserve a permanent IP for this device'),
+                value: _staticIpEnabled,
+                onChanged: _isSaving
+                    ? null
+                    : (value) => setState(() => _staticIpEnabled = value),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _ipController,
+                enabled: !_isSaving && _staticIpEnabled,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.lan_rounded),
+                  labelText: 'IP Address',
+                  hintText: '192.168.1.50',
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _isSaving ? null : _save,
+                  icon: _isSaving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save_rounded),
+                  label: Text(_isSaving ? 'Saving' : 'Save Changes'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DeviceUsagePanel extends StatelessWidget {
+  final Client client;
+
+  const _DeviceUsagePanel({required this.client});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.24),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _usageMetric(
+              context,
+              label: 'Download',
+              value: _formatBytes(client.totalDownloadBytes),
+              icon: Icons.arrow_downward_rounded,
+              color: const Color(0xFF18AEEA),
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 44,
+            color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+          Expanded(
+            child: _usageMetric(
+              context,
+              label: 'Upload',
+              value: _formatBytes(client.totalUploadBytes),
+              icon: Icons.arrow_upward_rounded,
+              color: const Color(0xFFF27C24),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _usageMetric(
+    BuildContext context, {
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(icon, color: color, size: 18),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  value,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var value = bytes.toDouble();
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    final decimals = value >= 100 || unit == 0
+        ? 0
+        : value >= 10
+        ? 1
+        : 2;
+    return '${value.toStringAsFixed(decimals)} ${units[unit]}';
+  }
+}
+
 class _UnifiedClientCard extends StatefulWidget {
   final Client client;
   final bool isExpanded;
   final VoidCallback onTap;
   final ValueChanged<bool> onToggleInternetBlock;
+  final VoidCallback onOpenSettings;
   final bool isBlockingActionRunning;
 
   const _UnifiedClientCard({
@@ -519,6 +846,7 @@ class _UnifiedClientCard extends StatefulWidget {
     required this.isExpanded,
     required this.onTap,
     required this.onToggleInternetBlock,
+    required this.onOpenSettings,
     required this.isBlockingActionRunning,
   });
 
@@ -946,18 +1274,62 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
           const Divider(height: 1, indent: 16, endIndent: 16),
           const SizedBox(height: 8),
           detailRow(
-            'Lease Time Remaining',
-            client.formattedLeaseTime,
-            valueColor: client.formattedLeaseTime == 'Expired'
-                ? theme.colorScheme.error
-                : null,
+            'Download',
+            _formatBytes(client.totalDownloadBytes),
+            valueColor: const Color(0xFF18AEEA),
             semanticsLabel:
-                'Lease Time Remaining: ${client.formattedLeaseTime}',
+                'Downloaded: ${_formatBytes(client.totalDownloadBytes)}',
           ),
-          const SizedBox(height: 8),
+          detailRow(
+            'Upload',
+            _formatBytes(client.totalUploadBytes),
+            valueColor: const Color(0xFFF27C24),
+            semanticsLabel:
+                'Uploaded: ${_formatBytes(client.totalUploadBytes)}',
+          ),
+          if (client.staticIpAddress != null &&
+              client.staticIpAddress!.isNotEmpty)
+            detailRow(
+              'Static IP',
+              client.staticIpAddress!,
+              semanticsLabel: 'Static IP: ${client.staticIpAddress}',
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              LuciSpacing.md,
+              LuciSpacing.sm,
+              LuciSpacing.md,
+              LuciSpacing.md,
+            ),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: widget.onOpenSettings,
+                icon: const Icon(Icons.edit_rounded),
+                label: const Text('Device Settings'),
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var value = bytes.toDouble();
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    final decimals = value >= 100 || unit == 0
+        ? 0
+        : value >= 10
+        ? 1
+        : 2;
+    return '${value.toStringAsFixed(decimals)} ${units[unit]}';
   }
 
   String _buildMinimalClientSubtitle(Client client) {

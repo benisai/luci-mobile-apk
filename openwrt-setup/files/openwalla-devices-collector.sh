@@ -135,7 +135,8 @@ ensure_db_file() {
 
 init_db() {
 	sql_exec "PRAGMA journal_mode=WAL;" || return 1
-	sql_exec "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline');" || return 1
+	sql_exec "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline', static_ip TEXT NOT NULL DEFAULT '');" || return 1
+	sql_exec "ALTER TABLE devices ADD COLUMN static_ip TEXT NOT NULL DEFAULT '';" 2>/dev/null || true
 	sql_exec "CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);" || return 1
 	sql_exec "CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON devices(last_seen);" || return 1
 	sql_exec "CREATE INDEX IF NOT EXISTS idx_devices_quarantined ON devices(quarantined);" || return 1

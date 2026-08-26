@@ -14,6 +14,9 @@ class Client {
   final ConnectionType connectionType;
   final List<String>? ipv6Addresses;
   final bool isBlocked;
+  final int totalUploadBytes;
+  final int totalDownloadBytes;
+  final String? staticIpAddress;
 
   Client({
     required this.ipAddress,
@@ -29,6 +32,9 @@ class Client {
     this.connectionType = ConnectionType.unknown,
     this.ipv6Addresses,
     this.isBlocked = false,
+    this.totalUploadBytes = 0,
+    this.totalDownloadBytes = 0,
+    this.staticIpAddress,
   });
 
   // Helper function to determine connection type from MAC address or other data
@@ -248,6 +254,9 @@ class Client {
     ConnectionType? connectionType,
     List<String>? ipv6Addresses,
     bool? isBlocked,
+    int? totalUploadBytes,
+    int? totalDownloadBytes,
+    String? staticIpAddress,
   }) {
     return Client(
       ipAddress: ipAddress ?? this.ipAddress,
@@ -263,6 +272,9 @@ class Client {
       connectionType: connectionType ?? this.connectionType,
       ipv6Addresses: ipv6Addresses ?? this.ipv6Addresses,
       isBlocked: isBlocked ?? this.isBlocked,
+      totalUploadBytes: totalUploadBytes ?? this.totalUploadBytes,
+      totalDownloadBytes: totalDownloadBytes ?? this.totalDownloadBytes,
+      staticIpAddress: staticIpAddress ?? this.staticIpAddress,
     );
   }
 }
