@@ -1570,8 +1570,18 @@ class AppState extends ChangeNotifier {
       throw Exception('Router is not connected');
     }
 
+    final installerFeature = _openwrtFeatureInstallerFeature(feature);
     final command =
-        'opkg update && opkg install ${_openwrtFeaturePackages(feature)} && ${_openwrtFeatureCheckCommand(feature)}';
+        'export OPENWALLA_RAW_BASE=https://raw.githubusercontent.com/benisai/luci-mobile-apk/main/openwrt-setup; '
+        'export OPENWALLA_ROOT=/tmp/openwalla-app-setup; '
+        'fetch() { if command -v wget >/dev/null 2>&1; then wget -qO "\$2" "\$1"; else curl -fsSL "\$1" -o "\$2"; fi; }; '
+        'cd /tmp && '
+        'rm -rf "\$OPENWALLA_ROOT" && '
+        'rm -f setup-openwrt-router.sh && '
+        'fetch "\$OPENWALLA_RAW_BASE/setup-openwrt-router.sh" "setup-openwrt-router.sh" && '
+        'chmod 0755 setup-openwrt-router.sh && '
+        'sh ./setup-openwrt-router.sh $installerFeature && '
+        '${_openwrtFeatureCheckCommand(feature)}';
     final result = await _apiService!.call(
       router.ipAddress,
       sysauth,
@@ -1608,20 +1618,22 @@ class AppState extends ChangeNotifier {
     };
   }
 
-  String _openwrtFeaturePackages(OpenwrtFeature feature) {
+  String _openwrtFeatureInstallerFeature(OpenwrtFeature feature) {
     return switch (feature) {
-      OpenwrtFeature.wireguard => 'wireguard-tools',
+      OpenwrtFeature.wireguard => 'wireguard',
       OpenwrtFeature.adblock => 'adblock',
-      OpenwrtFeature.sqm => 'sqm-scripts',
+      OpenwrtFeature.sqm => 'qos',
     };
   }
 
   String _openwrtFeatureCheckCommand(OpenwrtFeature feature) {
     return switch (feature) {
-      OpenwrtFeature.wireguard => 'command -v wg >/dev/null 2>&1 && echo OK',
-      OpenwrtFeature.adblock => '[ -x /etc/init.d/adblock ] && echo OK',
+      OpenwrtFeature.wireguard =>
+        '(command -v wg >/dev/null 2>&1 || [ -x /usr/bin/wg ] || uci -q show network 2>/dev/null | grep -q "proto=.*wireguard") && echo OK',
+      OpenwrtFeature.adblock =>
+        r'([ -x /etc/init.d/adblock ] || command -v adblock >/dev/null 2>&1 || uci -q get adblock.global >/dev/null 2>&1 || opkg list-installed 2>/dev/null | grep -Eq "^(adblock|luci-app-adblock) ") && echo OK',
       OpenwrtFeature.sqm =>
-        '([ -x /etc/init.d/sqm ] || command -v sqm >/dev/null 2>&1) && echo OK',
+        r'([ -x /etc/init.d/sqm ] || [ -x /etc/init.d/qos ] || command -v sqm >/dev/null 2>&1 || command -v qos-scripts >/dev/null 2>&1 || [ -d /usr/lib/sqm ] || [ -d /usr/lib/qos ] || opkg list-installed 2>/dev/null | grep -Eq "^(sqm-scripts|luci-app-sqm|qos-scripts|luci-app-qos) ") && echo OK',
     };
   }
 

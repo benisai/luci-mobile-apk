@@ -65,6 +65,7 @@ Individual features:
   netify           detailed Netify flow collector
   quarantine       device quarantine helper service
   state-sync       Openwalla state backup/sync helper
+  wireguard        WireGuard packages and LuCI protocol support
   adblock          OpenWrt adblock packages and config
   banip            OpenWrt banIP packages and config
   pbr              OpenWrt PBR packages and config
@@ -131,6 +132,7 @@ feature_to_installer() {
 	netify) echo "install-netify.sh" ;;
 	quarantine) echo "install-quarantine.sh" ;;
 	state-sync) echo "install-state-sync.sh" ;;
+	wireguard) echo "install-wireguard.sh" ;;
 	adblock) echo "install-adblock.sh" ;;
 	banip) echo "install-banip.sh" ;;
 	pbr) echo "install-pbr.sh" ;;
@@ -154,6 +156,7 @@ canonical_feature() {
 	netify|detailed-flow|detailed-flows) echo "netify" ;;
 	quarantine|device-quarantine) echo "quarantine" ;;
 	state-sync|state|backup|sync) echo "state-sync" ;;
+	wireguard|wg|vpn) echo "wireguard" ;;
 	adblock|ad-block) echo "adblock" ;;
 	banip|ban-ip) echo "banip" ;;
 	pbr) echo "pbr" ;;
