@@ -1432,7 +1432,17 @@ class AppState extends ChangeNotifier {
       command: command,
       onOutput: onOutput,
     );
-    return result.output;
+    final output = result.output.trimRight();
+    final setupCompleted = output.contains('[openwalla-setup] Setup complete.');
+    if (result.exitCode != null && result.exitCode != 0) {
+      if (setupCompleted) {
+        return '$output\n\nOpenwalla setup completed. The router reported SSH exit code ${result.exitCode} after completion, which can happen on some OpenWrt service restarts.';
+      }
+      throw StateError(
+        'Router setup command exited with code ${result.exitCode}.\n\n$output',
+      );
+    }
+    return output;
   }
 
   Future<bool> hasStatisticsSupport({BuildContext? context}) async {
