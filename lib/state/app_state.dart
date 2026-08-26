@@ -276,6 +276,78 @@ class OpenwrtFirewallZone {
   }
 }
 
+class OpenwrtWirelessNetworkConfig {
+  final String section;
+  final String radioSection;
+  final String ssid;
+  final String password;
+  final String encryption;
+  final bool enabled;
+  final bool hidden;
+  final int? txPower;
+
+  const OpenwrtWirelessNetworkConfig({
+    required this.section,
+    required this.radioSection,
+    required this.ssid,
+    required this.password,
+    required this.encryption,
+    required this.enabled,
+    required this.hidden,
+    required this.txPower,
+  });
+
+  OpenwrtWirelessNetworkConfig copyWith({
+    String? ssid,
+    String? password,
+    String? encryption,
+    bool? enabled,
+    bool? hidden,
+    int? txPower,
+  }) {
+    return OpenwrtWirelessNetworkConfig(
+      section: section,
+      radioSection: radioSection,
+      ssid: ssid ?? this.ssid,
+      password: password ?? this.password,
+      encryption: encryption ?? this.encryption,
+      enabled: enabled ?? this.enabled,
+      hidden: hidden ?? this.hidden,
+      txPower: txPower ?? this.txPower,
+    );
+  }
+
+  static OpenwrtWirelessNetworkConfig fromUciSection(
+    String section,
+    Map<dynamic, dynamic> values, {
+    Map<dynamic, dynamic>? radioValues,
+  }) {
+    String read(Map<dynamic, dynamic>? source, String key, String fallback) {
+      final value = source?[key];
+      if (value is List) {
+        final joined = value.map((entry) => entry.toString()).join(' ');
+        return joined.trim().isEmpty ? fallback : joined;
+      }
+      final text = value?.toString().trim();
+      return text == null || text.isEmpty ? fallback : text;
+    }
+
+    final radioSection = read(values, 'device', '');
+    return OpenwrtWirelessNetworkConfig(
+      section: section,
+      radioSection: radioSection,
+      ssid: read(values, 'ssid', ''),
+      password: read(values, 'key', ''),
+      encryption: read(values, 'encryption', 'psk2'),
+      enabled:
+          read(values, 'disabled', '0') != '1' &&
+          read(radioValues, 'disabled', '0') != '1',
+      hidden: read(values, 'hidden', '0') == '1',
+      txPower: int.tryParse(read(radioValues, 'txpower', '')),
+    );
+  }
+}
+
 class OpenwrtStaticRoute {
   final String section;
   final String interfaceName;
@@ -4027,6 +4099,129 @@ class AppState extends ChangeNotifier {
           '/etc/init.d/network reload 2>/dev/null; /etc/init.d/dnsmasq restart 2>/dev/null || true',
     );
     notifyListeners();
+  }
+
+  Future<OpenwrtWirelessNetworkConfig?> fetchWirelessNetworkConfig(
+    String section, {
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      return OpenwrtWirelessNetworkConfig(
+        section: section,
+        radioSection: 'radio0',
+        ssid: 'Openwalla',
+        password: 'openwalla-demo',
+        encryption: 'psk2',
+        enabled: true,
+        hidden: false,
+        txPower: 20,
+      );
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return null;
+    }
+
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'uci',
+        method: 'get',
+        params: {'config': 'wireless'},
+        context: context,
+      );
+      final values = _extractUciValues(result);
+      final ifaceValues = values[section];
+      if (ifaceValues == null ||
+          ifaceValues['.type']?.toString() != 'wifi-iface') {
+        return null;
+      }
+      final radioSection = ifaceValues['device']?.toString() ?? '';
+      return OpenwrtWirelessNetworkConfig.fromUciSection(
+        section,
+        ifaceValues,
+        radioValues: values[radioSection],
+      );
+    } catch (e, stack) {
+      Logger.warning('Optional wireless config fetch failed: $e');
+      Logger.debug('Optional wireless config stack: $stack');
+      return null;
+    }
+  }
+
+  Future<void> saveWirelessNetworkConfig(
+    OpenwrtWirelessNetworkConfig config, {
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    final sectionPattern = RegExp(r'^[A-Za-z0-9_]+$');
+    if (!sectionPattern.hasMatch(config.section)) {
+      throw StateError('Unsupported wireless section: ${config.section}');
+    }
+    if (config.radioSection.isNotEmpty &&
+        !sectionPattern.hasMatch(config.radioSection)) {
+      throw StateError('Unsupported radio section: ${config.radioSection}');
+    }
+
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'wireless',
+      section: config.section,
+      values: {
+        'ssid': config.ssid.trim(),
+        'disabled': config.enabled ? '0' : '1',
+        'hidden': config.hidden ? '1' : '0',
+        'encryption': config.encryption.trim().isEmpty
+            ? 'psk2'
+            : config.encryption.trim(),
+        'key': config.password,
+      },
+      context: context,
+    );
+
+    if (config.radioSection.isNotEmpty) {
+      await _apiService!.uciSet(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        config: 'wireless',
+        section: config.radioSection,
+        values: {
+          'disabled': config.enabled ? '0' : '1',
+          if (config.txPower != null) 'txpower': config.txPower!.toString(),
+        },
+      );
+    }
+
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'wireless',
+    );
+    await _apiService!.systemExec(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      command: 'wifi reload',
+    );
+    await fetchDashboardData();
   }
 
   Future<int> fetchNotificationCount({BuildContext? context}) async {

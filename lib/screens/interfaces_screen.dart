@@ -463,6 +463,19 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
     }
   }
 
+  Future<void> _showEditWirelessSheet(String section) async {
+    if (section.isEmpty) return;
+    final updated = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _WirelessNetworkEditSheet(section: section),
+    );
+    if (updated == true && mounted) {
+      await ref.read(appStateProvider).fetchDashboardData();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = ref.read(appStateProvider);
@@ -734,45 +747,55 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
             final config = iface['config'] ?? {};
             final iwinfo = iface['iwinfo'] ?? {};
             final uciName = iface['section'] as String?;
+            final uciConfig = uciName == null ? null : uciInterfaces[uciName];
+            final ifaceConfig = uciConfig ?? config;
             if (uciName != null) {
               runtimeInterfaces.add(uciName);
             }
 
             final isRadioEnabled = uciRadios[radioName]?['disabled'] != '1';
-            final isIfaceEnabled = config['disabled'] != '1';
+            final isIfaceEnabled = ifaceConfig['disabled'] != '1';
             final isEnabled = isRadioEnabled && isIfaceEnabled;
+            final hidden = _uciString(ifaceConfig['hidden'], '0') == '1';
+            final encryption = _uciString(ifaceConfig['encryption'], 'N/A');
+            final txPower = _uciString(uciRadios[radioName]?['txpower']);
 
             final name = iface['name'] ?? '';
             final ssid = _uciString(iwinfo['ssid']).isNotEmpty
                 ? _uciString(iwinfo['ssid'])
-                : _uciString(config['ssid']);
-            final deviceName = _uciString(config['device'], radioName);
-            final mode = _uciString(config['mode']).toUpperCase().isNotEmpty
-                ? _uciString(config['mode']).toUpperCase()
+                : _uciString(ifaceConfig['ssid']);
+            final deviceName = _uciString(ifaceConfig['device'], radioName);
+            final mode =
+                _uciString(ifaceConfig['mode']).toUpperCase().isNotEmpty
+                ? _uciString(ifaceConfig['mode']).toUpperCase()
                 : (iwinfo['mode']?.toString().toUpperCase() ?? 'N/A');
             interfacesList.add({
-              'name': _uciString(config['ssid']).isNotEmpty
-                  ? _uciString(config['ssid'])
+              'section': uciName ?? '',
+              'name': _uciString(ifaceConfig['ssid']).isNotEmpty
+                  ? _uciString(ifaceConfig['ssid'])
                   : (iwinfo['ssid']?.toString() ?? 'Unnamed'),
               'subtitle':
-                  '$mode • Ch. ${iwinfo['channel']?.toString() ?? _uciString(config['channel'], 'N/A')}',
+                  '$mode • Ch. ${iwinfo['channel']?.toString() ?? _uciString(ifaceConfig['channel'], 'N/A')}',
               'isEnabled': isEnabled,
               'deviceName': deviceName,
               'radioName': radioName,
               'ssid': ssid,
               'interfaceName': name,
               'details': {
-                'Device': _uciString(config['device'], radioName),
-                'Mode': _uciString(config['mode']).isNotEmpty
-                    ? _uciString(config['mode'])
+                'Device': _uciString(ifaceConfig['device'], radioName),
+                'Mode': _uciString(ifaceConfig['mode']).isNotEmpty
+                    ? _uciString(ifaceConfig['mode'])
                     : (iwinfo['mode']?.toString() ?? 'N/A'),
                 'Channel':
                     iwinfo['channel']?.toString() ??
-                    _uciString(config['channel'], 'N/A'),
+                    _uciString(ifaceConfig['channel'], 'N/A'),
                 'Signal': '${iwinfo['signal']?.toString() ?? '--'} dBm',
-                'Network': (config['network'] is List)
-                    ? (config['network'] as List).join(', ')
-                    : _uciString(config['network'], 'N/A'),
+                'Network': (ifaceConfig['network'] is List)
+                    ? (ifaceConfig['network'] as List).join(', ')
+                    : _uciString(ifaceConfig['network'], 'N/A'),
+                'Security': encryption,
+                'SSID Visibility': hidden ? 'Hidden' : 'Visible',
+                'TX Power': txPower.isEmpty ? 'Auto' : '$txPower dBm',
               },
             });
           }
@@ -788,7 +811,10 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
         final isEnabled = isRadioEnabled && isIfaceEnabled;
 
         final name = _uciString(config['ssid'], 'Unnamed');
+        final hidden = _uciString(config['hidden'], '0') == '1';
+        final txPower = _uciString(uciRadios[radioName]?['txpower']);
         interfacesList.add({
+          'section': uciName,
           'name': name,
           'subtitle':
               '${_uciString(config['mode'], 'N/A').toUpperCase()} • Disabled',
@@ -804,6 +830,9 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
             'Network': (config['network'] is List)
                 ? (config['network'] as List).join(', ')
                 : _uciString(config['network'], 'N/A'),
+            'Security': _uciString(config['encryption'], 'N/A'),
+            'SSID Visibility': hidden ? 'Hidden' : 'Visible',
+            'TX Power': txPower.isEmpty ? 'Auto' : '$txPower dBm',
           },
         });
       }
@@ -849,11 +878,44 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
             subtitle: iface['subtitle'],
             isUp: iface['isEnabled'],
             icon: Icons.wifi,
-            details: _buildGenericDetails(context, iface['details']),
+            details: _buildWirelessDetails(context, iface),
             initiallyExpanded: shouldExpand,
           ),
         );
       }, childCount: interfaces.length),
+    );
+  }
+
+  Widget _buildWirelessDetails(
+    BuildContext context,
+    Map<String, dynamic> iface,
+  ) {
+    final section = iface['section']?.toString() ?? '';
+    return Column(
+      children: [
+        _buildGenericDetails(context, iface['details']),
+        if (section.isNotEmpty) ...[
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          const SizedBox(height: 12),
+          Center(
+            child: FilledButton.tonalIcon(
+              onPressed: () => _showEditWirelessSheet(section),
+              icon: const Icon(Icons.tune_rounded, size: 18),
+              label: const Text('Edit Wi-Fi Settings'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+      ],
     );
   }
 
@@ -2338,6 +2400,285 @@ class _NetworkInterfaceEditSheetState
                         ],
                       ),
                     ],
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _isSaving
+                                ? null
+                                : () => Navigator.of(context).pop(false),
+                            child: const Text('Dismiss'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: _isSaving ? null : _save,
+                            icon: _isSaving
+                                ? const SizedBox(
+                                    height: 18,
+                                    width: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.save_rounded),
+                            label: const Text('Save'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _WirelessNetworkEditSheet extends ConsumerStatefulWidget {
+  final String section;
+
+  const _WirelessNetworkEditSheet({required this.section});
+
+  @override
+  ConsumerState<_WirelessNetworkEditSheet> createState() =>
+      _WirelessNetworkEditSheetState();
+}
+
+class _WirelessNetworkEditSheetState
+    extends ConsumerState<_WirelessNetworkEditSheet> {
+  final _ssidController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _txPowerController = TextEditingController();
+  OpenwrtWirelessNetworkConfig? _config;
+  bool _enabled = true;
+  bool _hidden = false;
+  bool _showPassword = false;
+  bool _isLoading = true;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _ssidController.dispose();
+    _passwordController.dispose();
+    _txPowerController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final config = await ref
+        .read(appStateProvider)
+        .fetchWirelessNetworkConfig(widget.section, context: context);
+    if (!mounted) return;
+    if (config == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+    _config = config;
+    _ssidController.text = config.ssid;
+    _passwordController.text = config.password;
+    _txPowerController.text = config.txPower?.toString() ?? '';
+    _enabled = config.enabled;
+    _hidden = config.hidden;
+    setState(() => _isLoading = false);
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _save() async {
+    final current = _config;
+    if (current == null) return;
+    final ssid = _ssidController.text.trim();
+    if (ssid.isEmpty) {
+      _showError('SSID is required.');
+      return;
+    }
+    final password = _passwordController.text;
+    final encryption = current.encryption.trim().isEmpty
+        ? 'psk2'
+        : current.encryption.trim();
+    if (encryption != 'none' && password.isNotEmpty && password.length < 8) {
+      _showError('Wi-Fi password must be at least 8 characters.');
+      return;
+    }
+    final txText = _txPowerController.text.trim();
+    final txPower = txText.isEmpty ? null : int.tryParse(txText);
+    if (txText.isNotEmpty && (txPower == null || txPower < 0 || txPower > 40)) {
+      _showError('TX power must be a number from 0 to 40.');
+      return;
+    }
+
+    final next = current.copyWith(
+      ssid: ssid,
+      password: password,
+      enabled: _enabled,
+      hidden: _hidden,
+      txPower: txPower,
+    );
+
+    setState(() => _isSaving = true);
+    try {
+      await ref
+          .read(appStateProvider)
+          .saveWirelessNetworkConfig(next, context: context);
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      _showError('Failed to save Wi-Fi settings: $e');
+      setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          18,
+          0,
+          18,
+          MediaQuery.of(context).viewInsets.bottom + 18,
+        ),
+        child: _isLoading
+            ? const Padding(
+                padding: EdgeInsets.symmetric(vertical: 44),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : _config == null
+            ? Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text('Unable to load ${widget.section}.'),
+              )
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Edit Wi-Fi',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Close',
+                          onPressed: _isSaving
+                              ? null
+                              : () => Navigator.of(context).pop(false),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _config!.radioSection.isEmpty
+                          ? widget.section
+                          : '${widget.section} on ${_config!.radioSection}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _FormPanel(
+                      children: [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Wi-Fi On'),
+                          subtitle: const Text('Enable or disable this SSID'),
+                          value: _enabled,
+                          onChanged: _isSaving
+                              ? null
+                              : (value) => setState(() => _enabled = value),
+                        ),
+                        const Divider(height: 20),
+                        TextField(
+                          controller: _ssidController,
+                          enabled: !_isSaving,
+                          decoration: const InputDecoration(
+                            labelText: 'SSID',
+                            hintText: 'Openwalla',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _passwordController,
+                          enabled: !_isSaving,
+                          obscureText: !_showPassword,
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            hintText: 'At least 8 characters',
+                            suffixIcon: IconButton(
+                              tooltip: _showPassword
+                                  ? 'Hide password'
+                                  : 'Show password',
+                              onPressed: _isSaving
+                                  ? null
+                                  : () => setState(
+                                      () => _showPassword = !_showPassword,
+                                    ),
+                              icon: Icon(
+                                _showPassword
+                                    ? Icons.visibility_off_rounded
+                                    : Icons.visibility_rounded,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Radio',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _FormPanel(
+                      children: [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('SSID Visible'),
+                          subtitle: const Text(
+                            'Hide the network name when off',
+                          ),
+                          value: !_hidden,
+                          onChanged: _isSaving
+                              ? null
+                              : (value) => setState(() => _hidden = !value),
+                        ),
+                        const Divider(height: 20),
+                        TextField(
+                          controller: _txPowerController,
+                          enabled: !_isSaving,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'TX Power',
+                            hintText: 'Auto',
+                            suffixText: 'dBm',
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 18),
                     Row(
                       children: [
