@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for the Openwalla DNS monitor.
+# Installs and enables the router-side DNS resolution sampler.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

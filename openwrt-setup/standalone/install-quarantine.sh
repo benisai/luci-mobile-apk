@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for Openwalla device quarantine.
+# Installs and enables the DHCP lease watcher/firewall quarantine service.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

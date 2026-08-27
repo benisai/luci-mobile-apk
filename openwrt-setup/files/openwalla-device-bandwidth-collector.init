@@ -1,5 +1,8 @@
 #!/bin/sh /etc/rc.common
 
+# Openwalla device bandwidth collector init service.
+# Starts the nlbwmon-backed per-device bandwidth collector as a daemon.
+
 START=97
 STOP=10
 USE_PROCD=1

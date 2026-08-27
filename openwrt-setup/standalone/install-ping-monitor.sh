@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for the Openwalla ping monitor.
+# Installs and enables the router-side latency sampler.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

@@ -1,5 +1,9 @@
 #!/bin/sh
 
+# Openwalla internet blocking helper for OpenWrt.
+# Creates, updates, lists, and removes firewall rules used for device-level
+# internet pause/block actions from the mobile app.
+
 PREFIX="openwalla_time_"
 
 now() {

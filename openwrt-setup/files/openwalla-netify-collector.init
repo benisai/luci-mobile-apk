@@ -1,5 +1,8 @@
 #!/bin/sh /etc/rc.common
 
+# Openwalla Netify collector init service.
+# Starts the Netify flow collector and restarts it if the stream exits.
+
 START=95
 STOP=10
 USE_PROCD=1

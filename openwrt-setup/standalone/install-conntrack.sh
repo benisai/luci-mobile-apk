@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for Openwalla Simple Flow support.
+# Installs sqlite support and the conntrack-based flow collector service.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

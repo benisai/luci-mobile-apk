@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for Openwalla PBR support.
+# Installs OpenWrt policy-based routing packages and enables the feature flag.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for Openwalla state sync.
+# Installs boot/cron helpers that persist selected runtime state outside /tmp.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

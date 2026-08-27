@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for Openwalla WireGuard support.
+# Installs WireGuard tools, kernel/protocol support, and LuCI helpers when available.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

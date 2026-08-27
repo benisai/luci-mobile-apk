@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for Openwalla Smart Queue support.
+# Installs OpenWrt QoS/SQM packages and enables the app feature/config entries.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

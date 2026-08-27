@@ -1,5 +1,9 @@
 #!/bin/sh
 
+# Shared helpers for Openwalla standalone OpenWrt installers.
+# Provides repo/file path resolution, package install helpers, UCI setup,
+# file installation, service enable/start helpers, and rpcd ACL installation.
+
 set -u
 
 if [ "$(id -u)" != "0" ]; then

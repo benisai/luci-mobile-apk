@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for the Openwalla devices collector.
+# Installs sqlite/nlbwmon support and registers the device inventory service.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

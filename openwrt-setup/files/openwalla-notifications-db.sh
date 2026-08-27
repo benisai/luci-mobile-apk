@@ -1,5 +1,10 @@
 #!/bin/sh
 
+# Openwalla notifications database helper for OpenWrt.
+# Initializes and maintains /tmp/openwalla-notifications.sqlite for router-side
+# events. Other Openwalla scripts call this helper to insert, archive, delete,
+# or query notifications that the mobile app displays.
+
 set -eu
 
 PATH="/usr/sbin:/usr/bin:/sbin:/bin"

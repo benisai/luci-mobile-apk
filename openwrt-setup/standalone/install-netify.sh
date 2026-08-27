@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for Openwalla Detailed Flow support.
+# Installs Netify dependencies and registers the Netify SQLite collector service.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

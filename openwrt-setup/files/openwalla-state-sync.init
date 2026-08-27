@@ -1,5 +1,8 @@
 #!/bin/sh /etc/rc.common
 
+# Openwalla state sync init service.
+# Restores runtime state on boot and checkpoints selected /tmp data on stop.
+
 START=15
 STOP=89
 USE_PROCD=0

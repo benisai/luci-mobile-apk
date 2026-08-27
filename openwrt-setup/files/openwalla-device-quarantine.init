@@ -1,5 +1,8 @@
 #!/bin/sh /etc/rc.common
 
+# Openwalla device quarantine init service.
+# Starts the DHCP lease watcher that can automatically quarantine new devices.
+
 START=99
 USE_PROCD=1
 PROG="/usr/bin/openwalla-device-quarantine"

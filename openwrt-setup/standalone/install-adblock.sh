@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for Openwalla AdBlock support.
+# Installs OpenWrt adblock packages and enables the app feature/config entries.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

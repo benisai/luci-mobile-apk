@@ -1,5 +1,8 @@
 #!/bin/sh /etc/rc.common
 
+# Openwalla ping monitor init service.
+# Starts the latency sampler and keeps it alive through procd.
+
 START=96
 STOP=10
 USE_PROCD=1

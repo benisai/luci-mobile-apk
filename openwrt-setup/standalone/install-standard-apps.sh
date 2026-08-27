@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for baseline Openwalla OpenWrt packages.
+# Installs ubus, sqlite, usage, conntrack, and QR code dependencies used by the app.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

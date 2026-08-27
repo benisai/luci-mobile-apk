@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for Openwalla internet blocking support.
+# Installs the firewall helper used for device pause/block actions.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

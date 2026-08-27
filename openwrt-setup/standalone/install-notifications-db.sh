@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for the Openwalla notifications database.
+# Installs sqlite support and initializes the router-side notification store.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

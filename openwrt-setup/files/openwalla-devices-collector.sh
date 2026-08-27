@@ -1,7 +1,14 @@
 #!/bin/sh
 
 # Openwalla devices collector for OpenWrt.
-# Maintains a device inventory SQLite DB keyed by MAC address.
+# Maintains /tmp/openwalla-devices.sqlite as the app's local device inventory.
+# MAC address is the primary key so renamed devices, quarantine state, usage
+# totals, and static IP metadata can stay attached to the same client over time.
+# Device discovery is gathered from DHCP leases, ARP, ip neigh, and wireless
+# station data. nlbwmon totals are copied into total_down/total_up when nlbw is
+# present. Quarantined devices are detected from Openwalla firewall rule names.
+# Existing hostnames in the DB are preserved, so app-side device renames are not
+# overwritten by DHCP/wireless names.
 
 set -u
 

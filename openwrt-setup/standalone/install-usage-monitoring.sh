@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for Openwalla usage monitoring support.
+# Installs vnstat/nlbwmon packages used by statistics and usage dashboards.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"

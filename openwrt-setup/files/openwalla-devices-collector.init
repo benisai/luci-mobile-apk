@@ -1,5 +1,8 @@
 #!/bin/sh /etc/rc.common
 
+# Openwalla devices collector init service.
+# Starts the MAC-keyed device inventory collector as a procd-managed daemon.
+
 START=98
 USE_PROCD=1
 PROG="/usr/bin/openwalla-devices-collector"

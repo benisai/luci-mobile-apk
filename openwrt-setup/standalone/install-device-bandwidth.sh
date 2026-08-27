@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Standalone installer for Openwalla per-device bandwidth support.
+# Installs sqlite/nlbwmon tooling plus the bandwidth collector and summary helper.
+
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
