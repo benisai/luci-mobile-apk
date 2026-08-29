@@ -4921,7 +4921,7 @@ class AppState extends ChangeNotifier {
           .toList();
     }
 
-    final safeLimit = limit.clamp(1, 500).toInt();
+    final safeLimit = limit.clamp(1, 1000).toInt();
     final safeOffset = offset < 0 ? 0 : offset;
     final netifyFlows = await _fetchNetifyRawFlows(
       limit: safeLimit,

@@ -166,7 +166,7 @@ class _FlowItem {
 class _FlowsScreenState extends ConsumerState<FlowsScreen> {
   static const Color _cyan = Color(0xFF18AEEA);
   static const Color _red = Color(0xFFFF4D4F);
-  static const int _pageSize = 250;
+  static const int _pageSize = 1000;
 
   bool _isLoading = true;
   bool _isLoadingMore = false;
@@ -177,6 +177,10 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
   _FlowTimeRange _selectedTimeRange = _FlowTimeRange.twentyFourHours;
   int _flowCount = 0;
   List<_FlowItem> _flows = const [];
+  (Map<String, String>, Map<String, String>) _cachedHostnames = (
+    const {},
+    const {},
+  );
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -234,33 +238,33 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
         });
         return;
       }
-      final hostnames = await _hostnameMaps(appState);
-      final summary = await appState.fetchOpenwallaFlowSummary(
+      final hostnamesFuture = _hostnameMaps(appState);
+      final summaryFuture = appState.fetchOpenwallaFlowSummary(
         provider: OpenwallaFlowProvider.netify,
         protocolFilter: _selectedProtocolFilter,
         hoursBack: _selectedTimeRange.hours,
       );
-      if (summary.provider == OpenwallaFlowProvider.none) {
-        if (!mounted) return;
-        setState(() {
-          _flowCount = 0;
-          _flows = const [];
-          _hasMoreFlows = false;
-          _isLoading = false;
-        });
-        return;
-      }
-      final flows = await appState.fetchNetifyFlows(
+      final flowsFuture = appState.fetchNetifyFlows(
         limit: _pageSize,
         protocolFilter: _selectedProtocolFilter,
         hoursBack: _selectedTimeRange.hours,
       );
+      final hostnames = await hostnamesFuture;
+      final flows = await flowsFuture;
+      if (!mounted) return;
+      setState(() {
+        _cachedHostnames = hostnames;
+        _flows = _mapFlowItems(flows, hostnames);
+        _flowCount = flows.length;
+        _hasMoreFlows = flows.length == _pageSize;
+        _isLoading = false;
+      });
+
+      final summary = await summaryFuture;
       if (!mounted) return;
       setState(() {
         _flowCount = summary.count;
-        _flows = _mapFlowItems(flows, hostnames);
-        _hasMoreFlows = flows.length == _pageSize && _flows.length < _flowCount;
-        _isLoading = false;
+        _hasMoreFlows = _flows.length < summary.count;
       });
     } catch (e) {
       if (!mounted) return;
@@ -280,7 +284,6 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
 
     try {
       final appState = ref.read(appStateProvider);
-      final hostnames = await _hostnameMaps(appState);
       final flows = await appState.fetchNetifyFlows(
         limit: _pageSize,
         offset: _flows.length,
@@ -288,7 +291,7 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
         hoursBack: _selectedTimeRange.hours,
       );
       if (!mounted) return;
-      final items = _mapFlowItems(flows, hostnames);
+      final items = _mapFlowItems(flows, _cachedHostnames);
       setState(() {
         _flows = [..._flows, ...items];
         _hasMoreFlows = flows.length == _pageSize && _flows.length < _flowCount;
@@ -390,122 +393,171 @@ class _FlowsScreenState extends ConsumerState<FlowsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: const LuciAppBar(title: 'Network Flows', showBack: true),
       body: SafeArea(
         top: false,
         child: RefreshIndicator(
           onRefresh: _loadFlows,
-          child: ListView(
+          child: CustomScrollView(
             controller: _scrollController,
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
-            children: [
-              Row(
-                children: [
-                  PopupMenuButton<_FlowTimeRange>(
-                    initialValue: _selectedTimeRange,
-                    onSelected: _changeTimeRange,
-                    itemBuilder: (context) => _FlowTimeRange.values
-                        .map(
-                          (range) => PopupMenuItem<_FlowTimeRange>(
-                            value: range,
-                            child: Text(range.label),
-                          ),
-                        )
-                        .toList(),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _selectedTimeRange.label,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(
-                                color: colorScheme.onSurface,
-                                fontWeight: FontWeight.w900,
-                              ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                sliver: SliverToBoxAdapter(child: _buildFlowHeader(context)),
               ),
-              const SizedBox(height: 20),
-              Text(
-                'All Flows',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _formatCount(_flowCount),
-                style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.w900,
-                  height: 0.95,
-                ),
-              ),
-              const SizedBox(height: 18),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: ['HTTP', 'HTTPS', 'DNS']
-                    .map(
-                      (label) => _FilterChip(
-                        label: label,
-                        selected: _selectedProtocolFilter == label,
-                        onPressed: () => _toggleProtocolFilter(label),
-                      ),
-                    )
-                    .toList(),
-              ),
-              const SizedBox(height: 14),
               if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 40),
-                  child: Center(child: CircularProgressIndicator()),
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
                 )
               else if (_netifyMissing)
-                _FlowSetupCard(onPressed: _openNetifySetup)
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  sliver: SliverToBoxAdapter(
+                    child: _FlowSetupCard(onPressed: _openNetifySetup),
+                  ),
+                )
               else if (_error != null)
-                _FlowEmptyCard(message: _error!, action: _loadFlows)
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  sliver: SliverToBoxAdapter(
+                    child: _FlowEmptyCard(message: _error!, action: _loadFlows),
+                  ),
+                )
               else if (_flows.isEmpty)
-                _FlowEmptyCard(
-                  message: 'No Netify flow data yet.',
-                  action: _loadFlows,
-                )
-              else
-                _FlowListCard(flows: _flows, onTapFlow: _showFlowDetails),
-              if (_isLoadingMore)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 18),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (!_isLoading && _flows.isNotEmpty && !_hasMoreFlows)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  child: Text(
-                    'End of flows',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w700,
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  sliver: SliverToBoxAdapter(
+                    child: _FlowEmptyCard(
+                      message: 'No Netify flow data yet.',
+                      action: _loadFlows,
                     ),
                   ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  sliver: SliverList.builder(
+                    itemCount: _flows.length,
+                    itemBuilder: (context, index) {
+                      final flow = _flows[index];
+                      return _FlowRowCard(
+                        flow: flow,
+                        isFirst: index == 0,
+                        isLast: index == _flows.length - 1,
+                        onTap: () => _showFlowDetails(flow),
+                      );
+                    },
+                  ),
                 ),
+              SliverToBoxAdapter(child: _buildFlowFooter(context)),
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildFlowHeader(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            PopupMenuButton<_FlowTimeRange>(
+              initialValue: _selectedTimeRange,
+              onSelected: _changeTimeRange,
+              itemBuilder: (context) => _FlowTimeRange.values
+                  .map(
+                    (range) => PopupMenuItem<_FlowTimeRange>(
+                      value: range,
+                      child: Text(range.label),
+                    ),
+                  )
+                  .toList(),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _selectedTimeRange.label,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        Text(
+          'All Flows',
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          _formatCount(_flowCount),
+          style: Theme.of(context).textTheme.displaySmall?.copyWith(
+            color: colorScheme.onSurface,
+            fontWeight: FontWeight.w900,
+            height: 0.95,
+          ),
+        ),
+        const SizedBox(height: 18),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: ['HTTP', 'HTTPS', 'DNS']
+              .map(
+                (label) => _FilterChip(
+                  label: label,
+                  selected: _selectedProtocolFilter == label,
+                  onPressed: () => _toggleProtocolFilter(label),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFlowFooter(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    if (_isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 18),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (!_isLoading && _flows.isNotEmpty && !_hasMoreFlows) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        child: Text(
+          'End of flows',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 }
 
@@ -643,28 +695,51 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
-class _FlowListCard extends StatelessWidget {
-  final List<_FlowItem> flows;
-  final ValueChanged<_FlowItem> onTapFlow;
+class _FlowRowCard extends StatelessWidget {
+  final _FlowItem flow;
+  final bool isFirst;
+  final bool isLast;
+  final VoidCallback onTap;
 
-  const _FlowListCard({required this.flows, required this.onTapFlow});
+  const _FlowRowCard({
+    required this.flow,
+    required this.isFirst,
+    required this.isLast,
+    required this.onTap,
+  });
+
+  BorderRadius get _radius => BorderRadius.vertical(
+    top: isFirst ? const Radius.circular(8) : Radius.zero,
+    bottom: isLast ? const Radius.circular(8) : Radius.zero,
+  );
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-
-    return Container(
+    return DecoratedBox(
       decoration: BoxDecoration(
         color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+        borderRadius: _radius,
+        border: Border(
+          left: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+          ),
+          right: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+          ),
+          top: BorderSide(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+          ),
+          bottom: isLast
+              ? BorderSide(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+                )
+              : BorderSide.none,
         ),
       ),
-      child: Column(
-        children: flows
-            .map((flow) => _FlowRow(flow: flow, onTap: () => onTapFlow(flow)))
-            .toList(),
+      child: ClipRRect(
+        borderRadius: _radius,
+        child: _FlowRow(flow: flow, onTap: onTap),
       ),
     );
   }
