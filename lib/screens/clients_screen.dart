@@ -686,8 +686,6 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
                 ],
               ),
               const SizedBox(height: 18),
-              _DeviceUsagePanel(client: widget.client),
-              const SizedBox(height: 18),
               Text(
                 'Device Name',
                 style: theme.textTheme.labelLarge?.copyWith(
@@ -1187,6 +1185,10 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
       );
     }
 
+    final blockColor = client.isBlocked
+        ? theme.colorScheme.primary
+        : theme.colorScheme.error;
+
     return Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(
@@ -1205,6 +1207,16 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
             ),
             const Divider(height: 1, indent: 16, endIndent: 16),
           ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              LuciSpacing.md,
+              LuciSpacing.md,
+              LuciSpacing.md,
+              LuciSpacing.sm,
+            ),
+            child: _DeviceUsagePanel(client: client),
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
           detailRow(
             'IP Address',
             client.ipAddress,
@@ -1241,69 +1253,6 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
               semanticsLabel: 'DNS Name: ${client.dnsName}',
             ),
           const Divider(height: 1, indent: 16, endIndent: 16),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              LuciSpacing.md,
-              LuciSpacing.sm,
-              LuciSpacing.md,
-              LuciSpacing.sm,
-            ),
-            child: SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: widget.isBlockingActionRunning
-                    ? null
-                    : () => widget.onToggleInternetBlock(!client.isBlocked),
-                icon: widget.isBlockingActionRunning
-                    ? SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: theme.colorScheme.onPrimary.withValues(
-                            alpha: 0.9,
-                          ),
-                        ),
-                      )
-                    : Icon(
-                        client.isBlocked
-                            ? Icons.lock_open_rounded
-                            : Icons.block_rounded,
-                      ),
-                label: Text(
-                  widget.isBlockingActionRunning
-                      ? 'Updating...'
-                      : client.isBlocked
-                      ? 'Unblock Device'
-                      : 'Block Internet Access',
-                ),
-                style: FilledButton.styleFrom(
-                  backgroundColor: client.isBlocked
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.error,
-                  foregroundColor: client.isBlocked
-                      ? theme.colorScheme.onPrimary
-                      : theme.colorScheme.onError,
-                ),
-              ),
-            ),
-          ),
-          const Divider(height: 1, indent: 16, endIndent: 16),
-          const SizedBox(height: 8),
-          detailRow(
-            'Download',
-            _formatBytes(client.totalDownloadBytes),
-            valueColor: const Color(0xFF18AEEA),
-            semanticsLabel:
-                'Downloaded: ${_formatBytes(client.totalDownloadBytes)}',
-          ),
-          detailRow(
-            'Upload',
-            _formatBytes(client.totalUploadBytes),
-            valueColor: const Color(0xFFF27C24),
-            semanticsLabel:
-                'Uploaded: ${_formatBytes(client.totalUploadBytes)}',
-          ),
           if (client.staticIpAddress != null &&
               client.staticIpAddress!.isNotEmpty)
             detailRow(
@@ -1318,35 +1267,73 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
               LuciSpacing.md,
               LuciSpacing.md,
             ),
-            child: SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: widget.onOpenSettings,
-                icon: const Icon(Icons.edit_rounded),
-                label: const Text('Device Settings'),
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: widget.isBlockingActionRunning
+                        ? null
+                        : () => widget.onToggleInternetBlock(!client.isBlocked),
+                    icon: widget.isBlockingActionRunning
+                        ? SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: blockColor.withValues(alpha: 0.9),
+                            ),
+                          )
+                        : Icon(
+                            client.isBlocked
+                                ? Icons.lock_open_rounded
+                                : Icons.block_rounded,
+                          ),
+                    label: Text(
+                      widget.isBlockingActionRunning
+                          ? 'Updating'
+                          : client.isBlocked
+                          ? 'Unblock'
+                          : 'Block',
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: blockColor,
+                      backgroundColor: blockColor.withValues(alpha: 0.08),
+                      side: BorderSide(
+                        color: blockColor.withValues(alpha: 0.42),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: widget.onOpenSettings,
+                    icon: const Icon(Icons.edit_rounded),
+                    label: const Text('Settings'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
-  }
-
-  String _formatBytes(int bytes) {
-    if (bytes <= 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    var value = bytes.toDouble();
-    var unit = 0;
-    while (value >= 1024 && unit < units.length - 1) {
-      value /= 1024;
-      unit++;
-    }
-    final decimals = value >= 100 || unit == 0
-        ? 0
-        : value >= 10
-        ? 1
-        : 2;
-    return '${value.toStringAsFixed(decimals)} ${units[unit]}';
   }
 
   String _buildMinimalClientSubtitle(Client client) {
