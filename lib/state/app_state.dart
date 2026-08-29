@@ -949,9 +949,11 @@ class NetifyFlow {
   static NetifyFlow? fromJsonLine(String line) {
     try {
       final decoded = jsonDecode(line);
-      if (decoded is! Map || decoded['type'] != 'flow') return null;
-      final flow = decoded['flow'];
-      if (flow is! Map) return null;
+      if (decoded is! Map) return null;
+      final decodedType = decoded['type']?.toString().toLowerCase();
+      final nestedFlow = decoded['flow'];
+      if (decodedType != 'flow' && nestedFlow is! Map) return null;
+      final flow = nestedFlow is Map ? nestedFlow : decoded;
 
       final timestamp = _parseNetifyTimestamp(
         flow['last_seen_at'] ?? flow['first_seen_at'] ?? decoded['timeinsert'],
@@ -965,39 +967,71 @@ class NetifyFlow {
       final destination = _firstString([
         sni,
         flow['host_server_name'],
+        flow['server_name'],
         flow['fqdn'],
         flow['dns_host_name'],
+        flow['host'],
+        flow['hostname'],
         flow['other_ip'],
+        flow['remote_ip'],
         'Unknown',
       ]);
       final application = _firstString([
         flow['detected_application_name'],
         flow['detected_app_name'],
+        flow['application_name'],
+        flow['app_name'],
         destination,
       ]);
-      final destinationIp = _firstString([flow['other_ip'], '-']);
+      final destinationIp = _firstString([
+        flow['other_ip'],
+        flow['remote_ip'],
+        flow['dst_ip'],
+        flow['dest_ip'],
+        '-',
+      ]);
       final downloaded = _firstInt([
         flow['other_bytes'],
         flow['download_bytes'],
         flow['server_bytes'],
+        flow['dst_bytes'],
+        flow['dest_bytes'],
       ]);
       final uploaded = _firstInt([
         flow['local_bytes'],
         flow['upload_bytes'],
         flow['client_bytes'],
+        flow['src_bytes'],
       ]);
       final total = _firstInt([flow['total_bytes'], downloaded + uploaded]);
 
       return NetifyFlow(
         timestamp: timestamp,
-        deviceMac: _normalizeMac(flow['local_mac']),
-        localIp: _firstString([flow['local_ip'], '-']),
-        localPort: _firstString([flow['local_port'], '']),
+        deviceMac: _normalizeMac(
+          _firstString([
+            flow['local_mac'],
+            flow['src_mac'],
+            flow['client_mac'],
+          ]),
+        ),
+        localIp: _firstString([flow['local_ip'], flow['src_ip'], '-']),
+        localPort: _firstString([flow['local_port'], flow['src_port'], '']),
         destination: destination.isNotEmpty ? destination : destinationIp,
         application: application,
-        protocol: _firstString([flow['detected_protocol_name'], 'N/A']),
+        protocol: _firstString([
+          flow['detected_protocol_name'],
+          flow['protocol_name'],
+          flow['protocol'],
+          'N/A',
+        ]),
         destinationIp: destinationIp,
-        destinationPort: _firstString([flow['other_port'], '0']),
+        destinationPort: _firstString([
+          flow['other_port'],
+          flow['remote_port'],
+          flow['dst_port'],
+          flow['dest_port'],
+          '0',
+        ]),
         interfaceName: _firstString([
           decoded['interface'],
           flow['interface'],
@@ -3190,6 +3224,7 @@ class AppState extends ChangeNotifier {
         staticIpAddress: record.staticIpAddress.isEmpty
             ? null
             : record.staticIpAddress,
+        status: record.quarantined ? 'blocked' : record.status,
       );
     }).toList();
 
@@ -3247,27 +3282,6 @@ class AppState extends ChangeNotifier {
 
   String _netifyRawWhereClause(String? protocolFilter, {int? hoursBack}) {
     final conditions = <String>[];
-    switch (protocolFilter?.toUpperCase()) {
-      case 'HTTP':
-        conditions.add(
-          'upper(json) LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"HTTP"%\'',
-        );
-        conditions.add(
-          'upper(json) NOT LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"HTTP/S"%\'',
-        );
-        break;
-      case 'HTTPS':
-        conditions.add(
-          'upper(json) LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"HTTP/S"%\'',
-        );
-        break;
-      case 'DNS':
-        conditions.add(
-          'upper(json) LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"DNS"%\'',
-        );
-        break;
-    }
-
     final safeHours = hoursBack?.clamp(1, 168).toInt();
     if (safeHours != null) {
       conditions.add(
@@ -3276,6 +3290,20 @@ class AppState extends ChangeNotifier {
     }
 
     return conditions.isEmpty ? '' : 'WHERE ${conditions.join(' AND ')}';
+  }
+
+  bool _matchesNetifyProtocol(NetifyFlow flow, String? protocolFilter) {
+    final normalized = protocolFilter?.trim().toUpperCase();
+    if (normalized == null || normalized.isEmpty) return true;
+
+    final protocol = flow.protocol.trim().toUpperCase();
+    final port = flow.destinationPort.trim();
+    return switch (normalized) {
+      'HTTP' => protocol == 'HTTP' || port == '80',
+      'HTTPS' => protocol == 'HTTP/S' || protocol == 'HTTPS' || port == '443',
+      'DNS' => protocol == 'DNS' || port == '53',
+      _ => true,
+    };
   }
 
   Future<int> fetchNetifyFlowCount({
@@ -3290,14 +3318,20 @@ class AppState extends ChangeNotifier {
     if (router == null || sysauth == null || _apiService == null) return 0;
 
     try {
+      if (protocolFilter != null && protocolFilter.trim().isNotEmpty) {
+        return await _fetchFilteredNetifyFlowCount(
+          protocolFilter: protocolFilter,
+          hoursBack: hoursBack,
+          context: context,
+        );
+      }
       final output = await _sqliteQueryOutput(
         dbExpression: _netifyDbExpression(),
         sql:
-            'SELECT COUNT(*) FROM flow_raw ${_netifyRawWhereClause(protocolFilter, hoursBack: hoursBack)};',
+            'SELECT COUNT(*) FROM flow_raw ${_netifyRawWhereClause(null, hoursBack: hoursBack)};',
         context: context,
       );
-      final netifyCount = _parseSqliteCount(output);
-      return netifyCount;
+      return _parseSqliteCount(output);
     } catch (e, stack) {
       Logger.warning('Optional Netify raw flow count fetch failed: $e');
       Logger.debug('Optional Netify raw flow count stack: $stack');
@@ -4971,10 +5005,20 @@ class AppState extends ChangeNotifier {
 
     final safeLimit = limit.clamp(1, 1000).toInt();
     final safeOffset = offset < 0 ? 0 : offset;
+    if (protocolFilter != null && protocolFilter.trim().isNotEmpty) {
+      return await _fetchFilteredNetifyRawFlows(
+        limit: safeLimit,
+        offset: safeOffset,
+        protocolFilter: protocolFilter,
+        hoursBack: hoursBack,
+        context: context,
+      );
+    }
+
     final netifyFlows = await _fetchNetifyRawFlows(
       limit: safeLimit,
       offset: safeOffset,
-      protocolFilter: protocolFilter,
+      protocolFilter: null,
       hoursBack: hoursBack,
       context: context,
     );
@@ -5164,6 +5208,75 @@ class AppState extends ChangeNotifier {
       Logger.debug('Optional connection flows stack: $stack');
       return const [];
     }
+  }
+
+  Future<int> _fetchFilteredNetifyFlowCount({
+    required String protocolFilter,
+    int? hoursBack,
+    BuildContext? context,
+  }) async {
+    var rawOffset = 0;
+    var count = 0;
+    const batchSize = 1000;
+    const maxScannedRows = 50000;
+
+    while (rawOffset < maxScannedRows) {
+      final batch = await _fetchNetifyRawFlows(
+        limit: batchSize,
+        offset: rawOffset,
+        protocolFilter: null,
+        hoursBack: hoursBack,
+        context: context,
+      );
+      if (batch.isEmpty) break;
+      count += batch
+          .where((flow) => _matchesNetifyProtocol(flow, protocolFilter))
+          .length;
+      if (batch.length < batchSize) break;
+      rawOffset += batch.length;
+    }
+
+    return count;
+  }
+
+  Future<List<NetifyFlow>> _fetchFilteredNetifyRawFlows({
+    required int limit,
+    required int offset,
+    required String protocolFilter,
+    int? hoursBack,
+    BuildContext? context,
+  }) async {
+    var rawOffset = 0;
+    var skippedMatches = 0;
+    final matches = <NetifyFlow>[];
+    const batchSize = 1000;
+    const maxScannedRows = 50000;
+
+    while (rawOffset < maxScannedRows && matches.length < limit) {
+      final batch = await _fetchNetifyRawFlows(
+        limit: batchSize,
+        offset: rawOffset,
+        protocolFilter: null,
+        hoursBack: hoursBack,
+        context: context,
+      );
+      if (batch.isEmpty) break;
+
+      for (final flow in batch) {
+        if (!_matchesNetifyProtocol(flow, protocolFilter)) continue;
+        if (skippedMatches < offset) {
+          skippedMatches++;
+          continue;
+        }
+        matches.add(flow);
+        if (matches.length >= limit) break;
+      }
+
+      if (batch.length < batchSize) break;
+      rawOffset += batch.length;
+    }
+
+    return matches;
   }
 
   Future<List<NetifyFlow>> _fetchNetifyRawFlows({
@@ -7298,7 +7411,6 @@ class AppState extends ChangeNotifier {
     try {
       final activeDeviceRecords = await fetchDeviceRecords(
         aggregateAllRouters: true,
-        activeOnly: true,
       );
       if (activeDeviceRecords.$1.isNotEmpty) {
         return _clientsFromDeviceDbRecords(activeDeviceRecords);
@@ -7451,7 +7563,7 @@ class AppState extends ChangeNotifier {
       }
       final router = _routerService!.selectedRouter!;
 
-      final activeDeviceRecords = await fetchDeviceRecords(activeOnly: true);
+      final activeDeviceRecords = await fetchDeviceRecords();
       if (activeDeviceRecords.$1.isNotEmpty) {
         return _clientsFromDeviceDbRecords(activeDeviceRecords);
       }
@@ -7618,11 +7730,13 @@ class AppState extends ChangeNotifier {
       final hostname = record.hostname.trim();
       yield client.copyWith(
         hostname: hostname.isEmpty ? client.hostname : hostname,
+        isBlocked: record.quarantined || record.status == 'blocked',
         totalUploadBytes: record.totalUploadBytes,
         totalDownloadBytes: record.totalDownloadBytes,
         staticIpAddress: record.staticIpAddress.isEmpty
             ? null
             : record.staticIpAddress,
+        status: record.quarantined ? 'blocked' : record.status,
       );
     }
   }

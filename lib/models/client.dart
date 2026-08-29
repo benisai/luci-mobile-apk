@@ -17,6 +17,7 @@ class Client {
   final int totalUploadBytes;
   final int totalDownloadBytes;
   final String? staticIpAddress;
+  final String status;
 
   Client({
     required this.ipAddress,
@@ -35,6 +36,7 @@ class Client {
     this.totalUploadBytes = 0,
     this.totalDownloadBytes = 0,
     this.staticIpAddress,
+    this.status = 'online',
   });
 
   // Helper function to determine connection type from MAC address or other data
@@ -187,6 +189,7 @@ class Client {
       expiresAt: expiresAtTimestamp, // Store the calculated absolute timestamp
       connectionType: _determineConnectionType(lease),
       ipv6Addresses: ipv6Addresses,
+      status: 'online',
     );
   }
 
@@ -199,8 +202,11 @@ class Client {
       hostname: 'Unknown',
       connectionType: ConnectionType.wireless,
       isBlocked: false,
+      status: 'online',
     );
   }
+
+  bool get isOffline => status.toLowerCase() == 'offline';
 
   // Get formatted lease time (e.g., "2d 4h 30m")
   String get formattedLeaseTime {
@@ -257,6 +263,7 @@ class Client {
     int? totalUploadBytes,
     int? totalDownloadBytes,
     String? staticIpAddress,
+    String? status,
   }) {
     return Client(
       ipAddress: ipAddress ?? this.ipAddress,
@@ -275,6 +282,7 @@ class Client {
       totalUploadBytes: totalUploadBytes ?? this.totalUploadBytes,
       totalDownloadBytes: totalDownloadBytes ?? this.totalDownloadBytes,
       staticIpAddress: staticIpAddress ?? this.staticIpAddress,
+      status: status ?? this.status,
     );
   }
 }

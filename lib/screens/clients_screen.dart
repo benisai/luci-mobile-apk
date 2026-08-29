@@ -212,8 +212,13 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                     final blockedCount = clients
                         .where((client) => client.isBlocked)
                         .length;
-                    final onlineCount = clients.length - blockedCount;
-                    const offlineCount = 0;
+                    final offlineCount = clients
+                        .where(
+                          (client) => !client.isBlocked && client.isOffline,
+                        )
+                        .length;
+                    final onlineCount =
+                        clients.length - blockedCount - offlineCount;
 
                     final filteredClients = clients.where((client) {
                       final query = _searchQuery.toLowerCase();
@@ -962,8 +967,16 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
                             duration: const Duration(milliseconds: 500),
                             curve: Curves.elasticOut,
                             child: Icon(
-                              Icons.person_outline,
-                              color: colorScheme.primary,
+                              widget.client.isBlocked
+                                  ? Icons.block_rounded
+                                  : widget.client.isOffline
+                                  ? Icons.cloud_off_rounded
+                                  : Icons.person_outline,
+                              color: widget.client.isBlocked
+                                  ? const Color(0xFFFF4D5A)
+                                  : widget.client.isOffline
+                                  ? colorScheme.onSurfaceVariant
+                                  : colorScheme.primary,
                               size: 22,
                               semanticLabel: 'Client icon',
                             ),
@@ -975,6 +988,8 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
                           child: Tooltip(
                             message: widget.client.isBlocked
                                 ? 'Client is blocked'
+                                : widget.client.isOffline
+                                ? 'Client is offline'
                                 : 'Client is online',
                             child: Container(
                               width: 10,
@@ -982,6 +997,8 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
                               decoration: BoxDecoration(
                                 color: widget.client.isBlocked
                                     ? const Color(0xFFFF4D5A)
+                                    : widget.client.isOffline
+                                    ? colorScheme.onSurfaceVariant
                                     : Colors.green,
                                 shape: BoxShape.circle,
                                 border: Border.all(
@@ -1041,6 +1058,8 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
                     ),
                     if (widget.client.isBlocked)
                       _buildBlockedChip(context)
+                    else if (widget.client.isOffline)
+                      _buildOfflineChip(context)
                     else if (widget.client.connectionType !=
                         ConnectionType.unknown)
                       _buildConnectionTypeChip(
@@ -1121,6 +1140,23 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
       ).colorScheme.errorContainer.withValues(alpha: 0.62),
       labelStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
         color: Theme.of(context).colorScheme.onErrorContainer,
+        fontWeight: FontWeight.w800,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
+  Widget _buildOfflineChip(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Chip(
+      label: const Text('Offline'),
+      avatar: const Icon(Icons.cloud_off_rounded, size: 16),
+      backgroundColor: colorScheme.surfaceContainerHighest.withValues(
+        alpha: 0.45,
+      ),
+      labelStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: colorScheme.onSurfaceVariant,
         fontWeight: FontWeight.w800,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
