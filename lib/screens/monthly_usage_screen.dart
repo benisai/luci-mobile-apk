@@ -6,8 +6,13 @@ import 'package:luci_mobile/widgets/luci_app_bar.dart';
 
 class MonthlyUsageScreen extends ConsumerStatefulWidget {
   final String interfaceName;
+  final int monthlyLimitGb;
 
-  const MonthlyUsageScreen({super.key, required this.interfaceName});
+  const MonthlyUsageScreen({
+    super.key,
+    required this.interfaceName,
+    this.monthlyLimitGb = 0,
+  });
 
   static const Color _cyan = Color(0xFF18AEEA);
   static const Color _orange = Color(0xFFF27C24);
@@ -99,7 +104,7 @@ class _MonthlyUsageScreenState extends ConsumerState<MonthlyUsageScreen> {
                   interfaceName: widget.interfaceName,
                   daysLeft: daysLeft,
                   usedBytes: monthlyTotal,
-                  progress: totalDays > 0 ? now.day / totalDays : 0,
+                  progress: _monthlyProgress(monthlyTotal, totalDays),
                 ),
                 const SizedBox(height: 14),
                 _DailyUsageChartCard(samples: samples),
@@ -109,6 +114,14 @@ class _MonthlyUsageScreenState extends ConsumerState<MonthlyUsageScreen> {
         ),
       ),
     );
+  }
+
+  double _monthlyProgress(int usedBytes, int totalDays) {
+    final limitBytes = widget.monthlyLimitGb <= 0
+        ? 0
+        : widget.monthlyLimitGb * 1024 * 1024 * 1024;
+    if (limitBytes > 0) return usedBytes / limitBytes;
+    return totalDays > 0 ? DateTime.now().day / totalDays : 0;
   }
 }
 

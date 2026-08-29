@@ -117,9 +117,13 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                           (snapshot.data?.interfaceName.isNotEmpty ?? false)
                           ? snapshot.data!.interfaceName
                           : _primaryUsageInterfaceName(appState);
+                      final settings = snapshot.data;
                       return Column(
                         children: [
-                          _buildMonthlyUsageCard(interfaceName),
+                          _buildMonthlyUsageCard(
+                            interfaceName,
+                            monthlyLimitGb: settings?.monthlyLimitGb ?? 0,
+                          ),
                           const SizedBox(height: 12),
                           _buildUsageCard(interfaceName),
                           const SizedBox(height: 12),
@@ -245,13 +249,18 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     );
   }
 
-  Widget _buildMonthlyUsageCard(String interfaceName) {
+  Widget _buildMonthlyUsageCard(
+    String interfaceName, {
+    required int monthlyLimitGb,
+  }) {
     return _card(
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) =>
-                MonthlyUsageScreen(interfaceName: interfaceName),
+            builder: (context) => MonthlyUsageScreen(
+              interfaceName: interfaceName,
+              monthlyLimitGb: monthlyLimitGb,
+            ),
           ),
         );
       },
@@ -266,7 +275,10 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
               FutureBuilder<List<VnstatUsageSample>>(
                 future: _monthlyUsageFuture(interfaceName),
                 builder: (context, snapshot) {
-                  final summary = _monthlySummary(snapshot.data ?? const []);
+                  final summary = _monthlySummary(
+                    snapshot.data ?? const [],
+                    monthlyLimitGb: monthlyLimitGb,
+                  );
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
@@ -298,7 +310,10 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
           FutureBuilder<List<VnstatUsageSample>>(
             future: _monthlyUsageFuture(interfaceName),
             builder: (context, snapshot) {
-              final summary = _monthlySummary(snapshot.data ?? const []);
+              final summary = _monthlySummary(
+                snapshot.data ?? const [],
+                monthlyLimitGb: monthlyLimitGb,
+              );
               return _progressBar(summary.progress);
             },
           ),
@@ -1052,8 +1067,9 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   }
 
   ({int totalBytes, int daysLeft, double progress}) _monthlySummary(
-    List<VnstatUsageSample> samples,
-  ) {
+    List<VnstatUsageSample> samples, {
+    required int monthlyLimitGb,
+  }) {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month);
     final end = DateTime(now.year, now.month + 1);
@@ -1068,10 +1084,19 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
           (sum, sample) => sum + sample.downloadBytes + sample.uploadBytes,
         );
 
+    final limitBytes = monthlyLimitGb <= 0
+        ? 0
+        : monthlyLimitGb * 1024 * 1024 * 1024;
+    final progress = limitBytes > 0
+        ? totalBytes / limitBytes
+        : daysInMonth <= 0
+        ? 0
+        : now.day / daysInMonth;
+
     return (
       totalBytes: totalBytes,
       daysLeft: max(0, daysInMonth - now.day),
-      progress: daysInMonth <= 0 ? 0 : now.day / daysInMonth,
+      progress: progress.toDouble(),
     );
   }
 

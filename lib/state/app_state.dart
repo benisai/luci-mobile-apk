@@ -713,10 +713,12 @@ class SpeedtestMonitorSettings {
 class MonthlyUsageSettings {
   final int monthStartDay;
   final String interfaceName;
+  final int monthlyLimitGb;
 
   const MonthlyUsageSettings({
     required this.monthStartDay,
     required this.interfaceName,
+    this.monthlyLimitGb = 0,
   });
 }
 
@@ -3250,6 +3252,9 @@ class AppState extends ChangeNotifier {
         conditions.add(
           'upper(json) LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"HTTP"%\'',
         );
+        conditions.add(
+          'upper(json) NOT LIKE \'%"DETECTED_PROTOCOL_NAME"%:%"HTTP/S"%\'',
+        );
         break;
       case 'HTTPS':
         conditions.add(
@@ -4896,19 +4901,18 @@ class AppState extends ChangeNotifier {
       final normalized = protocolFilter?.toUpperCase();
       final filteredByProtocol = normalized == null || normalized.isEmpty
           ? mockFlows
-          : mockFlows
-                .where(
-                  (flow) =>
-                      flow.protocol.toUpperCase().contains(normalized) ||
-                      flow.destinationPort ==
-                          switch (normalized) {
-                            'HTTP' => '80',
-                            'HTTPS' => '443',
-                            'DNS' => '53',
-                            _ => '',
-                          },
-                )
-                .toList();
+          : mockFlows.where((flow) {
+              final protocol = flow.protocol.toUpperCase();
+              return switch (normalized) {
+                'HTTP' => protocol == 'HTTP' || flow.destinationPort == '80',
+                'HTTPS' =>
+                  protocol == 'HTTP/S' ||
+                      protocol == 'HTTPS' ||
+                      flow.destinationPort == '443',
+                'DNS' => protocol == 'DNS' || flow.destinationPort == '53',
+                _ => false,
+              };
+            }).toList();
       final safeHours = hoursBack?.clamp(1, 168).toInt();
       if (safeHours == null) return filteredByProtocol;
       final cutoff = now.subtract(Duration(hours: safeHours));
@@ -5607,7 +5611,30 @@ class AppState extends ChangeNotifier {
         },
         context: context,
       );
-      return _parseNlbwDeviceUsage(_commandOutput(result));
+      final rows = _parseNlbwDeviceUsage(_commandOutput(result));
+      if (rows.isEmpty) return rows;
+      final deviceNames = await fetchDeviceNameMaps();
+      final namesByMac = <String, String>{...deviceNames.$1};
+      final dhcpLeases =
+          dashboardData?['dhcpLeases']?['dhcp_leases'] as List<dynamic>? ??
+          const [];
+      for (final lease in dhcpLeases) {
+        if (lease is! Map) continue;
+        final mac = _normalizeMacAddress(lease['macaddr']?.toString() ?? '');
+        final hostname = lease['hostname']?.toString().trim() ?? '';
+        if (mac.isNotEmpty && hostname.isNotEmpty && hostname != '*') {
+          namesByMac.putIfAbsent(mac, () => hostname);
+        }
+      }
+      return rows.map((row) {
+        final name = namesByMac[_normalizeMacAddress(row.mac)];
+        return NlbwDeviceUsage(
+          mac: row.mac,
+          label: name?.isNotEmpty == true ? name! : row.label,
+          downloadBytes: row.downloadBytes,
+          uploadBytes: row.uploadBytes,
+        );
+      }).toList();
     } catch (e, stack) {
       Logger.warning('Optional nlbw top devices fetch failed: $e');
       Logger.debug('Optional nlbw top devices stack: $stack');
@@ -5699,7 +5726,7 @@ class AppState extends ChangeNotifier {
           final upload = int.tryParse(parts[2].trim()) ?? 0;
           return NlbwDeviceUsage(
             mac: mac,
-            label: mac,
+            label: 'Unknown device',
             downloadBytes: download,
             uploadBytes: upload,
           );
@@ -6110,6 +6137,7 @@ class AppState extends ChangeNotifier {
     const defaults = MonthlyUsageSettings(
       monthStartDay: 1,
       interfaceName: 'br-lan',
+      monthlyLimitGb: 0,
     );
     if (_reviewerModeEnabled) return defaults;
 
@@ -6121,11 +6149,15 @@ class AppState extends ChangeNotifier {
             int.tryParse(dashboard['month_start_day']?.toString() ?? '') ??
             defaults.monthStartDay;
         final interfaceName = dashboard['vnstat_interface']?.toString();
+        final monthlyLimitGb =
+            int.tryParse(dashboard['monthly_limit_gb']?.toString() ?? '') ??
+            defaults.monthlyLimitGb;
         return MonthlyUsageSettings(
           monthStartDay: monthStartDay.clamp(1, 31),
           interfaceName: interfaceName?.isNotEmpty == true
               ? interfaceName!
               : defaults.interfaceName,
+          monthlyLimitGb: monthlyLimitGb.clamp(0, 100000),
         );
       }
     } catch (e, stack) {
@@ -6157,6 +6189,7 @@ class AppState extends ChangeNotifier {
       values: {
         'month_start_day': settings.monthStartDay.clamp(1, 31).toString(),
         'vnstat_interface': settings.interfaceName,
+        'monthly_limit_gb': settings.monthlyLimitGb.clamp(0, 100000).toString(),
       },
       context: context,
     );

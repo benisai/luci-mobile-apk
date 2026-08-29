@@ -697,6 +697,7 @@ class _MonthlyUsageSettingsScreenState
     extends ConsumerState<_MonthlyUsageSettingsScreen> {
   static const _defaultInterface = 'br-lan';
   var _interfaces = const ['br-lan', 'wan', 'eth0', 'eth1'];
+  final _monthlyLimitController = TextEditingController();
   DateTime _startDate = DateTime.now();
   String _selectedInterface = _defaultInterface;
   bool _isLoading = true;
@@ -734,6 +735,9 @@ class _MonthlyUsageSettingsScreenState
       final now = DateTime.now();
       final safeDay = settings.monthStartDay.clamp(1, 28);
       _startDate = DateTime(now.year, now.month, safeDay);
+      _monthlyLimitController.text = settings.monthlyLimitGb <= 0
+          ? ''
+          : settings.monthlyLimitGb.toString();
       _isLoading = false;
     });
   }
@@ -761,6 +765,8 @@ class _MonthlyUsageSettingsScreenState
             MonthlyUsageSettings(
               monthStartDay: _startDate.day,
               interfaceName: _selectedInterface,
+              monthlyLimitGb:
+                  int.tryParse(_monthlyLimitController.text.trim()) ?? 0,
             ),
             context: context,
           );
@@ -778,6 +784,12 @@ class _MonthlyUsageSettingsScreenState
         setState(() => _isSaving = false);
       }
     }
+  }
+
+  @override
+  void dispose() {
+    _monthlyLimitController.dispose();
+    super.dispose();
   }
 
   Future<void> _selectStartDate() async {
@@ -833,6 +845,19 @@ class _MonthlyUsageSettingsScreenState
                                 setState(() => _selectedInterface = value);
                               }
                             },
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _monthlyLimitController,
+                      enabled: !_isSaving,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Monthly Limit',
+                        hintText: '0 for no limit',
+                        suffixText: 'GB',
+                        prefixIcon: Icon(Icons.data_usage_rounded),
+                        border: OutlineInputBorder(),
+                      ),
                     ),
                   ],
                 ),
