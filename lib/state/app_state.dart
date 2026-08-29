@@ -1197,6 +1197,7 @@ class AppState extends ChangeNotifier {
   int? _lastCpuTotalTicks;
   int? _lastCpuIdleTicks;
   double? _lastCpuUsagePercent;
+  int _lastCpuCoreCount = 1;
   int _pollAttempts = 0;
   static const int _maxPollAttempts =
       40; // Max 40 attempts = ~5 minutes with backoff
@@ -1783,6 +1784,7 @@ class AppState extends ChangeNotifier {
     _lastCpuTotalTicks = null;
     _lastCpuIdleTicks = null;
     _lastCpuUsagePercent = null;
+    _lastCpuCoreCount = 1;
   }
 
   Future<void> loadRouters() async {
@@ -2033,6 +2035,7 @@ class AppState extends ChangeNotifier {
               );
         final mockSysInfo = Map<String, dynamic>.from(results[1][1] as Map);
         mockSysInfo['cpuUsagePercent'] = 31.0;
+        mockSysInfo['cpuCoreCount'] = 4;
 
         _dashboardData = {
           'boardInfo': results[0][1],
@@ -2375,6 +2378,7 @@ class AppState extends ChangeNotifier {
       final sysInfoWithCpu = sysInfoData is Map
           ? Map<String, dynamic>.from(sysInfoData)
           : <String, dynamic>{};
+      sysInfoWithCpu['cpuCoreCount'] = _lastCpuCoreCount;
       if (cpuUsagePercent != null) {
         sysInfoWithCpu['cpuUsagePercent'] = cpuUsagePercent;
       }
@@ -2484,7 +2488,12 @@ class AppState extends ChangeNotifier {
     return int.tryParse(value.trim().split(RegExp(r'\s+')).firstOrNull ?? '');
   }
 
-  ({int total, int idle})? _parseCpuStat(String output) {
+  ({int total, int idle, int cores})? _parseCpuStat(String output) {
+    var cores = 0;
+    for (final candidate in output.split('\n')) {
+      if (RegExp(r'^cpu\d+\s+').hasMatch(candidate)) cores += 1;
+    }
+
     final line = output
         .split('\n')
         .firstWhere((line) => line.startsWith('cpu '), orElse: () => '');
@@ -2501,7 +2510,52 @@ class AppState extends ChangeNotifier {
     final idle = values[3] + (values.length > 4 ? values[4] : 0);
     final total = values.fold<int>(0, (sum, value) => sum + value);
     if (total <= 0) return null;
-    return (total: total, idle: idle);
+    return (total: total, idle: idle, cores: cores > 0 ? cores : 1);
+  }
+
+  double? _parseTopCpuUsage(String output) {
+    final line = output
+        .split('\n')
+        .firstWhere(
+          (line) => line.trimLeft().startsWith('CPU:'),
+          orElse: () => '',
+        );
+    if (line.isEmpty) return null;
+
+    final idleMatch = RegExp(r'(\d+(?:\.\d+)?)%\s+idle').firstMatch(line);
+    if (idleMatch != null) {
+      final idle = double.tryParse(idleMatch.group(1) ?? '');
+      if (idle != null) return (100 - idle).clamp(0, 100).toDouble();
+    }
+
+    var used = 0.0;
+    for (final label in const ['usr', 'sys', 'nic', 'io', 'irq', 'sirq']) {
+      final match = RegExp(r'(\d+(?:\.\d+)?)%\s+' + label).firstMatch(line);
+      used += double.tryParse(match?.group(1) ?? '') ?? 0;
+    }
+    return used > 0 ? used.clamp(0, 100).toDouble() : null;
+  }
+
+  Future<double?> _fetchTopCpuUsagePercent(String ip, bool useHttps) async {
+    if (_authService?.sysauth == null || _apiService == null) {
+      return _lastCpuUsagePercent;
+    }
+
+    try {
+      final result = await _apiService!.systemExec(
+        ip,
+        _authService!.sysauth!,
+        useHttps,
+        command: 'top -bn1 2>/dev/null | head -n 3',
+      );
+      final usage = _parseTopCpuUsage(_commandOutput(result));
+      if (usage != null) _lastCpuUsagePercent = usage;
+      return usage ?? _lastCpuUsagePercent;
+    } catch (e, stack) {
+      Logger.warning('Optional top CPU read failed: $e');
+      Logger.debug('Optional top CPU read stack: $stack');
+      return _lastCpuUsagePercent;
+    }
   }
 
   Future<double?> _fetchCpuUsagePercent(String ip, bool useHttps) async {
@@ -2519,12 +2573,13 @@ class AppState extends ChangeNotifier {
         params: {'path': '/proc/stat'},
       );
       final stat = _parseCpuStat(_commandOutput(result));
-      if (stat == null) return _lastCpuUsagePercent;
+      if (stat == null) return _fetchTopCpuUsagePercent(ip, useHttps);
 
       final previousTotal = _lastCpuTotalTicks;
       final previousIdle = _lastCpuIdleTicks;
       _lastCpuTotalTicks = stat.total;
       _lastCpuIdleTicks = stat.idle;
+      _lastCpuCoreCount = stat.cores;
 
       if (previousTotal == null || previousIdle == null) {
         final sinceBootUsage = ((stat.total - stat.idle) / stat.total * 100)
@@ -2546,7 +2601,7 @@ class AppState extends ChangeNotifier {
     } catch (e, stack) {
       Logger.warning('Optional /proc/stat CPU read failed: $e');
       Logger.debug('Optional /proc/stat CPU read stack: $stack');
-      return _lastCpuUsagePercent;
+      return _fetchTopCpuUsagePercent(ip, useHttps);
     }
   }
 

@@ -99,12 +99,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     }
   }
 
-  double _scaledLoadPercent(List<dynamic>? load, int index) {
+  double _loadAveragePercent(Map<String, dynamic>? sysInfo, int index) {
+    final load = sysInfo?['load'] as List<dynamic>?;
     if (load == null || load.isEmpty) return 0;
     final safeIndex = index < load.length ? index : 0;
     final value = load[safeIndex];
     if (value is! num) return 0;
-    return ((value / 65536) * 100).clamp(0, 100).toDouble();
+    final coreCountValue = sysInfo?['cpuCoreCount'];
+    final coreCount = coreCountValue is num && coreCountValue > 0
+        ? coreCountValue.toDouble()
+        : 1.0;
+    return ((value / 65536) / coreCount * 100).clamp(0, 100).toDouble();
   }
 
   double _legacyCpuLoadPercent(Map<String, dynamic>? sysInfo) {
@@ -1099,10 +1104,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   Widget _buildSystemVitalsCard(AppState appState) {
     final sysInfo = appState.dashboardData?['sysInfo'] as Map<String, dynamic>?;
 
-    final cpuLoad = sysInfo?['load'] as List<dynamic>?;
     final cpuPercent = _legacyCpuLoadPercent(sysInfo);
     final memoryPercent = _legacyMemoryPercent(sysInfo);
-    final loadPercent = _scaledLoadPercent(cpuLoad, 1);
+    final loadPercent = _loadAveragePercent(sysInfo, 0);
 
     return _buildOpenwallaCard(
       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 0),
