@@ -577,26 +577,20 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(8),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
+          child: Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: isSelected
-                  ? color.withValues(alpha: 0.14)
-                  : colorScheme.surfaceContainerHighest.withValues(alpha: 0.34),
+              color: colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.34,
+              ),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: isSelected
-                    ? color.withValues(alpha: 0.85)
-                    : colorScheme.outlineVariant.withValues(alpha: 0.24),
-                width: isSelected ? 1.8 : 1.0,
+                color: colorScheme.outlineVariant.withValues(alpha: 0.24),
               ),
               boxShadow: [
                 BoxShadow(
-                  color: isSelected
-                      ? color.withValues(alpha: 0.16)
-                      : Colors.black.withValues(alpha: 0.08),
-                  blurRadius: isSelected ? 12 : 10,
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
               ],
@@ -639,9 +633,9 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                 Text(
                   label,
                   style: TextStyle(
-                    color: isSelected ? color : colorScheme.onSurfaceVariant,
+                    color: colorScheme.onSurfaceVariant,
                     fontSize: 13,
-                    fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: 0,
                     height: 1.05,
                   ),
