@@ -3206,34 +3206,6 @@ class AppState extends ChangeNotifier {
     return (byMac, byIp);
   }
 
-  List<Client> _clientsFromDeviceDbRecords(
-    (Map<String, OpenwallaDeviceRecord>, Map<String, OpenwallaDeviceRecord>)
-    deviceRecords,
-  ) {
-    final clients = deviceRecords.$1.values.map((record) {
-      final hostname = record.hostname.trim();
-      final ip = record.ip.trim();
-      return Client(
-        ipAddress: ip.isEmpty ? 'N/A' : ip,
-        macAddress: record.mac,
-        hostname: hostname.isEmpty ? 'Unknown' : hostname,
-        connectionType: ConnectionType.unknown,
-        isBlocked: record.quarantined || record.status == 'blocked',
-        totalUploadBytes: record.totalUploadBytes,
-        totalDownloadBytes: record.totalDownloadBytes,
-        staticIpAddress: record.staticIpAddress.isEmpty
-            ? null
-            : record.staticIpAddress,
-        status: record.quarantined ? 'blocked' : record.status,
-      );
-    }).toList();
-
-    clients.sort((a, b) {
-      if (a.isBlocked != b.isBlocked) return a.isBlocked ? -1 : 1;
-      return a.hostname.toLowerCase().compareTo(b.hostname.toLowerCase());
-    });
-    return clients;
-  }
 
   Future<bool> _sqliteTableExists({
     required String dbExpression,
@@ -7409,17 +7381,6 @@ class AppState extends ChangeNotifier {
   /// as wireless if their MAC appears in any router's associated stations list.
   Future<List<Client>> fetchAggregatedClients() async {
     try {
-      final activeDeviceRecords = await fetchDeviceRecords(
-        aggregateAllRouters: true,
-      );
-      if (activeDeviceRecords.$1.isNotEmpty) {
-        final quarantinedMacs = await fetchAggregatedQuarantinedMacs();
-        return _applyQuarantineState(
-          _clientsFromDeviceDbRecords(activeDeviceRecords),
-          quarantinedMacs,
-        );
-      }
-
       final quarantinedMacsFuture = fetchAggregatedQuarantinedMacs();
       final deviceRecordsFuture = fetchDeviceRecords(aggregateAllRouters: true);
       // Build a union of wireless MACs across all routers
@@ -7459,6 +7420,36 @@ class AppState extends ChangeNotifier {
 
       final quarantinedMacs = await quarantinedMacsFuture;
       final deviceRecords = await deviceRecordsFuture;
+
+      // Add offline/static devices from device records if not already in clients
+      for (final entry in deviceRecords.$1.entries) {
+        final macNorm = _normalizeMacAddress(entry.key);
+        if (!clients.containsKey(macNorm)) {
+          final record = entry.value;
+          final hostname = record.hostname.trim();
+          final ip = record.ip.trim();
+          clients[macNorm] = Client(
+            ipAddress: ip.isEmpty ? 'N/A' : ip,
+            macAddress: record.mac,
+            hostname: (hostname.isEmpty ||
+                    hostname == '*' ||
+                    hostname.toLowerCase() == 'unknown')
+                ? 'Unknown'
+                : hostname,
+            connectionType: ConnectionType.unknown,
+            isBlocked: record.quarantined || record.status == 'blocked',
+            totalUploadBytes: record.totalUploadBytes,
+            totalDownloadBytes: record.totalDownloadBytes,
+            staticIpAddress: record.staticIpAddress.isEmpty
+                ? null
+                : record.staticIpAddress,
+            status: record.quarantined
+                ? 'blocked'
+                : (record.status.isNotEmpty ? record.status : 'offline'),
+          );
+        }
+      }
+
       final list = _applyQuarantineState(
         _applyDeviceDbRecords(clients.values, deviceRecords),
         quarantinedMacs,
@@ -7567,15 +7558,6 @@ class AppState extends ChangeNotifier {
       }
       final router = _routerService!.selectedRouter!;
 
-      final activeDeviceRecords = await fetchDeviceRecords();
-      if (activeDeviceRecords.$1.isNotEmpty) {
-        final quarantinedMacs = await fetchQuarantinedMacsForSelectedRouter();
-        return _applyQuarantineState(
-          _clientsFromDeviceDbRecords(activeDeviceRecords),
-          quarantinedMacs,
-        );
-      }
-
       final stationsFuture = _apiService!
           .fetchAllAssociatedWirelessMacsWithContext(
             ipAddress: router.ipAddress,
@@ -7634,11 +7616,40 @@ class AppState extends ChangeNotifier {
         }
       }
 
-      final clients = clientMap.values.toList();
       final deviceRecords = await deviceRecordsFuture;
       final quarantinedMacs = await quarantinedMacsFuture;
+
+      // Add offline/static devices from device records if not already in clientMap
+      for (final entry in deviceRecords.$1.entries) {
+        final macNorm = _normalizeMacAddress(entry.key);
+        if (!clientMap.containsKey(macNorm)) {
+          final record = entry.value;
+          final hostname = record.hostname.trim();
+          final ip = record.ip.trim();
+          clientMap[macNorm] = Client(
+            ipAddress: ip.isEmpty ? 'N/A' : ip,
+            macAddress: record.mac,
+            hostname: (hostname.isEmpty ||
+                    hostname == '*' ||
+                    hostname.toLowerCase() == 'unknown')
+                ? 'Unknown'
+                : hostname,
+            connectionType: ConnectionType.unknown,
+            isBlocked: record.quarantined || record.status == 'blocked',
+            totalUploadBytes: record.totalUploadBytes,
+            totalDownloadBytes: record.totalDownloadBytes,
+            staticIpAddress: record.staticIpAddress.isEmpty
+                ? null
+                : record.staticIpAddress,
+            status: record.quarantined
+                ? 'blocked'
+                : (record.status.isNotEmpty ? record.status : 'offline'),
+          );
+        }
+      }
+
       final markedClients = _applyQuarantineState(
-        _applyDeviceDbRecords(clients, deviceRecords),
+        _applyDeviceDbRecords(clientMap.values, deviceRecords),
         quarantinedMacs,
       );
 
@@ -7738,15 +7749,34 @@ class AppState extends ChangeNotifier {
         continue;
       }
       final hostname = record.hostname.trim();
+      final hasCustomHostname = hostname.isNotEmpty &&
+          hostname != '*' &&
+          hostname.toLowerCase() != 'unknown';
+      final ip = record.ip.trim();
+      final hasRecordIp = ip.isNotEmpty && ip != 'N/A';
+
       yield client.copyWith(
-        hostname: hostname.isEmpty ? client.hostname : hostname,
-        isBlocked: record.quarantined || record.status == 'blocked',
-        totalUploadBytes: record.totalUploadBytes,
-        totalDownloadBytes: record.totalDownloadBytes,
-        staticIpAddress: record.staticIpAddress.isEmpty
-            ? null
-            : record.staticIpAddress,
-        status: record.quarantined ? 'blocked' : record.status,
+        hostname: hasCustomHostname
+            ? hostname
+            : (client.hostname.isNotEmpty ? client.hostname : 'Unknown'),
+        ipAddress: client.ipAddress != 'N/A' && client.ipAddress.isNotEmpty
+            ? client.ipAddress
+            : (hasRecordIp ? ip : client.ipAddress),
+        isBlocked: record.quarantined || record.status == 'blocked' || client.isBlocked,
+        totalUploadBytes: record.totalUploadBytes > 0
+            ? record.totalUploadBytes
+            : client.totalUploadBytes,
+        totalDownloadBytes: record.totalDownloadBytes > 0
+            ? record.totalDownloadBytes
+            : client.totalDownloadBytes,
+        staticIpAddress: record.staticIpAddress.isNotEmpty
+            ? record.staticIpAddress
+            : client.staticIpAddress,
+        status: record.quarantined
+            ? 'blocked'
+            : (record.status.isNotEmpty && record.status != 'online'
+                ? record.status
+                : client.status),
       );
     }
   }
@@ -7990,6 +8020,7 @@ class AppState extends ChangeNotifier {
         useHttps: router.useHttps,
         mac: normalizedMac,
         blocked: true,
+        client: client,
       );
     } else {
       for (final entry in sectionsForMac) {
@@ -8008,6 +8039,7 @@ class AppState extends ChangeNotifier {
         useHttps: router.useHttps,
         mac: normalizedMac,
         blocked: false,
+        client: client,
       );
     }
 
@@ -8296,13 +8328,26 @@ class AppState extends ChangeNotifier {
     required bool useHttps,
     required String mac,
     required bool blocked,
+    Client? client,
     BuildContext? context,
   }) async {
     final escMac = mac.replaceAll("'", "''");
+    final escIp = (client?.ipAddress != null && client!.ipAddress != 'N/A')
+        ? client.ipAddress.replaceAll("'", "''")
+        : '';
+    final escHostname = (client?.hostname != null &&
+            client!.hostname.isNotEmpty &&
+            client.hostname != 'Unknown')
+        ? client.hostname.replaceAll("'", "''")
+        : '';
+    final escVendor = (client?.vendor != null && client!.vendor!.isNotEmpty)
+        ? client.vendor!.replaceAll("'", "''")
+        : '';
+
     const createSql =
         "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline');";
     final sql = blocked
-        ? "$createSql INSERT INTO devices (mac, last_seen, status, quarantined) VALUES ('$escMac', strftime('%s','now'), 'blocked', 1) ON CONFLICT(mac) DO UPDATE SET status='blocked', quarantined=1, last_seen=strftime('%s','now');"
+        ? "$createSql INSERT INTO devices (mac, ip, hostname, vendor, last_seen, status, quarantined) VALUES ('$escMac', '$escIp', '$escHostname', '$escVendor', strftime('%s','now'), 'blocked', 1) ON CONFLICT(mac) DO UPDATE SET status='blocked', quarantined=1, last_seen=strftime('%s','now'), ip=CASE WHEN excluded.ip != '' AND excluded.ip != 'N/A' THEN excluded.ip ELSE devices.ip END, hostname=CASE WHEN excluded.hostname != '' AND excluded.hostname != 'Unknown' THEN excluded.hostname ELSE devices.hostname END, vendor=CASE WHEN excluded.vendor != '' THEN excluded.vendor ELSE devices.vendor END;"
         : "$createSql UPDATE devices SET quarantined = 0, status = CASE WHEN status = 'blocked' THEN 'online' ELSE status END, last_seen=strftime('%s','now') WHERE upper(mac) = upper('$escMac');";
     try {
       await _sqliteQueryOutputForRouter(
