@@ -1210,8 +1210,8 @@ class AppState extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.system;
   static const String _themeModeKey = 'themeMode';
 
-  // Clients view mode (aggregate across routers)
-  bool _clientsAggregateAllRouters = true;
+  // Clients view mode (selected router only by default for fast page loads)
+  bool _clientsAggregateAllRouters = false;
   static const String _clientsAggregateKey = 'clients_aggregate_all';
   bool get clientsAggregateAllRouters => _clientsAggregateAllRouters;
 
@@ -1356,10 +1356,9 @@ class AppState extends ChangeNotifier {
   Future<void> _loadClientsViewMode() async {
     final stored = await _secureStorageService.readValue(_clientsAggregateKey);
     if (stored == 'true') {
-      _clientsAggregateAllRouters = true;
-    } else if (stored == 'false') {
-      _clientsAggregateAllRouters = false;
+      await _secureStorageService.writeValue(_clientsAggregateKey, 'false');
     }
+    _clientsAggregateAllRouters = false;
   }
 
   Future<void> setClientsAggregateAllRouters(bool aggregate) async {
@@ -7376,27 +7375,33 @@ class AppState extends ChangeNotifier {
         return _clientsFromDeviceDbRecords(activeDeviceRecords);
       }
 
-      // Get wireless MACs for this router
-      final stationsMap = await _apiService!
+      final stationsFuture = _apiService!
           .fetchAllAssociatedWirelessMacsWithContext(
             ipAddress: router.ipAddress,
             sysauth: _authService!.sysauth!,
             useHttps: router.useHttps,
-          );
+          )
+          .catchError((_) => <String, Set<String>>{});
+      final leasesFuture = _apiService!
+          .call(
+            router.ipAddress,
+            _authService!.sysauth!,
+            router.useHttps,
+            object: 'luci-rpc',
+            method: 'getDHCPLeases',
+            params: {},
+          )
+          .catchError((_) => null);
+      final deviceRecordsFuture = fetchDeviceRecords();
+      final quarantinedMacsFuture = fetchQuarantinedMacsForSelectedRouter();
+
+      final stationsMap = await stationsFuture;
       final wireless = <String>{};
       stationsMap.forEach(
         (_, s) => wireless.addAll(s.map((m) => m.toLowerCase())),
       );
 
-      // Get DHCP leases for this router
-      final callRes = await _apiService!.call(
-        router.ipAddress,
-        _authService!.sysauth!,
-        router.useHttps,
-        object: 'luci-rpc',
-        method: 'getDHCPLeases',
-        params: {},
-      );
+      final callRes = await leasesFuture;
       final leases = <Map<String, dynamic>>[];
       if (callRes is List && callRes.length > 1 && callRes[0] == 0) {
         final data = callRes[1] as Map<String, dynamic>;
@@ -7429,8 +7434,8 @@ class AppState extends ChangeNotifier {
       }
 
       final clients = clientMap.values.toList();
-      final deviceRecords = await fetchDeviceRecords();
-      final quarantinedMacs = await fetchQuarantinedMacsForSelectedRouter();
+      final deviceRecords = await deviceRecordsFuture;
+      final quarantinedMacs = await quarantinedMacsFuture;
       final markedClients = _applyQuarantineState(
         _applyDeviceDbRecords(clients, deviceRecords),
         quarantinedMacs,
