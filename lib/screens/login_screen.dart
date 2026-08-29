@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -171,6 +172,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   Future<void> _connect() async {
     if (_formKey.currentState!.validate()) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      unawaited(SystemChannels.textInput.invokeMethod<void>('TextInput.hide'));
+
       final appState = ref.read(appStateProvider);
       final input = _ipController.text.trim();
       final user = _usernameController.text;
@@ -196,6 +200,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       );
 
       if (success && mounted) {
+        FocusManager.instance.primaryFocus?.unfocus();
+        unawaited(
+          SystemChannels.textInput.invokeMethod<void>('TextInput.hide'),
+        );
         unawaited(Navigator.of(context).pushReplacementNamed('/'));
       }
     }
