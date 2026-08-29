@@ -3635,6 +3635,54 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> updatePortForward(
+    OpenwrtPortForward forward, {
+    required String name,
+    required String sourceZone,
+    required String externalPort,
+    required String protocol,
+    required String destinationZone,
+    required String destinationIp,
+    required String internalPort,
+  }) async {
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+
+    await _apiService!.uciSet(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'firewall',
+      section: forward.section,
+      values: {
+        'name': name.trim(),
+        'src': sourceZone.trim(),
+        'src_dport': externalPort.trim(),
+        'proto': protocol.trim(),
+        'dest': destinationZone.trim(),
+        'dest_ip': destinationIp.trim(),
+        'dest_port': internalPort.trim(),
+        'target': 'DNAT',
+      },
+    );
+    await _apiService!.uciCommit(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      config: 'firewall',
+    );
+    await _reloadFirewall(router, sysauth);
+    notifyListeners();
+  }
+
   List<OpenwrtFirewallZone> _mockFirewallZones() {
     return const [
       OpenwrtFirewallZone(

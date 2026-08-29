@@ -628,6 +628,7 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
                                       forwards: _portForwards,
                                       onRefresh: _loadNetworkPanels,
                                       onAdd: _showAddPortForwardSheet,
+                                      onEdit: _showAddPortForwardSheet,
                                     ),
                                     _FirewallZonesPanel(
                                       isLoading: _isLoadingNetworkPanels,
@@ -673,12 +674,12 @@ class _InterfacesScreenState extends ConsumerState<InterfacesScreen> {
     );
   }
 
-  Future<void> _showAddPortForwardSheet() async {
+  Future<void> _showAddPortForwardSheet([OpenwrtPortForward? forward]) async {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (context) => const _AddPortForwardSheet(),
+      builder: (context) => _AddPortForwardSheet(forward: forward),
     );
     if (saved == true) await _loadNetworkPanels();
   }
@@ -1614,12 +1615,14 @@ class _PortForwardingPanel extends StatelessWidget {
   final List<OpenwrtPortForward> forwards;
   final Future<void> Function() onRefresh;
   final VoidCallback onAdd;
+  final ValueChanged<OpenwrtPortForward> onEdit;
 
   const _PortForwardingPanel({
     required this.isLoading,
     required this.forwards,
     required this.onRefresh,
     required this.onAdd,
+    required this.onEdit,
   });
 
   @override
@@ -1655,7 +1658,10 @@ class _PortForwardingPanel extends StatelessWidget {
         ...forwards.map(
           (forward) => Padding(
             padding: const EdgeInsets.only(bottom: 10),
-            child: _PortForwardCard(forward: forward),
+            child: _PortForwardCard(
+              forward: forward,
+              onTap: () => onEdit(forward),
+            ),
           ),
         ),
       ],
@@ -1665,8 +1671,9 @@ class _PortForwardingPanel extends StatelessWidget {
 
 class _PortForwardCard extends StatelessWidget {
   final OpenwrtPortForward forward;
+  final VoidCallback onTap;
 
-  const _PortForwardCard({required this.forward});
+  const _PortForwardCard({required this.forward, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1674,66 +1681,80 @@ class _PortForwardCard extends StatelessWidget {
     final statusColor = forward.enabled
         ? const Color(0xFF20CF70)
         : colorScheme.onSurfaceVariant;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      forward.name,
+                      style: LuciTextStyles.cardTitle(context),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  _NetworkBadge(
+                    label: forward.enabled ? 'Enabled' : 'Disabled',
+                    color: statusColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.edit_rounded,
+                    size: 18,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _NetworkValueBlock(
+                      label: '${forward.source.toUpperCase()} Port',
+                      value: forward.wanPort,
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 18,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _NetworkValueBlock(
+                      label: forward.destinationZone.toUpperCase(),
+                      value:
+                          '${forward.destinationIp}:${forward.destinationPort}',
+                      alignEnd: true,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                forward.protocol.toUpperCase(),
+                style: LuciTextStyles.cardSubtitle(
+                  context,
+                ).copyWith(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  forward.name,
-                  style: LuciTextStyles.cardTitle(context),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              _NetworkBadge(
-                label: forward.enabled ? 'Enabled' : 'Disabled',
-                color: statusColor,
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _NetworkValueBlock(
-                  label: '${forward.source.toUpperCase()} Port',
-                  value: forward.wanPort,
-                ),
-              ),
-              Icon(
-                Icons.arrow_forward_rounded,
-                size: 18,
-                color: colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _NetworkValueBlock(
-                  label: forward.destinationZone.toUpperCase(),
-                  value: '${forward.destinationIp}:${forward.destinationPort}',
-                  alignEnd: true,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            forward.protocol.toUpperCase(),
-            style: LuciTextStyles.cardSubtitle(
-              context,
-            ).copyWith(fontWeight: FontWeight.w800),
-          ),
-        ],
       ),
     );
   }
@@ -2057,7 +2078,9 @@ class _NetworkValueBlock extends StatelessWidget {
 }
 
 class _AddPortForwardSheet extends ConsumerStatefulWidget {
-  const _AddPortForwardSheet();
+  final OpenwrtPortForward? forward;
+
+  const _AddPortForwardSheet({this.forward});
 
   @override
   ConsumerState<_AddPortForwardSheet> createState() =>
@@ -2074,6 +2097,28 @@ class _AddPortForwardSheetState extends ConsumerState<_AddPortForwardSheet> {
   String _destinationZone = 'lan';
   String _protocol = 'tcp';
   bool _isSaving = false;
+
+  bool get _isEditing => widget.forward != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final forward = widget.forward;
+    if (forward == null) return;
+    _nameController.text = forward.name;
+    _externalPortController.text = forward.wanPort == 'Any'
+        ? ''
+        : forward.wanPort;
+    _destinationIpController.text = forward.destinationIp == 'Any'
+        ? ''
+        : forward.destinationIp;
+    _internalPortController.text = forward.destinationPort == 'Any'
+        ? ''
+        : forward.destinationPort;
+    _sourceZone = forward.source;
+    _destinationZone = forward.destinationZone;
+    _protocol = _normalizeProtocol(forward.protocol);
+  }
 
   @override
   void dispose() {
@@ -2104,29 +2149,82 @@ class _AddPortForwardSheetState extends ConsumerState<_AddPortForwardSheet> {
     setState(() => _isSaving = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref
-          .read(appStateProvider)
-          .addPortForward(
-            name: _nameController.text,
-            sourceZone: _sourceZone,
-            externalPort: _externalPortController.text,
-            protocol: _protocol,
-            destinationZone: _destinationZone,
-            destinationIp: _destinationIpController.text,
-            internalPort: _internalPortController.text,
-          );
+      final appState = ref.read(appStateProvider);
+      final forward = widget.forward;
+      if (forward == null) {
+        await appState.addPortForward(
+          name: _nameController.text,
+          sourceZone: _sourceZone,
+          externalPort: _externalPortController.text,
+          protocol: _protocol,
+          destinationZone: _destinationZone,
+          destinationIp: _destinationIpController.text,
+          internalPort: _internalPortController.text,
+        );
+      } else {
+        await appState.updatePortForward(
+          forward,
+          name: _nameController.text,
+          sourceZone: _sourceZone,
+          externalPort: _externalPortController.text,
+          protocol: _protocol,
+          destinationZone: _destinationZone,
+          destinationIp: _destinationIpController.text,
+          internalPort: _internalPortController.text,
+        );
+      }
       if (!mounted) return;
       Navigator.of(context).pop(true);
       messenger.showSnackBar(
-        const SnackBar(content: Text('Port forward added.')),
+        SnackBar(
+          content: Text(
+            _isEditing ? 'Port forward updated.' : 'Port forward added.',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
       setState(() => _isSaving = false);
       messenger.showSnackBar(
-        SnackBar(content: Text('Failed to add port forward: $e')),
+        SnackBar(
+          content: Text(
+            _isEditing
+                ? 'Failed to update port forward: $e'
+                : 'Failed to add port forward: $e',
+          ),
+        ),
       );
     }
+  }
+
+  List<DropdownMenuItem<String>> _zoneItems(String selected) {
+    final zones = <String>{'wan', 'lan', selected};
+    return zones
+        .where((zone) => zone.trim().isNotEmpty)
+        .map((zone) => DropdownMenuItem(value: zone, child: Text(zone)))
+        .toList();
+  }
+
+  List<DropdownMenuItem<String>> _protocolItems(String selected) {
+    final protocols = <String>{'tcp', 'udp', 'tcp udp', selected};
+    return protocols
+        .where((protocol) => protocol.trim().isNotEmpty)
+        .map(
+          (protocol) => DropdownMenuItem(
+            value: protocol,
+            child: Text(protocol.toUpperCase().replaceAll(' ', '/')),
+          ),
+        )
+        .toList();
+  }
+
+  String _normalizeProtocol(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(',', ' ')
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .join(' ');
   }
 
   @override
@@ -2140,7 +2238,7 @@ class _AddPortForwardSheetState extends ConsumerState<_AddPortForwardSheet> {
           shrinkWrap: true,
           children: [
             Text(
-              'Add Port Forward',
+              _isEditing ? 'Edit Port Forward' : 'Add Port Forward',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w900,
                 letterSpacing: 0,
@@ -2160,10 +2258,7 @@ class _AddPortForwardSheetState extends ConsumerState<_AddPortForwardSheet> {
                   child: DropdownButtonFormField<String>(
                     initialValue: _sourceZone,
                     decoration: const InputDecoration(labelText: 'From Zone'),
-                    items: const [
-                      DropdownMenuItem(value: 'wan', child: Text('wan')),
-                      DropdownMenuItem(value: 'lan', child: Text('lan')),
-                    ],
+                    items: _zoneItems(_sourceZone),
                     onChanged: (value) =>
                         setState(() => _sourceZone = value ?? 'wan'),
                   ),
@@ -2173,10 +2268,7 @@ class _AddPortForwardSheetState extends ConsumerState<_AddPortForwardSheet> {
                   child: DropdownButtonFormField<String>(
                     initialValue: _destinationZone,
                     decoration: const InputDecoration(labelText: 'To Zone'),
-                    items: const [
-                      DropdownMenuItem(value: 'lan', child: Text('lan')),
-                      DropdownMenuItem(value: 'wan', child: Text('wan')),
-                    ],
+                    items: _zoneItems(_destinationZone),
                     onChanged: (value) =>
                         setState(() => _destinationZone = value ?? 'lan'),
                   ),
@@ -2200,14 +2292,7 @@ class _AddPortForwardSheetState extends ConsumerState<_AddPortForwardSheet> {
                   child: DropdownButtonFormField<String>(
                     initialValue: _protocol,
                     decoration: const InputDecoration(labelText: 'Protocol'),
-                    items: const [
-                      DropdownMenuItem(value: 'tcp', child: Text('TCP')),
-                      DropdownMenuItem(value: 'udp', child: Text('UDP')),
-                      DropdownMenuItem(
-                        value: 'tcp udp',
-                        child: Text('TCP/UDP'),
-                      ),
-                    ],
+                    items: _protocolItems(_protocol),
                     onChanged: (value) =>
                         setState(() => _protocol = value ?? 'tcp'),
                   ),
@@ -2251,8 +2336,18 @@ class _AddPortForwardSheetState extends ConsumerState<_AddPortForwardSheet> {
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.add_rounded),
-                    label: Text(_isSaving ? 'Adding' : 'Add'),
+                        : Icon(
+                            _isEditing ? Icons.save_rounded : Icons.add_rounded,
+                          ),
+                    label: Text(
+                      _isSaving
+                          ? _isEditing
+                                ? 'Saving'
+                                : 'Adding'
+                          : _isEditing
+                          ? 'Save'
+                          : 'Add',
+                    ),
                   ),
                 ),
               ],
