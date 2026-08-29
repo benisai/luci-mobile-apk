@@ -431,6 +431,21 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
   String _normalizeMac(String mac) =>
       mac.trim().toUpperCase().replaceAll('-', ':');
 
+  void _applyCachedClientBlockState(String mac, bool blocked) {
+    Client updateClient(Client client) {
+      if (_normalizeMac(client.macAddress) != mac) return client;
+      return client.copyWith(
+        isBlocked: blocked,
+        status: blocked ? 'blocked' : 'online',
+      );
+    }
+
+    _visibleClients = _visibleClients.map(updateClient).toList();
+    for (final entry in _clientCache.entries.toList()) {
+      _clientCache[entry.key] = entry.value.map(updateClient).toList();
+    }
+  }
+
   Future<void> _setClientInternetBlocked(Client client, bool blocked) async {
     final mac = _normalizeMac(client.macAddress);
     if (mac.isEmpty || mac == 'N/A') return;
@@ -454,6 +469,7 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
         ),
       );
       setState(() {
+        _applyCachedClientBlockState(mac, blocked);
         _computeClientsFuture();
       });
     } catch (e) {
