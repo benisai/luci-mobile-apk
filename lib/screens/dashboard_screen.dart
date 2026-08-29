@@ -1106,7 +1106,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
     final cpuPercent = _legacyCpuLoadPercent(sysInfo);
     final memoryPercent = _legacyMemoryPercent(sysInfo);
-    final loadPercent = _loadAveragePercent(sysInfo, 0);
+    final loadPercent = _loadAveragePercent(sysInfo, 2);
 
     return _buildOpenwallaCard(
       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 0),

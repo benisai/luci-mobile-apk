@@ -2563,6 +2563,30 @@ class AppState extends ChangeNotifier {
       return _lastCpuUsagePercent;
     }
 
+    final topUsage = await _fetchTopCpuUsagePercent(ip, useHttps);
+    if (topUsage != null) {
+      try {
+        final result = await _apiService!.call(
+          ip,
+          _authService!.sysauth!,
+          useHttps,
+          object: 'file',
+          method: 'read',
+          params: {'path': '/proc/stat'},
+        );
+        final stat = _parseCpuStat(_commandOutput(result));
+        if (stat != null) {
+          _lastCpuTotalTicks = stat.total;
+          _lastCpuIdleTicks = stat.idle;
+          _lastCpuCoreCount = stat.cores;
+        }
+      } catch (e, stack) {
+        Logger.debug('Optional /proc/stat core count read failed: $e');
+        Logger.debug('Optional /proc/stat core count stack: $stack');
+      }
+      return topUsage;
+    }
+
     try {
       final result = await _apiService!.call(
         ip,
