@@ -66,7 +66,7 @@ class _SystemResourcesScreenState extends ConsumerState<SystemResourcesScreen> {
   double _cpuPercent(Map<String, dynamic>? sysInfo) {
     final sampledCpu = sysInfo?['cpuUsagePercent'];
     if (sampledCpu is num) return sampledCpu.clamp(0, 100).toDouble();
-    return 0;
+    return _cpuHistory.isNotEmpty ? _cpuHistory.last : 0;
   }
 
   int _asInt(dynamic value) {

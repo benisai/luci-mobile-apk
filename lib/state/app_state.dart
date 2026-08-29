@@ -2379,8 +2379,16 @@ class AppState extends ChangeNotifier {
           ? Map<String, dynamic>.from(sysInfoData)
           : <String, dynamic>{};
       sysInfoWithCpu['cpuCoreCount'] = _lastCpuCoreCount;
-      if (cpuUsagePercent != null) {
-        sysInfoWithCpu['cpuUsagePercent'] = cpuUsagePercent;
+      final previousSysInfo = _dashboardData?['sysInfo'];
+      final previousCpuUsage = previousSysInfo is Map
+          ? previousSysInfo['cpuUsagePercent']
+          : null;
+      final stableCpuUsage =
+          cpuUsagePercent ??
+          _lastCpuUsagePercent ??
+          (previousCpuUsage is num ? previousCpuUsage.toDouble() : null);
+      if (stableCpuUsage != null) {
+        sysInfoWithCpu['cpuUsagePercent'] = stableCpuUsage;
       }
 
       _dashboardData = {
@@ -2558,6 +2566,29 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<String?> _readProcStatViaFileExec(String ip, bool useHttps) async {
+    if (_authService?.sysauth == null || _apiService == null) return null;
+    try {
+      final result = await _apiService!.call(
+        ip,
+        _authService!.sysauth!,
+        useHttps,
+        object: 'file',
+        method: 'exec',
+        params: {
+          'command': '/bin/cat',
+          'params': ['/proc/stat'],
+        },
+      );
+      final output = _commandOutput(result);
+      return output.trim().isEmpty ? null : output;
+    } catch (e, stack) {
+      Logger.debug('Optional /proc/stat file.exec read failed: $e');
+      Logger.debug('Optional /proc/stat file.exec stack: $stack');
+      return null;
+    }
+  }
+
   Future<double?> _fetchCpuUsagePercent(String ip, bool useHttps) async {
     if (_authService?.sysauth == null || _apiService == null) {
       return _lastCpuUsagePercent;
@@ -2574,7 +2605,9 @@ class AppState extends ChangeNotifier {
           method: 'read',
           params: {'path': '/proc/stat'},
         );
-        final stat = _parseCpuStat(_commandOutput(result));
+        final stat =
+            _parseCpuStat(_commandOutput(result)) ??
+            _parseCpuStat(await _readProcStatViaFileExec(ip, useHttps) ?? '');
         if (stat != null) {
           _lastCpuTotalTicks = stat.total;
           _lastCpuIdleTicks = stat.idle;
@@ -2596,7 +2629,9 @@ class AppState extends ChangeNotifier {
         method: 'read',
         params: {'path': '/proc/stat'},
       );
-      final stat = _parseCpuStat(_commandOutput(result));
+      final stat =
+          _parseCpuStat(_commandOutput(result)) ??
+          _parseCpuStat(await _readProcStatViaFileExec(ip, useHttps) ?? '');
       if (stat == null) return _fetchTopCpuUsagePercent(ip, useHttps);
 
       final previousTotal = _lastCpuTotalTicks;
