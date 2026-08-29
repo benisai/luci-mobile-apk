@@ -1194,6 +1194,9 @@ class AppState extends ChangeNotifier {
   Timer? _throughputTimer;
   Timer? _systemInfoTimer;
   Timer? _pollingTimer;
+  int? _lastCpuTotalTicks;
+  int? _lastCpuIdleTicks;
+  double? _lastCpuUsagePercent;
   int _pollAttempts = 0;
   static const int _maxPollAttempts =
       40; // Max 40 attempts = ~5 minutes with backoff
@@ -1776,6 +1779,12 @@ class AppState extends ChangeNotifier {
         0.0;
   }
 
+  void _resetCpuStatSample() {
+    _lastCpuTotalTicks = null;
+    _lastCpuIdleTicks = null;
+    _lastCpuUsagePercent = null;
+  }
+
   Future<void> loadRouters() async {
     await _routerService?.loadRouters();
     notifyListeners();
@@ -1820,6 +1829,7 @@ class AppState extends ChangeNotifier {
 
     // Clear throughput data when switching routers to prevent mixing data from different routers
     _cancelThroughputTimer();
+    _resetCpuStatSample();
 
     // Determine a safe context before any awaits
     final safeContext = context?.mounted == true
@@ -1864,6 +1874,7 @@ class AppState extends ChangeNotifier {
 
     // Clear throughput data when logging in to prevent mixing data from different sessions
     _cancelThroughputTimer();
+    _resetCpuStatSample();
 
     notifyListeners();
 
@@ -2020,10 +2031,12 @@ class AppState extends ChangeNotifier {
                 provider: OpenwallaFlowProvider.conntrack,
                 count: 1704,
               );
+        final mockSysInfo = Map<String, dynamic>.from(results[1][1] as Map);
+        mockSysInfo['cpuUsagePercent'] = 31.0;
 
         _dashboardData = {
           'boardInfo': results[0][1],
-          'sysInfo': results[1][1],
+          'sysInfo': mockSysInfo,
           'networkDevices': results[2][1],
           'interfaceDump': interfaceDump,
           'wireless': results[4][1],
@@ -2140,6 +2153,7 @@ class AppState extends ChangeNotifier {
       );
 
       final conntrackFuture = _fetchConntrackData(ip, useHttps);
+      final cpuUsagePercentFuture = _fetchCpuUsagePercent(ip, useHttps);
       final pingSamplesFuture = fetchPingMonitorSamples();
       final selectedFlowProvider =
           _dashboardPreferences.flowMode == DashboardFlowMode.simple
@@ -2242,6 +2256,7 @@ class AppState extends ChangeNotifier {
         wirelessFuture,
         uciWirelessFuture,
         conntrackFuture,
+        cpuUsagePercentFuture,
         pingSamplesFuture,
         flowSummaryFuture,
         notificationCountFuture,
@@ -2251,11 +2266,12 @@ class AppState extends ChangeNotifier {
       final wirelessRaw = optionalResults[0];
       final uciWirelessRaw = optionalResults[1];
       final conntrackData = optionalResults[2] as Map<String, int>;
-      final pingSamples = optionalResults[3] as List<PingMonitorSample>;
-      final flowSummary = optionalResults[4] as OpenwallaFlowSummary;
-      final notificationCount = optionalResults[5] as int;
-      final rulesCount = optionalResults[6] as int;
-      final associatedMacs = optionalResults[7] as Map<String, Set<String>>;
+      final cpuUsagePercent = optionalResults[3] as double?;
+      final pingSamples = optionalResults[4] as List<PingMonitorSample>;
+      final flowSummary = optionalResults[5] as OpenwallaFlowSummary;
+      final notificationCount = optionalResults[6] as int;
+      final rulesCount = optionalResults[7] as int;
+      final associatedMacs = optionalResults[8] as Map<String, Set<String>>;
 
       Map<String, dynamic>? wirelessData;
       if (wirelessRaw != null) {
@@ -2356,9 +2372,16 @@ class AppState extends ChangeNotifier {
         specificInterface: specificInterface,
       );
 
+      final sysInfoWithCpu = sysInfoData is Map
+          ? Map<String, dynamic>.from(sysInfoData)
+          : <String, dynamic>{};
+      if (cpuUsagePercent != null) {
+        sysInfoWithCpu['cpuUsagePercent'] = cpuUsagePercent;
+      }
+
       _dashboardData = {
         'boardInfo': boardInfoData,
-        'sysInfo': sysInfoData,
+        'sysInfo': sysInfoWithCpu,
         'networkDevices': networkData,
         'interfaceDump': interfaceDump,
         'wireless': wirelessData ?? <String, dynamic>{},
@@ -2459,6 +2482,72 @@ class AppState extends ChangeNotifier {
 
   int? _parseProcInt(String value) {
     return int.tryParse(value.trim().split(RegExp(r'\s+')).firstOrNull ?? '');
+  }
+
+  ({int total, int idle})? _parseCpuStat(String output) {
+    final line = output
+        .split('\n')
+        .firstWhere((line) => line.startsWith('cpu '), orElse: () => '');
+    if (line.isEmpty) return null;
+
+    final values = line
+        .trim()
+        .split(RegExp(r'\s+'))
+        .skip(1)
+        .map((part) => int.tryParse(part) ?? 0)
+        .toList();
+    if (values.length < 4) return null;
+
+    final idle = values[3] + (values.length > 4 ? values[4] : 0);
+    final total = values.fold<int>(0, (sum, value) => sum + value);
+    if (total <= 0) return null;
+    return (total: total, idle: idle);
+  }
+
+  Future<double?> _fetchCpuUsagePercent(String ip, bool useHttps) async {
+    if (_authService?.sysauth == null || _apiService == null) {
+      return _lastCpuUsagePercent;
+    }
+
+    try {
+      final result = await _apiService!.call(
+        ip,
+        _authService!.sysauth!,
+        useHttps,
+        object: 'file',
+        method: 'read',
+        params: {'path': '/proc/stat'},
+      );
+      final stat = _parseCpuStat(_commandOutput(result));
+      if (stat == null) return _lastCpuUsagePercent;
+
+      final previousTotal = _lastCpuTotalTicks;
+      final previousIdle = _lastCpuIdleTicks;
+      _lastCpuTotalTicks = stat.total;
+      _lastCpuIdleTicks = stat.idle;
+
+      if (previousTotal == null || previousIdle == null) {
+        final sinceBootUsage = ((stat.total - stat.idle) / stat.total * 100)
+            .clamp(0, 100)
+            .toDouble();
+        _lastCpuUsagePercent = sinceBootUsage;
+        return sinceBootUsage;
+      }
+
+      final totalDelta = stat.total - previousTotal;
+      final idleDelta = stat.idle - previousIdle;
+      if (totalDelta <= 0) return _lastCpuUsagePercent;
+
+      final usage = ((totalDelta - idleDelta) / totalDelta * 100)
+          .clamp(0, 100)
+          .toDouble();
+      _lastCpuUsagePercent = usage;
+      return usage;
+    } catch (e, stack) {
+      Logger.warning('Optional /proc/stat CPU read failed: $e');
+      Logger.debug('Optional /proc/stat CPU read stack: $stack');
+      return _lastCpuUsagePercent;
+    }
   }
 
   int _countRouterDevices(

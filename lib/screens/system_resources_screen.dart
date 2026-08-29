@@ -63,9 +63,10 @@ class _SystemResourcesScreenState extends ConsumerState<SystemResourcesScreen> {
     });
   }
 
-  double _fixedPointPercent(dynamic value) {
-    if (value is! num) return 0;
-    return ((value / 65536) * 100).clamp(0, 100).toDouble();
+  double _cpuPercent(Map<String, dynamic>? sysInfo) {
+    final sampledCpu = sysInfo?['cpuUsagePercent'];
+    if (sampledCpu is num) return sampledCpu.clamp(0, 100).toDouble();
+    return 0;
   }
 
   int _asInt(dynamic value) {
@@ -78,7 +79,6 @@ class _SystemResourcesScreenState extends ConsumerState<SystemResourcesScreen> {
     final dashboardData = ref.read(appStateProvider).dashboardData;
     final sysInfo = dashboardData?['sysInfo'] as Map<String, dynamic>?;
     final memory = sysInfo?['memory'] as Map?;
-    final load = sysInfo?['load'] as List<dynamic>?;
 
     final totalMem = _asInt(memory?['total']);
     final freeMem = _asInt(memory?['free']);
@@ -87,9 +87,7 @@ class _SystemResourcesScreenState extends ConsumerState<SystemResourcesScreen> {
     final cacheBytes = cachedMem + bufferedMem;
     final usedMem = (totalMem - freeMem - cacheBytes).clamp(0, totalMem);
     final memoryPercent = totalMem > 0 ? (usedMem / totalMem) * 100 : 0.0;
-    final cpuPercent = _fixedPointPercent(
-      load?.isNotEmpty == true ? load![0] : 0,
-    );
+    final cpuPercent = _cpuPercent(sysInfo);
 
     _pushSample(_cpuHistory, cpuPercent);
     _pushSample(_memoryHistory, memoryPercent);
@@ -130,7 +128,6 @@ class _SystemResourcesScreenState extends ConsumerState<SystemResourcesScreen> {
     final sysInfo = dashboardData?['sysInfo'] as Map<String, dynamic>?;
     final boardInfo = dashboardData?['boardInfo'] as Map<String, dynamic>?;
     final memory = sysInfo?['memory'] as Map?;
-    final load = sysInfo?['load'] as List<dynamic>?;
     final conntrack = dashboardData?['conntrack'] as Map?;
 
     final totalMem = _asInt(memory?['total']);
@@ -142,9 +139,7 @@ class _SystemResourcesScreenState extends ConsumerState<SystemResourcesScreen> {
         .clamp(0, totalMem)
         .toInt();
     final memoryPercent = totalMem > 0 ? (usedMem / totalMem) * 100 : 0.0;
-    final cpuPercent = _fixedPointPercent(
-      load?.isNotEmpty == true ? load![0] : 0,
-    );
+    final cpuPercent = _cpuPercent(sysInfo);
     final connCount = _asInt(conntrack?['count']);
     final connMax = _asInt(conntrack?['max']);
     final connProgress = connMax > 0 ? connCount / connMax : 0.0;

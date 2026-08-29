@@ -108,8 +108,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   }
 
   double _legacyCpuLoadPercent(Map<String, dynamic>? sysInfo) {
-    final load = sysInfo?['load'] as List<dynamic>?;
-    return _scaledLoadPercent(load, 0);
+    final sampledCpu = sysInfo?['cpuUsagePercent'];
+    if (sampledCpu is num) return sampledCpu.clamp(0, 100).toDouble();
+    return 0;
   }
 
   double _legacyMemoryPercent(Map<String, dynamic>? sysInfo) {
