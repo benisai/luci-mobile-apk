@@ -118,14 +118,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     return 0;
   }
 
+  int _systemStatInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.round();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
   double _legacyMemoryPercent(Map<String, dynamic>? sysInfo) {
     final memory = sysInfo?['memory'];
     if (memory is! Map) return 0;
 
-    final totalMem = memory['total'] as int? ?? 0;
-    final freeMem = memory['free'] as int? ?? 0;
-    final bufferedMem = memory['buffered'] as int? ?? 0;
-    final usedMem = totalMem - freeMem - bufferedMem;
+    final totalMem = _systemStatInt(memory['total']);
+    final freeMem = _systemStatInt(memory['free']);
+    final bufferedMem = _systemStatInt(memory['buffered']);
+    final cachedMem = _systemStatInt(memory['cached']);
+    final usedMem = (totalMem - freeMem - bufferedMem - cachedMem)
+        .clamp(0, totalMem)
+        .toDouble();
 
     return totalMem > 0
         ? (usedMem / totalMem * 100).clamp(0, 100).toDouble()
