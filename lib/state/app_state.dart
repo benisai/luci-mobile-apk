@@ -769,6 +769,8 @@ class OpenwallaDeviceRecord {
   final int totalUploadBytes;
   final int totalDownloadBytes;
   final String staticIpAddress;
+  final String status;
+  final bool quarantined;
 
   const OpenwallaDeviceRecord({
     required this.mac,
@@ -777,6 +779,8 @@ class OpenwallaDeviceRecord {
     required this.totalUploadBytes,
     required this.totalDownloadBytes,
     required this.staticIpAddress,
+    this.status = '',
+    this.quarantined = false,
   });
 }
 
@@ -2808,9 +2812,9 @@ class AppState extends ChangeNotifier {
       final hostname = parts[2].trim();
       final totalUp = int.tryParse(parts[3].trim()) ?? 0;
       final totalDown = int.tryParse(parts[4].trim()) ?? 0;
-      final staticIp = parts.length > 5
-          ? parts.sublist(5).join('|').trim()
-          : '';
+      final staticIp = parts.length > 5 ? parts[5].trim() : '';
+      final status = parts.length > 6 ? parts[6].trim() : '';
+      final quarantined = parts.length > 7 && parts[7].trim() == '1';
       final record = OpenwallaDeviceRecord(
         mac: mac,
         ip: ip,
@@ -2818,6 +2822,8 @@ class AppState extends ChangeNotifier {
         totalUploadBytes: totalUp,
         totalDownloadBytes: totalDown,
         staticIpAddress: staticIp,
+        status: status,
+        quarantined: quarantined,
       );
       if (mac.isNotEmpty && mac != 'N/A') byMac[mac] = record;
       if (ip.isNotEmpty) byIp[ip] = record;
@@ -2831,6 +2837,7 @@ class AppState extends ChangeNotifier {
   >
   fetchDeviceRecords({
     bool aggregateAllRouters = false,
+    bool activeOnly = false,
     BuildContext? context,
   }) async {
     if (_reviewerModeEnabled) {
@@ -2841,6 +2848,8 @@ class AppState extends ChangeNotifier {
         totalUploadBytes: 1960837,
         totalDownloadBytes: 192020,
         staticIpAddress: '10.0.0.250',
+        status: 'blocked',
+        quarantined: true,
       );
       return ({record.mac: record}, {record.ip: record});
     }
@@ -2849,10 +2858,13 @@ class AppState extends ChangeNotifier {
       (Map<String, OpenwallaDeviceRecord>, Map<String, OpenwallaDeviceRecord>)
     >
     readFor({model.Router? router, String? sysauth, bool? useHttps}) async {
+      final where = activeOnly
+          ? " WHERE status != 'offline' OR quarantined = 1"
+          : "";
       final sqlWithStatic =
-          "SELECT mac, ip, hostname, total_up, total_down, static_ip FROM devices ORDER BY last_seen DESC;";
+          "SELECT mac, ip, hostname, total_up, total_down, static_ip, status, quarantined FROM devices$where ORDER BY last_seen DESC;";
       final sqlFallback =
-          "SELECT mac, ip, hostname, total_up, total_down, '' FROM devices ORDER BY last_seen DESC;";
+          "SELECT mac, ip, hostname, total_up, total_down, '', status, quarantined FROM devices$where ORDER BY last_seen DESC;";
       try {
         final output = router == null || sysauth == null || useHttps == null
             ? await _sqliteQueryOutput(
@@ -2952,6 +2964,34 @@ class AppState extends ChangeNotifier {
       byIp.addAll(maps.$2);
     }
     return (byMac, byIp);
+  }
+
+  List<Client> _clientsFromDeviceDbRecords(
+    (Map<String, OpenwallaDeviceRecord>, Map<String, OpenwallaDeviceRecord>)
+    deviceRecords,
+  ) {
+    final clients = deviceRecords.$1.values.map((record) {
+      final hostname = record.hostname.trim();
+      final ip = record.ip.trim();
+      return Client(
+        ipAddress: ip.isEmpty ? 'N/A' : ip,
+        macAddress: record.mac,
+        hostname: hostname.isEmpty ? 'Unknown' : hostname,
+        connectionType: ConnectionType.unknown,
+        isBlocked: record.quarantined || record.status == 'blocked',
+        totalUploadBytes: record.totalUploadBytes,
+        totalDownloadBytes: record.totalDownloadBytes,
+        staticIpAddress: record.staticIpAddress.isEmpty
+            ? null
+            : record.staticIpAddress,
+      );
+    }).toList();
+
+    clients.sort((a, b) {
+      if (a.isBlocked != b.isBlocked) return a.isBlocked ? -1 : 1;
+      return a.hostname.toLowerCase().compareTo(b.hostname.toLowerCase());
+    });
+    return clients;
   }
 
   Future<bool> _sqliteTableExists({
@@ -6971,6 +7011,14 @@ class AppState extends ChangeNotifier {
   /// as wireless if their MAC appears in any router's associated stations list.
   Future<List<Client>> fetchAggregatedClients() async {
     try {
+      final activeDeviceRecords = await fetchDeviceRecords(
+        aggregateAllRouters: true,
+        activeOnly: true,
+      );
+      if (activeDeviceRecords.$1.isNotEmpty) {
+        return _clientsFromDeviceDbRecords(activeDeviceRecords);
+      }
+
       final quarantinedMacsFuture = fetchAggregatedQuarantinedMacs();
       final deviceRecordsFuture = fetchDeviceRecords(aggregateAllRouters: true);
       // Build a union of wireless MACs across all routers
@@ -7117,6 +7165,11 @@ class AppState extends ChangeNotifier {
         return [];
       }
       final router = _routerService!.selectedRouter!;
+
+      final activeDeviceRecords = await fetchDeviceRecords(activeOnly: true);
+      if (activeDeviceRecords.$1.isNotEmpty) {
+        return _clientsFromDeviceDbRecords(activeDeviceRecords);
+      }
 
       // Get wireless MACs for this router
       final stationsMap = await _apiService!
