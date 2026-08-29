@@ -94,11 +94,16 @@ detect_pkg_mgr() {
 
 update_package_feeds() {
 	detect_pkg_mgr
+	if [ "${OPENWALLA_PACKAGE_FEEDS_UPDATED:-0}" = "1" ]; then
+		log "Package feeds already updated; skipping package feed refresh."
+		return 0
+	fi
 	case "$PKG_MGR" in
 	opkg) opkg update ;;
 	apk) apk update ;;
 	*) log "No supported package manager found (opkg/apk). Package install steps will be skipped." ;;
 	esac
+	export OPENWALLA_PACKAGE_FEEDS_UPDATED=1
 }
 
 install_pkg_if_available() {

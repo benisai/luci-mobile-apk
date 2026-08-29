@@ -301,6 +301,34 @@ download_standalone_runtime() {
 	done
 }
 
+detect_package_manager() {
+	if have_cmd opkg; then
+		echo "opkg"
+	elif have_cmd apk; then
+		echo "apk"
+	else
+		echo ""
+	fi
+}
+
+update_package_feeds_once() {
+	pkg_mgr="$(detect_package_manager)"
+	case "$pkg_mgr" in
+	opkg)
+		log "Updating opkg package feeds"
+		opkg update
+		;;
+	apk)
+		log "Updating apk package indexes"
+		apk update
+		;;
+	*)
+		log "No supported package manager found (opkg/apk). Package install steps may be skipped."
+		;;
+	esac
+	export OPENWALLA_PACKAGE_FEEDS_UPDATED=1
+}
+
 resolve_installers() {
 	INSTALLERS=""
 	for feature in $FEATURES; do
@@ -316,7 +344,7 @@ resolve_installers() {
 run_installers() {
 	for installer in $INSTALLERS; do
 		log "Running $installer"
-		sh "$STANDALONE_DIR/$installer"
+		OPENWALLA_PACKAGE_FEEDS_UPDATED=1 sh "$STANDALONE_DIR/$installer"
 	done
 }
 
@@ -401,6 +429,7 @@ if [ "$(id -u)" != "0" ]; then
 	exit 1
 fi
 
+update_package_feeds_once
 download_standalone_runtime
 run_installers
 
