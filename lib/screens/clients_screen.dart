@@ -25,7 +25,10 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
   bool _aggregateAllRouters = true;
   Future<List<Client>>? _clientsFuture;
   String? _lastSelectedRouterId;
+  String? _activeClientCacheKey;
+  List<Client> _visibleClients = const [];
   final Set<String> _blockingMacs = {};
+  static final Map<String, List<Client>> _clientCache = {};
 
   @override
   void initState() {
@@ -51,9 +54,29 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
 
   void _computeClientsFuture() {
     final appState = ref.read(appStateProvider);
-    _clientsFuture = _aggregateAllRouters
-        ? appState.fetchAggregatedClients()
-        : appState.fetchClientsForSelectedRouter();
+    final cacheKey = _clientCacheKey(appState);
+    _activeClientCacheKey = cacheKey;
+    _visibleClients = _clientCache[cacheKey] ?? const [];
+    _clientsFuture = _loadClients(cacheKey);
+  }
+
+  String _clientCacheKey(dynamic appState) {
+    if (_aggregateAllRouters) return 'aggregate';
+    return appState.selectedRouter?.id?.toString() ?? 'selected:none';
+  }
+
+  Future<List<Client>> _loadClients(String cacheKey) async {
+    final appState = ref.read(appStateProvider);
+    final clients = _aggregateAllRouters
+        ? await appState.fetchAggregatedClients()
+        : await appState.fetchClientsForSelectedRouter();
+    _clientCache[cacheKey] = clients;
+    if (mounted && _activeClientCacheKey == cacheKey) {
+      setState(() {
+        _visibleClients = clients;
+      });
+    }
+    return clients;
   }
 
   @override
@@ -77,7 +100,7 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
     return FutureBuilder<List<Client>>(
       future: future,
       builder: (context, snapshot) {
-        final aggregatedClients = snapshot.data ?? [];
+        final aggregatedClients = snapshot.data ?? _visibleClients;
         return Scaffold(
           body: Stack(
             children: [
@@ -952,10 +975,8 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
                           right: 0,
                           top: 0,
                           child: Tooltip(
-                            message:
-                                widget.client.connectionType ==
-                                    ConnectionType.unknown
-                                ? 'Unknown connection type'
+                            message: widget.client.isBlocked
+                                ? 'Client is blocked'
                                 : 'Client is online',
                             child: Container(
                               width: 10,
@@ -963,12 +984,7 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
                               decoration: BoxDecoration(
                                 color: widget.client.isBlocked
                                     ? const Color(0xFFFF4D5A)
-                                    : widget.client.connectionType ==
-                                              ConnectionType.wireless ||
-                                          widget.client.connectionType ==
-                                              ConnectionType.wired
-                                    ? Colors.green
-                                    : Colors.amber,
+                                    : Colors.green,
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                   color: colorScheme.surface,
@@ -1027,7 +1043,8 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
                     ),
                     if (widget.client.isBlocked)
                       _buildBlockedChip(context)
-                    else
+                    else if (widget.client.connectionType !=
+                        ConnectionType.unknown)
                       _buildConnectionTypeChip(
                         context,
                         widget.client.connectionType,
