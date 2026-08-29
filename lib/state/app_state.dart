@@ -1892,6 +1892,8 @@ class AppState extends ChangeNotifier {
             } else {
               await updateRouter(router);
             }
+            await _routerService!.setSelectedRouter(router.id);
+            await loadDashboardPreferences();
           }
         } else if (actualUseHttps != useHttps && _routerService != null) {
           // If we're logging in from a saved router and the protocol changed, update it

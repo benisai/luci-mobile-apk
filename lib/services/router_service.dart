@@ -37,9 +37,16 @@ class RouterService {
     _routers.add(router);
     await _secureStorageService.saveRouters(_routers);
     if (_selectedRouter == null) {
-      _selectedRouter = router;
-      await _secureStorageService.saveSelectedRouterId(router.id);
+      await setSelectedRouter(router.id);
     }
+  }
+
+  Future<model.Router?> setSelectedRouter(String id) async {
+    final found = selectRouter(id);
+    if (found != null) {
+      await _secureStorageService.saveSelectedRouterId(found.id);
+    }
+    return found;
   }
 
   Future<bool> removeRouter(String id) async {
