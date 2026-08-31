@@ -1879,11 +1879,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     // ignore: use_build_context_synchronously
     final loginSuccess = await login(
-      found.ipAddress,
+      found.activeAddress,
       found.username,
       found.password,
-      found.useHttps,
+      found.activeUseHttps,
       fromRouter: true,
+      alternateAddress: found.inactiveAddress,
+      alternateUseHttps: found.inactiveUseHttps,
+      activeAddressIndex: found.activeAddressIndex,
       context: safeContext, // ignore: use_build_context_synchronously
     );
     if (loginSuccess) {
@@ -1904,6 +1907,9 @@ class AppState extends ChangeNotifier {
     String pass,
     bool useHttps, {
     bool fromRouter = false,
+    String? alternateAddress,
+    bool? alternateUseHttps,
+    int activeAddressIndex = 0,
     BuildContext? context,
   }) async {
     _isLoading = true;
@@ -1916,10 +1922,19 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _authService!.login(ip, user, pass, useHttps, context: context);
+      final fallbackResult = await _authService!.loginWithFallback(
+        activeAddress: ip,
+        activeHttps: useHttps,
+        activeIndex: activeAddressIndex,
+        fallbackAddress: alternateAddress,
+        fallbackHttps: alternateUseHttps,
+        username: user,
+        password: pass,
+        context: context,
+      );
 
       // Check if authentication was successful
-      if (_authService!.isAuthenticated) {
+      if (fallbackResult.success && _authService!.isAuthenticated) {
         // Get the actual protocol used (might be different due to redirect)
         final actualUseHttps = _authService!.useHttps;
 
@@ -1932,26 +1947,46 @@ class AppState extends ChangeNotifier {
               pass,
               actualUseHttps, // Use the detected protocol
             );
+            final routerWithFallback = router.copyWith(
+              alternateAddress: alternateAddress,
+              alternateUseHttps: alternateUseHttps,
+              activeAddressIndex: fallbackResult.usedAddressIndex,
+            );
             final idx = _routerService!.routers.indexWhere(
-              (r) => r.id == router.id,
+              (r) => r.id == routerWithFallback.id,
             );
             if (idx == -1) {
-              await addRouter(router);
+              await addRouter(routerWithFallback);
             } else {
-              await updateRouter(router);
+              await updateRouter(routerWithFallback);
             }
-            await _routerService!.setSelectedRouter(router.id);
+            await _routerService!.setSelectedRouter(routerWithFallback.id);
             await loadDashboardPreferences();
           }
-        } else if (actualUseHttps != useHttps && _routerService != null) {
-          // If we're logging in from a saved router and the protocol changed, update it
+        } else if (_routerService != null) {
           final router = _routerService!.selectedRouter;
           if (router != null) {
-            final updatedRouter = router.copyWith(useHttps: actualUseHttps);
-            await updateRouter(updatedRouter);
-            Logger.info(
-              'Updated router protocol from ${useHttps ? "HTTPS" : "HTTP"} to ${actualUseHttps ? "HTTPS" : "HTTP"}',
-            );
+            final needsUpdate =
+                actualUseHttps != useHttps ||
+                fallbackResult.usedAddressIndex != router.activeAddressIndex;
+            if (needsUpdate) {
+              final updatedRouter = fallbackResult.usedAddressIndex == 0
+                  ? router.copyWith(
+                      useHttps: actualUseHttps,
+                      activeAddressIndex: 0,
+                    )
+                  : router.copyWith(
+                      alternateUseHttps: actualUseHttps,
+                      activeAddressIndex: 1,
+                    );
+              await updateRouter(updatedRouter);
+              if (fallbackResult.usedAddressIndex !=
+                  router.activeAddressIndex) {
+                Logger.info(
+                  'Switched to ${fallbackResult.usedAddressIndex == 0 ? "primary" : "alternate"} address',
+                );
+              }
+            }
           }
         }
         await fetchDashboardData();
@@ -1993,20 +2028,26 @@ class AppState extends ChangeNotifier {
     _isDashboardLoading = true;
     _dashboardError = null;
     _cancelThroughputTimer();
-    _httpClientManager.disposeClient(router.ipAddress, router.useHttps);
+    _httpClientManager.disposeClient(
+      router.activeAddress,
+      router.activeUseHttps,
+    );
     notifyListeners();
 
     try {
       final safeContext = context?.mounted == true ? context : null;
-      final loginSuccess = await _authService!.tryAutoLogin(
-        router.ipAddress,
-        router.username,
-        router.password,
-        router.useHttps,
+      final loginResult = await _authService!.loginWithFallback(
+        activeAddress: router.activeAddress,
+        activeHttps: router.activeUseHttps,
+        activeIndex: router.activeAddressIndex,
+        fallbackAddress: router.inactiveAddress,
+        fallbackHttps: router.inactiveUseHttps,
+        username: router.username,
+        password: router.password,
         context: safeContext,
       );
 
-      if (!loginSuccess || _authService?.sysauth == null) {
+      if (!loginResult.success || _authService?.sysauth == null) {
         _dashboardError =
             'Failed to reconnect. Please check your router credentials and network connection.';
         _dashboardData = null;
@@ -2014,8 +2055,15 @@ class AppState extends ChangeNotifier {
       }
 
       final actualUseHttps = _authService!.useHttps;
-      if (actualUseHttps != router.useHttps) {
-        await updateRouter(router.copyWith(useHttps: actualUseHttps));
+      if (actualUseHttps != router.activeUseHttps ||
+          loginResult.usedAddressIndex != router.activeAddressIndex) {
+        final updatedRouter = loginResult.usedAddressIndex == 0
+            ? router.copyWith(useHttps: actualUseHttps, activeAddressIndex: 0)
+            : router.copyWith(
+                alternateUseHttps: actualUseHttps,
+                activeAddressIndex: 1,
+              );
+        await updateRouter(updatedRouter);
       }
 
       await fetchDashboardData();
@@ -2147,8 +2195,9 @@ class AppState extends ChangeNotifier {
 
     // If already loading, don't start another request (but this shouldn't prevent pull-to-refresh)
     // We'll let the new request proceed and the loading state will be handled properly
-    final ip = _routerService!.selectedRouter!.ipAddress;
-    final useHttps = _routerService!.selectedRouter!.useHttps;
+    final selectedRouter = _routerService!.selectedRouter!;
+    final ip = _authService!.ipAddress ?? selectedRouter.activeAddress;
+    final useHttps = _authService!.useHttps;
 
     _isDashboardLoading = true;
     _dashboardError = null;
@@ -3205,7 +3254,6 @@ class AppState extends ChangeNotifier {
     }
     return (byMac, byIp);
   }
-
 
   Future<bool> _sqliteTableExists({
     required String dbExpression,
@@ -7323,14 +7371,36 @@ class AppState extends ChangeNotifier {
         context: context,
       );
     }
-    return await _authService?.tryAutoLogin(
-          null,
-          null,
-          null,
-          null,
-          context: context,
-        ) ??
-        false;
+
+    if (_routerService != null && _routerService!.routers.isEmpty) {
+      await loadRouters();
+    }
+
+    final router = _routerService?.selectedRouter;
+    if (router != null && _authService != null) {
+      final result = await _authService!.loginWithFallback(
+        activeAddress: router.activeAddress,
+        activeHttps: router.activeUseHttps,
+        activeIndex: router.activeAddressIndex,
+        fallbackAddress: router.inactiveAddress,
+        fallbackHttps: router.inactiveUseHttps,
+        username: router.username,
+        password: router.password,
+        context: context?.mounted == true ? context : null,
+      );
+      if (result.success) {
+        if (result.usedAddressIndex != router.activeAddressIndex) {
+          await updateRouter(
+            router.copyWith(activeAddressIndex: result.usedAddressIndex),
+          );
+        }
+        return true;
+      }
+      return false;
+    }
+
+    await _authService?.logout();
+    return false;
   }
 
   /// Fetch all associated wireless MAC addresses from all wireless interfaces
@@ -7431,7 +7501,8 @@ class AppState extends ChangeNotifier {
           clients[macNorm] = Client(
             ipAddress: ip.isEmpty ? 'N/A' : ip,
             macAddress: record.mac,
-            hostname: (hostname.isEmpty ||
+            hostname:
+                (hostname.isEmpty ||
                     hostname == '*' ||
                     hostname.toLowerCase() == 'unknown')
                 ? 'Unknown'
@@ -7629,7 +7700,8 @@ class AppState extends ChangeNotifier {
           clientMap[macNorm] = Client(
             ipAddress: ip.isEmpty ? 'N/A' : ip,
             macAddress: record.mac,
-            hostname: (hostname.isEmpty ||
+            hostname:
+                (hostname.isEmpty ||
                     hostname == '*' ||
                     hostname.toLowerCase() == 'unknown')
                 ? 'Unknown'
@@ -7749,7 +7821,8 @@ class AppState extends ChangeNotifier {
         continue;
       }
       final hostname = record.hostname.trim();
-      final hasCustomHostname = hostname.isNotEmpty &&
+      final hasCustomHostname =
+          hostname.isNotEmpty &&
           hostname != '*' &&
           hostname.toLowerCase() != 'unknown';
       final ip = record.ip.trim();
@@ -7762,7 +7835,10 @@ class AppState extends ChangeNotifier {
         ipAddress: client.ipAddress != 'N/A' && client.ipAddress.isNotEmpty
             ? client.ipAddress
             : (hasRecordIp ? ip : client.ipAddress),
-        isBlocked: record.quarantined || record.status == 'blocked' || client.isBlocked,
+        isBlocked:
+            record.quarantined ||
+            record.status == 'blocked' ||
+            client.isBlocked,
         totalUploadBytes: record.totalUploadBytes > 0
             ? record.totalUploadBytes
             : client.totalUploadBytes,
@@ -7775,8 +7851,8 @@ class AppState extends ChangeNotifier {
         status: record.quarantined
             ? 'blocked'
             : (record.status.isNotEmpty && record.status != 'online'
-                ? record.status
-                : client.status),
+                  ? record.status
+                  : client.status),
       );
     }
   }
@@ -8335,7 +8411,8 @@ class AppState extends ChangeNotifier {
     final escIp = (client?.ipAddress != null && client!.ipAddress != 'N/A')
         ? client.ipAddress.replaceAll("'", "''")
         : '';
-    final escHostname = (client?.hostname != null &&
+    final escHostname =
+        (client?.hostname != null &&
             client!.hostname.isNotEmpty &&
             client.hostname != 'Unknown')
         ? client.hostname.replaceAll("'", "''")

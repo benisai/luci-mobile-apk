@@ -38,6 +38,27 @@ class MockAuthService implements IAuthService {
   }
 
   @override
+  Future<FallbackLoginResult> loginWithFallback({
+    required String activeAddress,
+    required bool activeHttps,
+    required int activeIndex,
+    String? fallbackAddress,
+    bool? fallbackHttps,
+    required String username,
+    required String password,
+    BuildContext? context,
+  }) async {
+    await login(
+      activeAddress,
+      username,
+      password,
+      activeHttps,
+      context: context,
+    );
+    return FallbackLoginResult(success: true, usedAddressIndex: activeIndex);
+  }
+
+  @override
   Future<bool> tryAutoLogin(
     String? ipAddress,
     String? username,
