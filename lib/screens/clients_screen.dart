@@ -1312,6 +1312,14 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
         ? theme.colorScheme.primary
         : theme.colorScheme.error;
 
+    final hasStaticIp = client.staticIpAddress != null &&
+        client.staticIpAddress!.trim().isNotEmpty;
+    final ipLabel = hasStaticIp ? 'IP Address (Static)' : 'IP Address';
+    final displayIp =
+        (client.ipAddress != 'N/A' && client.ipAddress.isNotEmpty)
+            ? client.ipAddress
+            : (hasStaticIp ? client.staticIpAddress! : client.ipAddress);
+
     return Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(
@@ -1341,11 +1349,10 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
           ),
           const Divider(height: 1, indent: 16, endIndent: 16),
           detailRow(
-            'IP Address',
-            client.ipAddress,
-            onTap: () =>
-                _copyToClipboard(context, client.ipAddress, 'IP Address'),
-            semanticsLabel: 'IP Address: ${client.ipAddress}',
+            ipLabel,
+            displayIp,
+            onTap: () => _copyToClipboard(context, displayIp, ipLabel),
+            semanticsLabel: '$ipLabel: $displayIp',
           ),
           if (client.ipv6Addresses != null && client.ipv6Addresses!.isNotEmpty)
             ...client.ipv6Addresses!.map(
@@ -1375,14 +1382,14 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
               client.dnsName!,
               semanticsLabel: 'DNS Name: ${client.dnsName}',
             ),
-          const Divider(height: 1, indent: 16, endIndent: 16),
-          if (client.staticIpAddress != null &&
-              client.staticIpAddress!.isNotEmpty)
+          if (hasStaticIp && client.staticIpAddress != displayIp) ...[
+            const Divider(height: 1, indent: 16, endIndent: 16),
             detailRow(
               'Static IP',
               client.staticIpAddress!,
               semanticsLabel: 'Static IP: ${client.staticIpAddress}',
             ),
+          ],
           Padding(
             padding: const EdgeInsets.fromLTRB(
               LuciSpacing.md,
