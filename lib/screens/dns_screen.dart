@@ -14,8 +14,9 @@ class DnsScreen extends ConsumerStatefulWidget {
 }
 
 class _DnsScreenState extends ConsumerState<DnsScreen> {
+  final PageController _pageController = PageController();
   List<OpenwrtDnsHostEntry> _entries = const [];
-  _DnsPanel _panel = _DnsPanel.dns;
+  int _panelIndex = 0;
   bool _isLoading = true;
   String? _error;
 
@@ -23,6 +24,12 @@ class _DnsScreenState extends ConsumerState<DnsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -95,111 +102,224 @@ class _DnsScreenState extends ConsumerState<DnsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final dnsEntries = _entries
         .where((entry) => !entry.isBlockedSinkhole)
         .toList(growable: false);
     final blockedEntries = _entries
         .where((entry) => entry.isBlockedSinkhole)
         .toList(growable: false);
-    final visibleEntries = _panel == _DnsPanel.dns
-        ? dnsEntries
-        : blockedEntries;
-    final title = _panel == _DnsPanel.dns ? 'DNS Entries' : 'Blocked Domains';
-    final emptyMessage = _panel == _DnsPanel.dns
-        ? 'No custom DNS entries found.'
-        : 'No blocked DNS entries found.';
-    final description = _panel == _DnsPanel.dns
-        ? 'Map hostnames to local IP addresses through OpenWrt dnsmasq.'
-        : 'Domains sinkholed to 127.0.0.1 are listed here.';
 
     return Scaffold(
       appBar: LuciAppBar(title: 'DNS', showBack: true),
       body: SafeArea(
         top: false,
-        child: RefreshIndicator(
-          onRefresh: _load,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-            children: [
-              SegmentedButton<_DnsPanel>(
-                segments: const [
-                  ButtonSegment(
-                    value: _DnsPanel.dns,
-                    label: Text('DNS'),
-                    icon: Icon(Icons.dns_rounded),
-                  ),
-                  ButtonSegment(
-                    value: _DnsPanel.blocked,
-                    label: Text('Blocked'),
-                    icon: Icon(Icons.block_rounded),
-                  ),
-                ],
-                selected: {_panel},
-                onSelectionChanged: (selection) {
-                  setState(() => _panel = selection.first);
-                },
-              ),
-              const SizedBox(height: 18),
-              Row(
+        child: Column(
+          children: [
+            _DnsPanelSwitcher(
+              selectedIndex: _panelIndex,
+              onSelected: _selectPanel,
+            ),
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: (index) => setState(() => _panelIndex = index),
                 children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0,
-                      ),
-                    ),
+                  _buildPanel(
+                    panel: _DnsPanel.dns,
+                    entries: dnsEntries,
+                    title: 'DNS Entries',
+                    description:
+                        'Map hostnames to local IP addresses through OpenWrt dnsmasq.',
+                    emptyMessage: 'No custom DNS entries found.',
                   ),
-                  FilledButton.icon(
-                    onPressed: () => _showEntrySheet(
-                      _panel == _DnsPanel.blocked
-                          ? const OpenwrtDnsHostEntry(
-                              section: '',
-                              hostname: '',
-                              ipAddress: '127.0.0.1',
-                            )
-                          : null,
-                    ),
-                    icon: Icon(
-                      _panel == _DnsPanel.blocked
-                          ? Icons.block_rounded
-                          : Icons.add_rounded,
-                    ),
-                    label: Text(_panel == _DnsPanel.blocked ? 'Block' : 'Add'),
+                  _buildPanel(
+                    panel: _DnsPanel.blocked,
+                    entries: blockedEntries,
+                    title: 'Blocked Domains',
+                    description:
+                        'Domains sinkholed to 127.0.0.1 are listed here.',
+                    emptyMessage: 'No blocked DNS entries found.',
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
-              Text(
-                description,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0,
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 48),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_error != null)
-                _DnsEmptyCard(message: _error!, onRefresh: _load)
-              else if (visibleEntries.isEmpty)
-                _DnsEmptyCard(message: emptyMessage, onRefresh: _load)
-              else
-                ...visibleEntries.map(
-                  (entry) => _DnsEntryCard(
-                    entry: entry,
-                    onEdit: () => _showEntrySheet(entry),
-                    onDelete: () => _deleteEntry(entry),
+            ),
+            _DnsPanelDots(count: 2, currentIndex: _panelIndex),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _selectPanel(int index) {
+    setState(() => _panelIndex = index);
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Widget _buildPanel({
+    required _DnsPanel panel,
+    required List<OpenwrtDnsHostEntry> entries,
+    required String title,
+    required String description,
+    required String emptyMessage,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isBlockedPanel = panel == _DnsPanel.blocked;
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
                   ),
                 ),
+              ),
+              FilledButton.icon(
+                onPressed: () => _showEntrySheet(
+                  isBlockedPanel
+                      ? const OpenwrtDnsHostEntry(
+                          section: '',
+                          hostname: '',
+                          ipAddress: '127.0.0.1',
+                        )
+                      : null,
+                ),
+                icon: Icon(
+                  isBlockedPanel ? Icons.block_rounded : Icons.add_rounded,
+                ),
+                label: Text(isBlockedPanel ? 'Block' : 'Add'),
+              ),
             ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            description,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_isLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 48),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_error != null)
+            _DnsEmptyCard(message: _error!, onRefresh: _load)
+          else if (entries.isEmpty)
+            _DnsEmptyCard(message: emptyMessage, onRefresh: _load)
+          else
+            ...entries.map(
+              (entry) => _DnsEntryCard(
+                entry: entry,
+                onEdit: () => _showEntrySheet(entry),
+                onDelete: () => _deleteEntry(entry),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DnsPanelSwitcher extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  const _DnsPanelSwitcher({
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    const tabs = ['DNS', 'Blocked'];
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.36),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Row(
+        children: List.generate(tabs.length, (index) {
+          final selected = selectedIndex == index;
+          return Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(7),
+              onTap: () => onSelected(index),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: selected ? colorScheme.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(
+                  tabs[index],
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: selected
+                        ? colorScheme.onPrimary
+                        : colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _DnsPanelDots extends StatelessWidget {
+  final int count;
+  final int currentIndex;
+
+  const _DnsPanelDots({required this.count, required this.currentIndex});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(
+        count,
+        (index) => AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          width: index == currentIndex ? 16 : 6,
+          height: 6,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          decoration: BoxDecoration(
+            color: index == currentIndex
+                ? colorScheme.primary
+                : colorScheme.onSurfaceVariant.withValues(alpha: 0.34),
+            borderRadius: BorderRadius.circular(999),
           ),
         ),
       ),
