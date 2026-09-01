@@ -5,7 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-BUILD_DIR="${OPENWALLA_BUILD_DIR:-/tmp/openwalla-apk-build}"
+BUILD_DIR="${OPENWALLA_BUILD_DIR:-$PROJECT_ROOT/.openwalla-apk-build}"
+BUILD_DIR_NAME="$(basename "$BUILD_DIR")"
 OUTPUT_DIR="${OPENWALLA_APK_OUTPUT_DIR:-$PROJECT_ROOT/dist/apk}"
 APK_TEST_DIR="${OPENWALLA_APK_TEST_DIR:-$PROJECT_ROOT/APK-TEST}"
 APK_TEST_ABI="${OPENWALLA_APK_TEST_ABI:-arm64-v8a}"
@@ -107,8 +108,12 @@ if command -v rsync >/dev/null 2>&1; then
   rsync -a --delete \
     --exclude '.git/' \
     --exclude '.dart_tool/' \
+    --exclude '.gradle/' \
+    --exclude "$BUILD_DIR_NAME/" \
     --exclude '.flutter-plugins' \
     --exclude '.flutter-plugins-dependencies' \
+    --exclude 'APK-TEST/' \
+    --exclude 'android/.gradle/' \
     --exclude 'build/' \
     --exclude 'dist/' \
     "$PROJECT_ROOT/" "$BUILD_DIR/"
@@ -116,15 +121,30 @@ else
   tar -C "$PROJECT_ROOT" \
     --exclude './.git' \
     --exclude './.dart_tool' \
+    --exclude './.gradle' \
+    --exclude "./$BUILD_DIR_NAME" \
     --exclude './.flutter-plugins' \
     --exclude './.flutter-plugins-dependencies' \
+    --exclude './APK-TEST' \
+    --exclude './android/.gradle' \
     --exclude './build' \
     --exclude './dist' \
     -cf - . | tar -C "$BUILD_DIR" -xf -
 fi
 
+rm -rf "$BUILD_DIR/.gradle" "$BUILD_DIR/android/.gradle"
+
 echo "Resolving dependencies"
 flutter pub get --directory "$BUILD_DIR"
+
+if [[ -f "$BUILD_DIR/android/gradle.properties" ]]; then
+  {
+    echo ""
+    echo "# Openwalla temp-copy build isolation"
+    echo "org.gradle.daemon=false"
+    echo "org.gradle.caching=false"
+  } >> "$BUILD_DIR/android/gradle.properties"
+fi
 
 echo "Building APK ($BUILD_MODE)"
 (
@@ -133,7 +153,8 @@ echo "Building APK ($BUILD_MODE)"
   if [[ "$SPLIT_PER_ABI" == true ]]; then
     build_args+=(--split-per-abi)
   fi
-  flutter build "${build_args[@]}"
+  GRADLE_OPTS="${GRADLE_OPTS:-} -Dorg.gradle.daemon=false" \
+    flutter build "${build_args[@]}"
 )
 
 APK_GLOB="$BUILD_DIR/build/app/outputs/flutter-apk/app-*-$BUILD_MODE.apk"

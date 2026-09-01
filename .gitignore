@@ -35,6 +35,7 @@ AGENTS.md
 .pub/
 /build/
 dist/
+.openwalla-apk-build/
 
 # Symbolication related
 app.*.symbols
