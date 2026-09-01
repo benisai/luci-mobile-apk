@@ -212,8 +212,9 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                     }
 
                     final clients = aggregatedClients;
-                    final blockedClients =
-                        clients.where((client) => client.isBlocked).toList();
+                    final blockedClients = clients
+                        .where((client) => client.isBlocked)
+                        .toList();
                     final offlineClients = clients
                         .where(
                           (client) => !client.isBlocked && client.isOffline,
@@ -235,7 +236,9 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                       ClientFilter.offline => offlineClients,
                     };
 
-                    final filteredClients = activeCategoryClients.where((client) {
+                    final filteredClients = activeCategoryClients.where((
+                      client,
+                    ) {
                       final query = _searchQuery.toLowerCase();
                       if (query.isEmpty) return true;
                       return client.hostname.toLowerCase().contains(query) ||
@@ -1078,12 +1081,12 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
                                   : widget.client.isOffline
                                   ? Icons.cloud_off_rounded
                                   : widget.client.connectionType ==
-                                          ConnectionType.wireless
-                                      ? Icons.wifi_rounded
-                                      : widget.client.connectionType ==
-                                              ConnectionType.wired
-                                          ? Icons.settings_ethernet
-                                          : Icons.devices_other_rounded,
+                                        ConnectionType.wireless
+                                  ? Icons.wifi_rounded
+                                  : widget.client.connectionType ==
+                                        ConnectionType.wired
+                                  ? Icons.settings_ethernet
+                                  : Icons.devices_other_rounded,
                               color: widget.client.isBlocked
                                   ? const Color(0xFFFF4D5A)
                                   : widget.client.isOffline
