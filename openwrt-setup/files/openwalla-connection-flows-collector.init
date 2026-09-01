@@ -1,7 +1,7 @@
 #!/bin/sh /etc/rc.common
 
 # Openwalla conntrack flow collector init service.
-# Starts the lightweight connection flow sampler as a procd-managed daemon.
+# Starts the lightweight conntrack event stream collector as a procd-managed daemon.
 
 START=96
 STOP=10

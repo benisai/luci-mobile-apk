@@ -1,7 +1,8 @@
 #!/bin/sh
 
 # Openwalla lightweight connection flow collector for OpenWrt.
-# Samples conntrack every few seconds and stores unique snapshots in SQLite.
+# Streams conntrack events with `conntrack -E` and stores unique flow rows in SQLite.
+# Falls back to periodic snapshots when event streaming is not available.
 
 PATH="/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
@@ -257,6 +258,7 @@ parse_conntrack() {
 				if (t ~ /^dport=/ && dport=="") dport=substr(t,7);
 				if (t ~ /^bytes=/) bytes += substr(t,7)+0;
 				if (t ~ /^packets=/) packets += substr(t,9)+0;
+				if (t ~ /^\[(NEW|UPDATE|DESTROY)\]$/) next;
 				if (t ~ /^(ESTABLISHED|SYN_SENT|SYN_RECV|FIN_WAIT|TIME_WAIT|CLOSE|CLOSE_WAIT|LAST_ACK|LISTEN|CLOSING|UNREPLIED|ASSURED)$/) state=t;
 				if (state=="ACTIVE" && t ~ /^\[[A-Z_]+\]$/) {
 					state=substr(t,2,length(t)-2);
@@ -270,6 +272,39 @@ parse_conntrack() {
 			printf "%s|%s|%s|%s|%s\n", proto, source, destination, transfer, state;
 		}
 	'
+}
+
+insert_row_fields() {
+	local protocol source destination transfer status sig
+	protocol="$1"
+	source="$2"
+	destination="$3"
+	transfer="$4"
+	status="$5"
+
+	[ -n "$protocol" ] || return 0
+	if [ "$IGNORE_IPV6" = "1" ]; then
+		if is_ipv6_endpoint "$source" || is_ipv6_endpoint "$destination"; then
+			return 0
+		fi
+	fi
+	if [ "$LAN_TO_WAN_ONLY" = "1" ]; then
+		if should_skip_non_lan_wan "$source" "$destination"; then
+			return 0
+		fi
+	fi
+	if should_skip_endpoint "$source" "$destination"; then
+		return 0
+	fi
+
+	sig="${protocol}|${source}|${destination}|${transfer}|${status}"
+	protocol="$(sql_escape "$protocol")"
+	source="$(sql_escape "$source")"
+	destination="$(sql_escape "$destination")"
+	transfer="$(sql_escape "$transfer")"
+	status="$(sql_escape "$status")"
+	sig="$(sql_escape "$sig")"
+	sql_exec "INSERT OR IGNORE INTO connection_flows(timeinsert, protocol, source, destination, transfer, status, sig) VALUES (CAST(strftime('%s','now') AS INTEGER), '$protocol', '$source', '$destination', '$transfer', '$status', '$sig');"
 }
 
 insert_rows() {
@@ -311,6 +346,22 @@ insert_rows() {
 	sql_exec "$sql"
 }
 
+run_stream_once() {
+	local protocol source destination transfer status event_count
+	event_count=0
+	log "starting conntrack event stream db=$FLOW_DB"
+
+	conntrack -E -o extended 2>>"$LOG_FILE" | parse_conntrack | while IFS='|' read -r protocol source destination transfer status; do
+		insert_row_fields "$protocol" "$source" "$destination" "$transfer" "$status" || true
+		event_count=$((event_count + 1))
+		if [ $((event_count % 200)) -eq 0 ]; then
+			prune_db || true
+		fi
+	done
+
+	log "conntrack event stream ended"
+}
+
 run_once() {
 	load_config
 	ensure_db_file
@@ -319,14 +370,28 @@ run_once() {
 }
 
 run_daemon() {
-	load_config
-	ensure_db_file
-	log "starting connection flow collector db=$FLOW_DB poll=${POLL_SECONDS}s"
+	local started ended elapsed
+	log "starting connection flow collector daemon"
 	while true; do
-		if ! run_once; then
-			log "collector iteration failed"
+		load_config
+		ensure_db_file
+		if command -v conntrack >/dev/null 2>&1; then
+			started="$(date +%s)"
+			run_stream_once || true
+			ended="$(date +%s)"
+			elapsed=$((ended - started))
+			if [ "$elapsed" -lt 3 ]; then
+				log "conntrack event stream unavailable; using one snapshot and retrying in ${POLL_SECONDS}s"
+				run_once || log "collector snapshot fallback failed"
+				sleep "$POLL_SECONDS"
+			else
+				sleep 3
+			fi
+		else
+			log "conntrack command not found; using snapshot fallback"
+			run_once || log "collector snapshot fallback failed"
+			sleep "$POLL_SECONDS"
 		fi
-		sleep "$POLL_SECONDS"
 	done
 }
 
