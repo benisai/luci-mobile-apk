@@ -785,11 +785,11 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
           sample.hasData ? selector(sample).toDouble() : 0,
         );
       }),
-      isCurved: true,
-      curveSmoothness: 0.28,
+      isCurved: false,
       color: color,
-      barWidth: 3,
+      barWidth: 2,
       isStrokeCapRound: true,
+      isStrokeJoinRound: false,
       dotData: FlDotData(show: false),
       belowBarData: BarAreaData(
         show: true,

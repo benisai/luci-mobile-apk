@@ -939,10 +939,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           FlSpot(0, data[0]),
           FlSpot(1, data[0]), // Duplicate the point to create a flat line
         ],
-        isCurved: false, // Don't curve a flat line
+        isCurved: false,
         gradient: LinearGradient(colors: gradientColors),
-        barWidth: 3,
+        barWidth: 2,
         isStrokeCapRound: true,
+        isStrokeJoinRound: false,
         dotData: FlDotData(
           show: true,
           getDotPainter: (spot, percent, barData, index) {
@@ -968,10 +969,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     if (data.isEmpty) {
       return LineChartBarData(
         spots: [],
-        isCurved: true,
+        isCurved: false,
         gradient: LinearGradient(colors: gradientColors),
-        barWidth: 3,
+        barWidth: 2,
         isStrokeCapRound: true,
+        isStrokeJoinRound: false,
         dotData: FlDotData(show: false),
         belowBarData: BarAreaData(show: false),
       );
@@ -983,10 +985,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           .entries
           .map((e) => FlSpot(e.key.toDouble(), e.value))
           .toList(),
-      isCurved: true,
+      isCurved: false,
       gradient: LinearGradient(colors: gradientColors),
-      barWidth: 3,
+      barWidth: 2,
       isStrokeCapRound: true,
+      isStrokeJoinRound: false,
       dotData: FlDotData(show: false),
       belowBarData: BarAreaData(
         show: true,
