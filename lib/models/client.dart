@@ -18,6 +18,7 @@ class Client {
   final int totalDownloadBytes;
   final String? staticIpAddress;
   final String status;
+  final String? deviceIcon;
 
   Client({
     required this.ipAddress,
@@ -37,6 +38,7 @@ class Client {
     this.totalDownloadBytes = 0,
     this.staticIpAddress,
     this.status = 'online',
+    this.deviceIcon,
   });
 
   // Helper function to determine connection type from MAC address or other data
@@ -264,6 +266,7 @@ class Client {
     int? totalDownloadBytes,
     String? staticIpAddress,
     String? status,
+    String? deviceIcon,
   }) {
     return Client(
       ipAddress: ipAddress ?? this.ipAddress,
@@ -283,6 +286,7 @@ class Client {
       totalDownloadBytes: totalDownloadBytes ?? this.totalDownloadBytes,
       staticIpAddress: staticIpAddress ?? this.staticIpAddress,
       status: status ?? this.status,
+      deviceIcon: deviceIcon ?? this.deviceIcon,
     );
   }
 }

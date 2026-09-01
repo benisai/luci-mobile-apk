@@ -17,6 +17,53 @@ class ClientsScreen extends ConsumerStatefulWidget {
 
 enum ClientFilter { online, blocked, offline }
 
+class _DeviceIconOption {
+  final String key;
+  final String label;
+  final IconData icon;
+
+  const _DeviceIconOption(this.key, this.label, this.icon);
+}
+
+const List<_DeviceIconOption> _deviceIconOptions = [
+  _DeviceIconOption('device', 'Device', Icons.devices_other_rounded),
+  _DeviceIconOption('phone', 'Phone', Icons.phone_android_rounded),
+  _DeviceIconOption('laptop', 'Laptop', Icons.laptop_mac_rounded),
+  _DeviceIconOption('desktop', 'Desktop', Icons.desktop_windows_rounded),
+  _DeviceIconOption('tablet', 'Tablet', Icons.tablet_mac_rounded),
+  _DeviceIconOption('tv', 'TV', Icons.tv_rounded),
+  _DeviceIconOption('camera', 'Camera', Icons.videocam_rounded),
+  _DeviceIconOption('speaker', 'Speaker', Icons.speaker_rounded),
+  _DeviceIconOption('game', 'Game', Icons.sports_esports_rounded),
+  _DeviceIconOption('router', 'Router', Icons.router_rounded),
+  _DeviceIconOption('plug', 'Plug', Icons.power_rounded),
+  _DeviceIconOption('watch', 'Watch', Icons.watch_rounded),
+];
+
+_DeviceIconOption _deviceIconOptionFor(String? key) {
+  final normalized = key?.trim();
+  if (normalized == null || normalized.isEmpty) return _deviceIconOptions.first;
+  return _deviceIconOptions.firstWhere(
+    (option) => option.key == normalized,
+    orElse: () => _deviceIconOptions.first,
+  );
+}
+
+IconData _clientIconData(Client client) {
+  if (client.deviceIcon?.trim().isNotEmpty == true) {
+    return _deviceIconOptionFor(client.deviceIcon).icon;
+  }
+  if (client.isBlocked) return Icons.block_rounded;
+  if (client.isOffline) return Icons.cloud_off_rounded;
+  if (client.connectionType == ConnectionType.wireless) {
+    return Icons.wifi_rounded;
+  }
+  if (client.connectionType == ConnectionType.wired) {
+    return Icons.settings_ethernet;
+  }
+  return Icons.devices_other_rounded;
+}
+
 class _ClientsScreenState extends ConsumerState<ClientsScreen> {
   String _searchQuery = '';
   ClientFilter _currentFilter = ClientFilter.online;
@@ -648,6 +695,7 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
   final _nameController = TextEditingController();
   final _ipController = TextEditingController();
   bool _staticIpEnabled = false;
+  String _selectedIconKey = 'device';
   late bool _isBlocked;
   bool _isSaving = false;
   bool _isBlocking = false;
@@ -663,6 +711,9 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
         : widget.client.ipAddress;
     _staticIpEnabled = widget.client.staticIpAddress?.isNotEmpty == true;
     _isBlocked = widget.client.isBlocked;
+    _selectedIconKey = widget.client.deviceIcon?.trim().isNotEmpty == true
+        ? widget.client.deviceIcon!.trim()
+        : 'device';
   }
 
   @override
@@ -692,6 +743,7 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
             hostname: name,
             staticIpEnabled: _staticIpEnabled,
             staticIpAddress: _ipController.text.trim(),
+            deviceIcon: _selectedIconKey,
             context: context,
           );
       if (!mounted) return;
@@ -725,10 +777,108 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _pickIcon() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (context) {
+        final theme = Theme.of(context);
+        final colorScheme = theme.colorScheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Device Icon',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _deviceIconOptions.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 0.92,
+                  ),
+                  itemBuilder: (context, index) {
+                    final option = _deviceIconOptions[index];
+                    final isSelected = option.key == _selectedIconKey;
+                    return InkWell(
+                      onTap: () => Navigator.of(context).pop(option.key),
+                      borderRadius: BorderRadius.circular(12),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? colorScheme.primary.withValues(alpha: 0.16)
+                              : colorScheme.surfaceContainerHighest.withValues(
+                                  alpha: 0.28,
+                                ),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected
+                                ? colorScheme.primary.withValues(alpha: 0.72)
+                                : colorScheme.outlineVariant.withValues(
+                                    alpha: 0.28,
+                                  ),
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              option.icon,
+                              color: isSelected
+                                  ? colorScheme.primary
+                                  : colorScheme.onSurfaceVariant,
+                              size: 24,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              option.label,
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: isSelected
+                                    ? colorScheme.onSurface
+                                    : colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (selected == null || !mounted) return;
+    setState(() => _selectedIconKey = selected);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final selectedIcon = _deviceIconOptionFor(_selectedIconKey).icon;
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.fromLTRB(
@@ -744,21 +894,53 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
             children: [
               Row(
                 children: [
-                  Container(
-                    width: 58,
-                    height: 58,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: colorScheme.primary.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: colorScheme.primary.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.devices_other_rounded,
-                      color: colorScheme.primary,
-                      size: 30,
+                  InkWell(
+                    onTap: _isSaving ? null : _pickIcon,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: 58,
+                          height: 58,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: colorScheme.primary.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: colorScheme.primary.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Icon(
+                            selectedIcon,
+                            color: colorScheme.primary,
+                            size: 30,
+                          ),
+                        ),
+                        Positioned(
+                          right: -4,
+                          bottom: -4,
+                          child: Container(
+                            width: 22,
+                            height: 22,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: colorScheme.outlineVariant.withValues(
+                                  alpha: 0.5,
+                                ),
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.edit_rounded,
+                              size: 13,
+                              color: colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -767,18 +949,13 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Device Settings',
-                          style: theme.textTheme.titleLarge?.copyWith(
+                          widget.client.macAddress,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
                             fontWeight: FontWeight.w900,
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          widget.client.macAddress,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w700,
-                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
@@ -1050,15 +1227,7 @@ class _UnifiedClientCard extends StatelessWidget {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      client.isBlocked
-                          ? Icons.block_rounded
-                          : client.isOffline
-                          ? Icons.cloud_off_rounded
-                          : client.connectionType == ConnectionType.wireless
-                          ? Icons.wifi_rounded
-                          : client.connectionType == ConnectionType.wired
-                          ? Icons.settings_ethernet
-                          : Icons.devices_other_rounded,
+                      _clientIconData(client),
                       color: client.isBlocked
                           ? const Color(0xFFFF4D5A)
                           : client.isOffline

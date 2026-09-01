@@ -775,6 +775,7 @@ class OpenwallaDeviceRecord {
   final String staticIpAddress;
   final String status;
   final bool quarantined;
+  final String icon;
 
   const OpenwallaDeviceRecord({
     required this.mac,
@@ -785,6 +786,7 @@ class OpenwallaDeviceRecord {
     required this.staticIpAddress,
     this.status = '',
     this.quarantined = false,
+    this.icon = '',
   });
 }
 
@@ -3057,6 +3059,7 @@ class AppState extends ChangeNotifier {
       final staticIp = parts.length > 5 ? parts[5].trim() : '';
       final status = parts.length > 6 ? parts[6].trim() : '';
       final quarantined = parts.length > 7 && parts[7].trim() == '1';
+      final icon = parts.length > 8 ? parts[8].trim() : '';
       final record = OpenwallaDeviceRecord(
         mac: mac,
         ip: ip,
@@ -3066,6 +3069,7 @@ class AppState extends ChangeNotifier {
         staticIpAddress: staticIp,
         status: status,
         quarantined: quarantined,
+        icon: icon,
       );
       if (mac.isNotEmpty && mac != 'N/A') byMac[mac] = record;
       if (ip.isNotEmpty) byIp[ip] = record;
@@ -3092,6 +3096,7 @@ class AppState extends ChangeNotifier {
         staticIpAddress: '10.0.0.250',
         status: 'blocked',
         quarantined: true,
+        icon: 'router',
       );
       return ({record.mac: record}, {record.ip: record});
     }
@@ -3104,9 +3109,11 @@ class AppState extends ChangeNotifier {
           ? " WHERE status != 'offline' OR quarantined = 1"
           : "";
       final sqlWithStatic =
-          "SELECT mac, ip, hostname, total_up, total_down, static_ip, status, quarantined FROM devices$where ORDER BY last_seen DESC;";
+          "SELECT mac, ip, hostname, total_up, total_down, static_ip, status, quarantined, icon FROM devices$where ORDER BY last_seen DESC;";
+      final sqlWithoutIcon =
+          "SELECT mac, ip, hostname, total_up, total_down, static_ip, status, quarantined, '' FROM devices$where ORDER BY last_seen DESC;";
       final sqlFallback =
-          "SELECT mac, ip, hostname, total_up, total_down, '', status, quarantined FROM devices$where ORDER BY last_seen DESC;";
+          "SELECT mac, ip, hostname, total_up, total_down, '', status, quarantined, '' FROM devices$where ORDER BY last_seen DESC;";
       try {
         final output = router == null || sysauth == null || useHttps == null
             ? await _sqliteQueryOutput(
@@ -3123,19 +3130,35 @@ class AppState extends ChangeNotifier {
               );
         return _parseDeviceRecordsOutput(output);
       } catch (_) {
-        final output = router == null || sysauth == null || useHttps == null
-            ? await _sqliteQueryOutput(
-                dbExpression: _devicesDbExpression(),
-                sql: sqlFallback,
-              )
-            : await _sqliteQueryOutputForRouter(
-                router: router,
-                sysauth: sysauth,
-                useHttps: useHttps,
-                dbExpression: _devicesDbExpression(),
-                sql: sqlFallback,
-              );
-        return _parseDeviceRecordsOutput(output);
+        try {
+          final output = router == null || sysauth == null || useHttps == null
+              ? await _sqliteQueryOutput(
+                  dbExpression: _devicesDbExpression(),
+                  sql: sqlWithoutIcon,
+                )
+              : await _sqliteQueryOutputForRouter(
+                  router: router,
+                  sysauth: sysauth,
+                  useHttps: useHttps,
+                  dbExpression: _devicesDbExpression(),
+                  sql: sqlWithoutIcon,
+                );
+          return _parseDeviceRecordsOutput(output);
+        } catch (_) {
+          final output = router == null || sysauth == null || useHttps == null
+              ? await _sqliteQueryOutput(
+                  dbExpression: _devicesDbExpression(),
+                  sql: sqlFallback,
+                )
+              : await _sqliteQueryOutputForRouter(
+                  router: router,
+                  sysauth: sysauth,
+                  useHttps: useHttps,
+                  dbExpression: _devicesDbExpression(),
+                  sql: sqlFallback,
+                );
+          return _parseDeviceRecordsOutput(output);
+        }
       }
     }
 
@@ -3227,6 +3250,7 @@ class AppState extends ChangeNotifier {
             ? null
             : record.staticIpAddress,
         status: record.quarantined ? 'blocked' : record.status,
+        deviceIcon: record.icon.isEmpty ? null : record.icon,
       );
     }).toList();
 
@@ -7751,6 +7775,7 @@ class AppState extends ChangeNotifier {
         status: record.quarantined || record.status == 'blocked'
             ? 'blocked'
             : client.status,
+        deviceIcon: record.icon.isEmpty ? client.deviceIcon : record.icon,
       );
     }
   }
@@ -8036,6 +8061,7 @@ class AppState extends ChangeNotifier {
     required String hostname,
     required bool staticIpEnabled,
     required String staticIpAddress,
+    required String deviceIcon,
     BuildContext? context,
   }) async {
     if (_reviewerModeEnabled) {
@@ -8058,6 +8084,7 @@ class AppState extends ChangeNotifier {
         ? client.hostname
         : hostname.trim();
     final cleanStaticIp = staticIpEnabled ? staticIpAddress.trim() : '';
+    final cleanDeviceIcon = deviceIcon.trim();
     if (cleanStaticIp.isNotEmpty && !_isValidIpAddress(cleanStaticIp)) {
       throw ArgumentError('A valid static IP address is required');
     }
@@ -8067,6 +8094,7 @@ class AppState extends ChangeNotifier {
       ip: client.ipAddress == 'N/A' ? '' : client.ipAddress,
       hostname: cleanName,
       staticIpAddress: cleanStaticIp,
+      deviceIcon: cleanDeviceIcon,
     );
     await _apiService!.call(
       router.ipAddress,
@@ -8157,21 +8185,24 @@ class AppState extends ChangeNotifier {
     required String ip,
     required String hostname,
     required String staticIpAddress,
+    required String deviceIcon,
   }) {
     final escMac = mac.replaceAll("'", "''");
     final escIp = ip.replaceAll("'", "''");
     final escHostname = hostname.replaceAll("'", "''");
     final escStaticIp = staticIpAddress.replaceAll("'", "''");
+    final escDeviceIcon = deviceIcon.replaceAll("'", "''");
     const createSql =
-        "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline');";
+        "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline', static_ip TEXT NOT NULL DEFAULT '', icon TEXT NOT NULL DEFAULT '');";
     final upsertSql =
-        "INSERT INTO devices (mac, ip, hostname, static_ip, last_seen, status) VALUES ('$escMac', '$escIp', '$escHostname', '$escStaticIp', strftime('%s','now'), 'online') ON CONFLICT(mac) DO UPDATE SET hostname=excluded.hostname, ip=CASE WHEN excluded.ip != '' THEN excluded.ip ELSE devices.ip END, static_ip=excluded.static_ip, last_seen=excluded.last_seen;";
+        "INSERT INTO devices (mac, ip, hostname, static_ip, icon, last_seen, status) VALUES ('$escMac', '$escIp', '$escHostname', '$escStaticIp', '$escDeviceIcon', strftime('%s','now'), 'online') ON CONFLICT(mac) DO UPDATE SET hostname=excluded.hostname, ip=CASE WHEN excluded.ip != '' THEN excluded.ip ELSE devices.ip END, static_ip=excluded.static_ip, icon=excluded.icon, last_seen=excluded.last_seen;";
     return 'db="${_devicesDbExpression()}"; '
         'if command -v sqlite3 >/dev/null 2>&1; then sqlite=sqlite3; '
         'elif command -v sqlite3-cli >/dev/null 2>&1; then sqlite=sqlite3-cli; '
         'else echo "sqlite3 not installed" >&2; exit 127; fi; '
         '"\$sqlite" "\$db" ${_shellQuote(createSql)}; '
         '"\$sqlite" "\$db" "ALTER TABLE devices ADD COLUMN static_ip TEXT NOT NULL DEFAULT \'\';" 2>/dev/null || true; '
+        '"\$sqlite" "\$db" "ALTER TABLE devices ADD COLUMN icon TEXT NOT NULL DEFAULT \'\';" 2>/dev/null || true; '
         '"\$sqlite" "\$db" ${_shellQuote(upsertSql)}';
   }
 
