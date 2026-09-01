@@ -27,7 +27,7 @@ install_rpcd_acl
 
 set_uci openwalla.connection_flows.enabled "1"
 set_uci openwalla.connection_flows.db_path "/tmp/openwalla-connection-flows.sqlite"
-set_uci openwalla.connection_flows.poll_seconds "5"
+set_uci openwalla.connection_flows.poll_seconds "15"
 set_uci openwalla.connection_flows.retention_rows "50000"
 set_uci openwalla.connection_flows.exclude_endpoints "127.0.0.1"
 set_uci openwalla.connection_flows.ignore_ipv6 "1"
