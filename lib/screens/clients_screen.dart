@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/models/client.dart';
 import 'package:luci_mobile/main.dart';
@@ -18,12 +17,9 @@ class ClientsScreen extends ConsumerStatefulWidget {
 
 enum ClientFilter { online, blocked, offline }
 
-class _ClientsScreenState extends ConsumerState<ClientsScreen>
-    with SingleTickerProviderStateMixin {
+class _ClientsScreenState extends ConsumerState<ClientsScreen> {
   String _searchQuery = '';
   ClientFilter _currentFilter = ClientFilter.online;
-  final Set<int> _expandedClientIndices = {};
-  late AnimationController _controller;
   late TextEditingController _searchController;
   bool _aggregateAllRouters = true;
   Future<List<Client>>? _clientsFuture;
@@ -36,10 +32,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 200),
-      vsync: this,
-    );
     _searchController = TextEditingController();
     _searchController.addListener(() {
       if (_searchQuery != _searchController.text) {
@@ -84,7 +76,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
 
   @override
   void dispose() {
-    _controller.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -105,6 +96,7 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
       builder: (context, snapshot) {
         final aggregatedClients = snapshot.data ?? _visibleClients;
         return Scaffold(
+          appBar: const LuciAppBar(title: 'Devices', showBack: true),
           body: Stack(
             children: [
               LuciPullToRefresh(
@@ -285,6 +277,7 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                     return Column(
                       children: [
                         SafeArea(
+                          top: false,
                           bottom: false,
                           child: _buildClientsHeader(
                             context,
@@ -295,7 +288,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                             onFilterChanged: (filter) {
                               setState(() {
                                 _currentFilter = filter;
-                                _expandedClientIndices.clear();
                               });
                             },
                           ),
@@ -314,8 +306,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                                   itemCount: filteredClients.length,
                                   itemBuilder: (context, index) {
                                     final client = filteredClients[index];
-                                    final isExpanded = _expandedClientIndices
-                                        .contains(index);
 
                                     return LuciSlideTransition(
                                       direction: LuciSlideDirection.up,
@@ -328,7 +318,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                                         ),
                                         child: _UnifiedClientCard(
                                           client: client,
-                                          isExpanded: isExpanded,
                                           isBlockingActionRunning: _blockingMacs
                                               .contains(
                                                 _normalizeMac(
@@ -342,19 +331,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                                               ),
                                           onOpenSettings: () =>
                                               _showDeviceSettingsSheet(client),
-                                          onTap: () {
-                                            setState(() {
-                                              if (isExpanded) {
-                                                _expandedClientIndices.remove(
-                                                  index,
-                                                );
-                                              } else {
-                                                _expandedClientIndices.add(
-                                                  index,
-                                                );
-                                              }
-                                            });
-                                          },
                                         ),
                                       ),
                                     );
@@ -553,6 +529,11 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (context) => _DeviceSettingsSheet(client: client),
     );
     if (updated == true && mounted) {
@@ -584,22 +565,18 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: isSelected
-                  ? color.withValues(alpha: 0.14)
-                  : colorScheme.surfaceContainerHighest.withValues(alpha: 0.34),
+              color: colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.34,
+              ),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: isSelected
-                    ? color.withValues(alpha: 0.85)
-                    : colorScheme.outlineVariant.withValues(alpha: 0.24),
-                width: isSelected ? 1.8 : 1.0,
+                color: colorScheme.outlineVariant.withValues(alpha: 0.24),
+                width: 1.0,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: isSelected
-                      ? color.withValues(alpha: 0.16)
-                      : Colors.black.withValues(alpha: 0.08),
-                  blurRadius: isSelected ? 12 : 10,
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
               ],
@@ -642,9 +619,9 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                 Text(
                   label,
                   style: TextStyle(
-                    color: isSelected ? color : colorScheme.onSurfaceVariant,
+                    color: colorScheme.onSurfaceVariant,
                     fontSize: 13,
-                    fontWeight: isSelected ? FontWeight.w900 : FontWeight.w700,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: 0,
                     height: 1.05,
                   ),
@@ -800,6 +777,8 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
                 ],
               ),
               const SizedBox(height: 18),
+              _DeviceUsagePanel(client: widget.client),
+              const SizedBox(height: 22),
               Text(
                 'Device Name',
                 style: theme.textTheme.labelLarge?.copyWith(
@@ -968,73 +947,31 @@ class _DeviceUsagePanel extends StatelessWidget {
   }
 }
 
-class _UnifiedClientCard extends StatefulWidget {
+class _UnifiedClientCard extends StatelessWidget {
   final Client client;
-  final bool isExpanded;
-  final VoidCallback onTap;
   final ValueChanged<bool> onToggleInternetBlock;
   final VoidCallback onOpenSettings;
   final bool isBlockingActionRunning;
 
   const _UnifiedClientCard({
     required this.client,
-    required this.isExpanded,
-    required this.onTap,
     required this.onToggleInternetBlock,
     required this.onOpenSettings,
     required this.isBlockingActionRunning,
   });
 
   @override
-  State<_UnifiedClientCard> createState() => _UnifiedClientCardState();
-}
-
-class _UnifiedClientCardState extends State<_UnifiedClientCard>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 400),
-      vsync: this,
-    );
-    if (widget.isExpanded) {
-      _controller.forward();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  void didUpdateWidget(_UnifiedClientCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.isExpanded != oldWidget.isExpanded) {
-      if (widget.isExpanded) {
-        _controller.forward();
-      } else {
-        _controller.reverse();
-      }
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final isBlocked = widget.client.isBlocked;
+    final isBlocked = client.isBlocked;
     final borderColor = isBlocked
         ? const Color(0xFFFF4D5A).withValues(alpha: 0.45)
         : colorScheme.surfaceContainerHighest.withValues(alpha: 0.10);
 
     return Card(
-      elevation: widget.isExpanded ? 6 : 2,
+      elevation: 2,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18.0),
@@ -1044,426 +981,161 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
       color: isBlocked
           ? colorScheme.errorContainer.withValues(alpha: 0.08)
           : null,
-      child: AnimatedScale(
-        scale: widget.isExpanded ? 1.02 : 1.0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOutBack,
-        child: Column(
-          children: [
-            InkWell(
-              onTap: widget.onTap,
-              borderRadius: BorderRadius.circular(18.0),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.0,
-                  vertical: 8.0,
-                ),
-                child: Row(
+      child: InkWell(
+        onTap: onOpenSettings,
+        borderRadius: BorderRadius.circular(18.0),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          child: Row(
+            children: [
+              Stack(
+                alignment: Alignment.topRight,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8.0),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primaryContainer.withValues(
+                        alpha: 0.13,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      client.isBlocked
+                          ? Icons.block_rounded
+                          : client.isOffline
+                          ? Icons.cloud_off_rounded
+                          : client.connectionType == ConnectionType.wireless
+                          ? Icons.wifi_rounded
+                          : client.connectionType == ConnectionType.wired
+                          ? Icons.settings_ethernet
+                          : Icons.devices_other_rounded,
+                      color: client.isBlocked
+                          ? const Color(0xFFFF4D5A)
+                          : client.isOffline
+                          ? colorScheme.onSurfaceVariant
+                          : colorScheme.primary,
+                      size: 22,
+                      semanticLabel: 'Client icon',
+                    ),
+                  ),
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Tooltip(
+                      message: client.isBlocked
+                          ? 'Client is blocked'
+                          : client.isOffline
+                          ? 'Client is offline'
+                          : 'Client is online',
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: client.isBlocked
+                              ? const Color(0xFFFF4D5A)
+                              : client.isOffline
+                              ? colorScheme.onSurfaceVariant
+                              : Colors.green,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: colorScheme.surface,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Stack(
-                      alignment: Alignment.topRight,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8.0),
-                          decoration: BoxDecoration(
-                            color: colorScheme.primaryContainer.withValues(
-                              alpha: 0.13,
-                            ),
-                            shape: BoxShape.circle,
-                          ),
-                          child: AnimatedScale(
-                            scale: widget.isExpanded ? 1.1 : 1.0,
-                            duration: const Duration(milliseconds: 500),
-                            curve: Curves.elasticOut,
-                            child: Icon(
-                              widget.client.isBlocked
-                                  ? Icons.block_rounded
-                                  : widget.client.isOffline
-                                  ? Icons.cloud_off_rounded
-                                  : widget.client.connectionType ==
-                                        ConnectionType.wireless
-                                  ? Icons.wifi_rounded
-                                  : widget.client.connectionType ==
-                                        ConnectionType.wired
-                                  ? Icons.settings_ethernet
-                                  : Icons.devices_other_rounded,
-                              color: widget.client.isBlocked
-                                  ? const Color(0xFFFF4D5A)
-                                  : widget.client.isOffline
-                                  ? colorScheme.onSurfaceVariant
-                                  : colorScheme.primary,
-                              size: 22,
-                              semanticLabel: 'Client icon',
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          right: 0,
-                          top: 0,
-                          child: Tooltip(
-                            message: widget.client.isBlocked
-                                ? 'Client is blocked'
-                                : widget.client.isOffline
-                                ? 'Client is offline'
-                                : 'Client is online',
-                            child: Container(
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                color: widget.client.isBlocked
-                                    ? const Color(0xFFFF4D5A)
-                                    : widget.client.isOffline
-                                    ? colorScheme.onSurfaceVariant
-                                    : Colors.green,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: colorScheme.surface,
-                                  width: 1.5,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                    Text(
+                      client.hostname,
+                      style: LuciTextStyles.cardTitle(context),
+                      semanticsLabel: 'Client hostname: ${client.hostname}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.client.hostname,
-                            style: LuciTextStyles.cardTitle(context),
-                            semanticsLabel:
-                                'Client hostname: ${widget.client.hostname}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: LuciSpacing.xs),
-                          Container(
-                            margin: const EdgeInsets.only(right: 32),
-                            child: Divider(
-                              color: colorScheme.surfaceContainerHighest
-                                  .withValues(alpha: 0.10),
-                              thickness: 1,
-                              height: 8,
-                            ),
-                          ),
-                          Text(
-                            _buildMinimalClientSubtitle(widget.client),
-                            style: LuciTextStyles.cardSubtitle(context),
-                            semanticsLabel:
-                                'Client details: ${_buildMinimalClientSubtitle(widget.client)}',
-                          ),
-                          if (widget.client.vendor != null &&
-                              widget.client.vendor!.isNotEmpty)
-                            Text(
-                              widget.client.vendor!,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: colorScheme.onSurface.withValues(
-                                  alpha: 0.7,
-                                ),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              semanticsLabel: 'Vendor: ${widget.client.vendor}',
-                            ),
-                        ],
+                    const SizedBox(height: LuciSpacing.xs),
+                    Container(
+                      margin: const EdgeInsets.only(right: 32),
+                      child: Divider(
+                        color: colorScheme.surfaceContainerHighest.withValues(
+                          alpha: 0.10,
+                        ),
+                        thickness: 1,
+                        height: 8,
                       ),
                     ),
-                    if (widget.client.isBlocked)
-                      _buildBlockedChip(context)
-                    else if (widget.client.connectionType ==
-                        ConnectionType.wired)
-                      _buildConnectionTypeChip(
-                        context,
-                        widget.client.connectionType,
-                      ),
-                    const SizedBox(width: 8),
-                    Icon(
-                      widget.isExpanded ? Icons.expand_less : Icons.expand_more,
-                      color: colorScheme.onSurfaceVariant,
-                      size: 26,
-                      semanticLabel: widget.isExpanded
-                          ? 'Collapse details'
-                          : 'Expand details',
+                    Text(
+                      _buildMinimalClientSubtitle(client),
+                      style: LuciTextStyles.cardSubtitle(context),
+                      semanticsLabel:
+                          'Client details: ${_buildMinimalClientSubtitle(client)}',
                     ),
                   ],
                 ),
               ),
-            ),
-            if (widget.isExpanded)
-              Column(
-                children: [
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  _buildClientDetails(context, widget.client),
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildConnectionTypeChip(BuildContext context, ConnectionType type) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    String label;
-    IconData icon;
-    Color bgColor;
-    Color fgColor;
-
-    switch (type) {
-      case ConnectionType.wireless:
-        label = 'Wi-Fi';
-        icon = Icons.wifi;
-        bgColor = colorScheme.primaryContainer;
-        fgColor = colorScheme.onPrimaryContainer;
-        break;
-      case ConnectionType.wired:
-        label = 'Wired';
-        icon = Icons.settings_ethernet;
-        bgColor = colorScheme.secondaryContainer;
-        fgColor = colorScheme.onSecondaryContainer;
-        break;
-      default:
-        label = 'Unknown';
-        icon = Icons.devices_other_outlined;
-        bgColor = colorScheme.surfaceContainerHighest;
-        fgColor = colorScheme.onSurfaceVariant;
-        break;
-    }
-
-    return Chip(
-      label: Text(label),
-      avatar: Icon(icon, size: 16, color: fgColor),
-      backgroundColor: bgColor,
-      labelStyle: theme.textTheme.labelSmall?.copyWith(color: fgColor),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    );
-  }
-
-  Widget _buildBlockedChip(BuildContext context) {
-    return Chip(
-      label: const Text('Blocked'),
-      avatar: const Icon(Icons.block_rounded, size: 16),
-      backgroundColor: Theme.of(
-        context,
-      ).colorScheme.errorContainer.withValues(alpha: 0.62),
-      labelStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
-        color: Theme.of(context).colorScheme.onErrorContainer,
-        fontWeight: FontWeight.w800,
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    );
-  }
-
-  Widget _buildClientDetails(BuildContext context, Client client) {
-    final theme = Theme.of(context);
-
-    Widget detailRow(
-      String title,
-      String value, {
-      Color? valueColor,
-      VoidCallback? onTap,
-      String? semanticsLabel,
-    }) {
-      return InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: LuciSpacing.md,
-            vertical: LuciSpacing.sm,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                title,
-                style: LuciTextStyles.detailLabel(context),
-                semanticsLabel: title,
-              ),
-              Row(
-                children: [
-                  Text(
-                    value,
-                    style: valueColor != null
-                        ? LuciTextStyles.detailValue(
-                            context,
-                          ).copyWith(color: valueColor)
-                        : LuciTextStyles.detailValue(context),
-                    semanticsLabel: semanticsLabel ?? value,
-                  ),
-                  if (onTap != null)
-                    GestureDetector(
-                      onTap: onTap,
-                      child: const Padding(
-                        padding: EdgeInsets.only(left: 8.0),
-                        child: Icon(
-                          Icons.copy_all_outlined,
-                          size: 16,
-                          semanticLabel: 'Copy',
-                        ),
-                      ),
-                    ),
-                ],
+              const SizedBox(width: 8),
+              _buildBlockActionButton(context),
+              const SizedBox(width: 6),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: colorScheme.onSurfaceVariant,
+                size: 26,
+                semanticLabel: 'Open device settings',
               ),
             ],
           ),
         ),
-      );
-    }
+      ),
+    );
+  }
 
-    final blockColor = client.isBlocked
+  Widget _buildBlockActionButton(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = client.isBlocked
         ? theme.colorScheme.primary
         : theme.colorScheme.error;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(
-          alpha: 0.18,
-        ),
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(18)),
-      ),
-      child: Column(
-        children: [
-          if (client.isBlocked) ...[
-            detailRow(
-              'Access',
-              'Blocked',
-              valueColor: theme.colorScheme.error,
-              semanticsLabel: 'Access: blocked',
-            ),
-            const Divider(height: 1, indent: 16, endIndent: 16),
-          ],
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              LuciSpacing.md,
-              LuciSpacing.md,
-              LuciSpacing.md,
-              LuciSpacing.sm,
-            ),
-            child: _DeviceUsagePanel(client: client),
-          ),
-          const Divider(height: 1, indent: 16, endIndent: 16),
-          detailRow(
-            'IP Address',
-            client.ipAddress,
-            onTap: () =>
-                _copyToClipboard(context, client.ipAddress, 'IP Address'),
-            semanticsLabel: 'IP Address: ${client.ipAddress}',
-          ),
-          if (client.ipv6Addresses != null && client.ipv6Addresses!.isNotEmpty)
-            ...client.ipv6Addresses!.map(
-              (ipv6) => detailRow(
-                'IPv6 Address',
-                ipv6,
-                onTap: () => _copyToClipboard(context, ipv6, 'IPv6 Address'),
-                semanticsLabel: 'IPv6 Address: $ipv6',
+    return OutlinedButton.icon(
+      onPressed: isBlockingActionRunning
+          ? null
+          : () => onToggleInternetBlock(!client.isBlocked),
+      icon: isBlockingActionRunning
+          ? SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: color.withValues(alpha: 0.9),
               ),
+            )
+          : Icon(
+              client.isBlocked ? Icons.lock_open_rounded : Icons.block_rounded,
+              size: 16,
             ),
-          detailRow(
-            'MAC Address',
-            client.macAddress,
-            onTap: () =>
-                _copyToClipboard(context, client.macAddress, 'MAC Address'),
-            semanticsLabel: 'MAC Address: ${client.macAddress}',
-          ),
-          if (client.vendor != null && client.vendor!.isNotEmpty)
-            detailRow(
-              'Vendor',
-              client.vendor!,
-              semanticsLabel: 'Vendor: ${client.vendor}',
-            ),
-          if (client.dnsName != null && client.dnsName!.isNotEmpty)
-            detailRow(
-              'DNS Name',
-              client.dnsName!,
-              semanticsLabel: 'DNS Name: ${client.dnsName}',
-            ),
-          const Divider(height: 1, indent: 16, endIndent: 16),
-          if (client.staticIpAddress != null &&
-              client.staticIpAddress!.isNotEmpty)
-            detailRow(
-              'Static IP',
-              client.staticIpAddress!,
-              semanticsLabel: 'Static IP: ${client.staticIpAddress}',
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              LuciSpacing.md,
-              LuciSpacing.sm,
-              LuciSpacing.md,
-              LuciSpacing.md,
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: widget.isBlockingActionRunning
-                        ? null
-                        : () => widget.onToggleInternetBlock(!client.isBlocked),
-                    icon: widget.isBlockingActionRunning
-                        ? SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: blockColor.withValues(alpha: 0.9),
-                            ),
-                          )
-                        : Icon(
-                            client.isBlocked
-                                ? Icons.lock_open_rounded
-                                : Icons.block_rounded,
-                          ),
-                    label: Text(
-                      widget.isBlockingActionRunning
-                          ? 'Updating'
-                          : client.isBlocked
-                          ? 'Unblock'
-                          : 'Block',
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: blockColor,
-                      backgroundColor: blockColor.withValues(alpha: 0.08),
-                      side: BorderSide(
-                        color: blockColor.withValues(alpha: 0.42),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: widget.onOpenSettings,
-                    icon: const Icon(Icons.edit_rounded),
-                    label: const Text('Settings'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+      label: Text(
+        isBlockingActionRunning
+            ? 'Wait'
+            : client.isBlocked
+            ? 'Unblock'
+            : 'Block',
+      ),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color,
+        side: BorderSide(color: color.withValues(alpha: 0.34)),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        minimumSize: const Size(0, 34),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+        textStyle: theme.textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       ),
     );
   }
@@ -1486,15 +1158,5 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
     } else {
       return shown;
     }
-  }
-
-  void _copyToClipboard(BuildContext context, String text, String label) {
-    Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$label copied to clipboard'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 }
