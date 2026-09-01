@@ -16,12 +16,9 @@ class ClientsScreen extends ConsumerStatefulWidget {
   ConsumerState<ClientsScreen> createState() => _ClientsScreenState();
 }
 
-enum ClientFilter { online, blocked, offline }
-
 class _ClientsScreenState extends ConsumerState<ClientsScreen>
     with SingleTickerProviderStateMixin {
   String _searchQuery = '';
-  ClientFilter _currentFilter = ClientFilter.online;
   final Set<int> _expandedClientIndices = {};
   late AnimationController _controller;
   late TextEditingController _searchController;
@@ -212,32 +209,19 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                     }
 
                     final clients = aggregatedClients;
-                    final blockedClients =
-                        clients.where((client) => client.isBlocked).toList();
-                    final offlineClients = clients
+                    final blockedCount = clients
+                        .where((client) => client.isBlocked)
+                        .length;
+                    final offlineCount = clients
                         .where(
                           (client) => !client.isBlocked && client.isOffline,
                         )
-                        .toList();
-                    final onlineClients = clients
-                        .where(
-                          (client) => !client.isBlocked && !client.isOffline,
-                        )
-                        .toList();
+                        .length;
+                    final onlineCount =
+                        clients.length - blockedCount - offlineCount;
 
-                    final blockedCount = blockedClients.length;
-                    final offlineCount = offlineClients.length;
-                    final onlineCount = onlineClients.length;
-
-                    final activeCategoryClients = switch (_currentFilter) {
-                      ClientFilter.online => onlineClients,
-                      ClientFilter.blocked => blockedClients,
-                      ClientFilter.offline => offlineClients,
-                    };
-
-                    final filteredClients = activeCategoryClients.where((client) {
+                    final filteredClients = clients.where((client) {
                       final query = _searchQuery.toLowerCase();
-                      if (query.isEmpty) return true;
                       return client.hostname.toLowerCase().contains(query) ||
                           client.ipAddress.toLowerCase().contains(query) ||
                           client.macAddress.toLowerCase().contains(query) ||
@@ -246,38 +230,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                           (client.dnsName != null &&
                               client.dnsName!.toLowerCase().contains(query));
                     }).toList();
-
-                    String emptyTitle;
-                    String emptyMessage;
-                    IconData emptyIcon;
-
-                    if (_searchQuery.isNotEmpty) {
-                      emptyTitle = 'No Matching Clients';
-                      emptyMessage =
-                          'No clients match your search criteria. Try a different search term.';
-                      emptyIcon = Icons.search_off_rounded;
-                    } else {
-                      switch (_currentFilter) {
-                        case ClientFilter.online:
-                          emptyTitle = 'No Online Clients Found';
-                          emptyMessage =
-                              'No clients are currently connected to the router. Pull down to refresh the list.';
-                          emptyIcon = Icons.wifi_off_rounded;
-                          break;
-                        case ClientFilter.blocked:
-                          emptyTitle = 'No Blocked Clients';
-                          emptyMessage =
-                              'No devices are currently blocked from accessing the internet.';
-                          emptyIcon = Icons.shield_outlined;
-                          break;
-                        case ClientFilter.offline:
-                          emptyTitle = 'No Offline Clients';
-                          emptyMessage =
-                              'No offline clients found in recent device history.';
-                          emptyIcon = Icons.cloud_off_outlined;
-                          break;
-                      }
-                    }
 
                     return Column(
                       children: [
@@ -288,21 +240,18 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                             onlineCount: onlineCount,
                             blockedCount: blockedCount,
                             offlineCount: offlineCount,
-                            currentFilter: _currentFilter,
-                            onFilterChanged: (filter) {
-                              setState(() {
-                                _currentFilter = filter;
-                                _expandedClientIndices.clear();
-                              });
-                            },
                           ),
                         ),
                         Expanded(
                           child: filteredClients.isEmpty
                               ? LuciEmptyState(
-                                  title: emptyTitle,
-                                  message: emptyMessage,
-                                  icon: emptyIcon,
+                                  title: _searchQuery.isEmpty
+                                      ? 'No Active Clients Found'
+                                      : 'No Matching Clients',
+                                  message: _searchQuery.isEmpty
+                                      ? 'No clients are currently connected to the router. Pull down to refresh the list.'
+                                      : 'No clients match your search criteria. Try a different search term.',
+                                  icon: Icons.people_outline,
                                 )
                               : ListView.separated(
                                   padding: const EdgeInsets.only(bottom: 16),
@@ -377,8 +326,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
     required int onlineCount,
     required int blockedCount,
     required int offlineCount,
-    required ClientFilter currentFilter,
-    required ValueChanged<ClientFilter> onFilterChanged,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -398,8 +345,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                   count: onlineCount,
                   label: 'Online',
                   color: const Color(0xFF22C55E),
-                  isSelected: currentFilter == ClientFilter.online,
-                  onTap: () => onFilterChanged(ClientFilter.online),
                 ),
               ),
               const SizedBox(width: 12),
@@ -410,8 +355,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                   count: blockedCount,
                   label: 'Blocked',
                   color: const Color(0xFFFF4D5A),
-                  isSelected: currentFilter == ClientFilter.blocked,
-                  onTap: () => onFilterChanged(ClientFilter.blocked),
                 ),
               ),
               const SizedBox(width: 12),
@@ -422,8 +365,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                   count: offlineCount,
                   label: 'Offline',
                   color: colorScheme.onSurfaceVariant,
-                  isSelected: currentFilter == ClientFilter.offline,
-                  onTap: () => onFilterChanged(ClientFilter.offline),
                 ),
               ),
             ],
@@ -565,86 +506,61 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
     required int count,
     required String label,
     required Color color,
-    required bool isSelected,
-    required VoidCallback onTap,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return AspectRatio(
       aspectRatio: 1.08,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.34),
           borderRadius: BorderRadius.circular(8),
-          child: Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withValues(
-                alpha: 0.34,
-              ),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: colorScheme.outlineVariant.withValues(alpha: 0.24),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.08),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Icon(icon, color: color, size: 22),
-                    if (isSelected)
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    count.toString(),
-                    style: TextStyle(
-                      color: colorScheme.onSurface,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0,
-                      height: 1,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: colorScheme.onSurfaceVariant,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0,
-                    height: 1.05,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.24),
           ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 12),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                count.toString(),
+                style: TextStyle(
+                  color: colorScheme.onSurface,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0,
+                  height: 1,
+                ),
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: TextStyle(
+                color: colorScheme.onSurfaceVariant,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0,
+                height: 1.05,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
       ),
     );
@@ -1071,13 +987,7 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
                                   ? Icons.block_rounded
                                   : widget.client.isOffline
                                   ? Icons.cloud_off_rounded
-                                  : widget.client.connectionType ==
-                                          ConnectionType.wireless
-                                      ? Icons.wifi_rounded
-                                      : widget.client.connectionType ==
-                                              ConnectionType.wired
-                                          ? Icons.settings_ethernet
-                                          : Icons.devices_other_rounded,
+                                  : Icons.person_outline,
                               color: widget.client.isBlocked
                                   ? const Color(0xFFFF4D5A)
                                   : widget.client.isOffline
@@ -1164,8 +1074,10 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
                     ),
                     if (widget.client.isBlocked)
                       _buildBlockedChip(context)
-                    else if (widget.client.connectionType ==
-                        ConnectionType.wired)
+                    else if (widget.client.isOffline)
+                      _buildOfflineChip(context)
+                    else if (widget.client.connectionType !=
+                        ConnectionType.unknown)
                       _buildConnectionTypeChip(
                         context,
                         widget.client.connectionType,
@@ -1251,6 +1163,23 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
     );
   }
 
+  Widget _buildOfflineChip(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Chip(
+      label: const Text('Offline'),
+      avatar: const Icon(Icons.cloud_off_rounded, size: 16),
+      backgroundColor: colorScheme.surfaceContainerHighest.withValues(
+        alpha: 0.45,
+      ),
+      labelStyle: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: colorScheme.onSurfaceVariant,
+        fontWeight: FontWeight.w800,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
   Widget _buildClientDetails(BuildContext context, Client client) {
     final theme = Theme.of(context);
 
@@ -1312,14 +1241,6 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
         ? theme.colorScheme.primary
         : theme.colorScheme.error;
 
-    final hasStaticIp = client.staticIpAddress != null &&
-        client.staticIpAddress!.trim().isNotEmpty;
-    final ipLabel = hasStaticIp ? 'IP Address (Static)' : 'IP Address';
-    final displayIp =
-        (client.ipAddress != 'N/A' && client.ipAddress.isNotEmpty)
-            ? client.ipAddress
-            : (hasStaticIp ? client.staticIpAddress! : client.ipAddress);
-
     return Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(
@@ -1349,10 +1270,11 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
           ),
           const Divider(height: 1, indent: 16, endIndent: 16),
           detailRow(
-            ipLabel,
-            displayIp,
-            onTap: () => _copyToClipboard(context, displayIp, ipLabel),
-            semanticsLabel: '$ipLabel: $displayIp',
+            'IP Address',
+            client.ipAddress,
+            onTap: () =>
+                _copyToClipboard(context, client.ipAddress, 'IP Address'),
+            semanticsLabel: 'IP Address: ${client.ipAddress}',
           ),
           if (client.ipv6Addresses != null && client.ipv6Addresses!.isNotEmpty)
             ...client.ipv6Addresses!.map(
@@ -1382,14 +1304,14 @@ class _UnifiedClientCardState extends State<_UnifiedClientCard>
               client.dnsName!,
               semanticsLabel: 'DNS Name: ${client.dnsName}',
             ),
-          if (hasStaticIp && client.staticIpAddress != displayIp) ...[
-            const Divider(height: 1, indent: 16, endIndent: 16),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          if (client.staticIpAddress != null &&
+              client.staticIpAddress!.isNotEmpty)
             detailRow(
               'Static IP',
               client.staticIpAddress!,
               semanticsLabel: 'Static IP: ${client.staticIpAddress}',
             ),
-          ],
           Padding(
             padding: const EdgeInsets.fromLTRB(
               LuciSpacing.md,

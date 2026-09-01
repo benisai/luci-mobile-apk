@@ -223,13 +223,14 @@ class _VpnScreenState extends ConsumerState<VpnScreen> {
 
   Future<void> _pickClientConfig() async {
     try {
-      final result = await FilePicker.pickFiles(
+      final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: const ['conf', 'txt'],
+        withData: true,
       );
-      final file = result.isEmpty ? null : result.single;
-      if (file == null) return;
-      final bytes = await file.readAsBytes();
+      final file = result?.files.single;
+      final bytes = file?.bytes;
+      if (bytes == null) return;
       final configText = utf8.decode(bytes, allowMalformed: true);
       _clientConfigController.text = configText;
       _importClientConfig(configText);

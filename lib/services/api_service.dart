@@ -13,96 +13,6 @@ class LoginResult {
   LoginResult({required this.token, required this.actualUseHttps});
 }
 
-class RpcException implements Exception {
-  final int? status;
-  final String object;
-  final String method;
-  final String? detail;
-
-  const RpcException({
-    required this.object,
-    required this.method,
-    this.status,
-    this.detail,
-  });
-
-  @override
-  String toString() {
-    final call = '$object.$method';
-    final unavailable =
-        status == 3 ||
-        status == 4 ||
-        status == 8 ||
-        detail?.toLowerCase().contains('not found') == true ||
-        detail?.toLowerCase().contains('not supported') == true;
-    if (unavailable && object == 'luci-rpc') {
-      return 'Router RPC support is missing: $call is unavailable. Install rpcd-mod-luci, restart rpcd, then reconnect.';
-    }
-    if (unavailable && object == 'iwinfo') {
-      return 'Wireless client support is missing: $call is unavailable. Install rpcd-mod-iwinfo, restart rpcd, then refresh.';
-    }
-    if (status == 6 ||
-        detail?.toLowerCase().contains('access denied') == true) {
-      return 'This account does not have permission for $call. Sign in with an administrator account or grant the required RPC access.';
-    }
-
-    final reason = switch (status) {
-      1 => 'invalid command',
-      2 => 'invalid argument',
-      3 => 'method not found',
-      4 => 'object not found',
-      5 => 'no data',
-      7 => 'timed out',
-      8 => 'not supported',
-      9 => 'unknown error',
-      10 => 'connection failed',
-      _ => detail ?? 'unknown error',
-    };
-    return 'Router RPC call $call failed: ${detail ?? reason}.';
-  }
-}
-
-dynamic validateRpcResult(
-  dynamic result, {
-  required String object,
-  required String method,
-}) {
-  if (result is! List ||
-      result.isEmpty ||
-      result.length > 2 ||
-      result.first is! int) {
-    throw RpcException(
-      object: object,
-      method: method,
-      detail: 'invalid response',
-    );
-  }
-
-  final status = result.first as int;
-  if (status != 0) {
-    throw RpcException(
-      object: object,
-      method: method,
-      status: status,
-      detail: result.length > 1 ? result[1]?.toString() : null,
-    );
-  }
-  return result;
-}
-
-String userFacingApiError(Object error) {
-  if (error is RpcException) return error.toString();
-  if (error is DioException) {
-    final status = error.response?.statusCode;
-    if (status == 401 || status == 403) {
-      return 'The router rejected this session. Reconnect and check the account RPC permissions.';
-    }
-    if (status != null) return 'The router returned HTTP $status.';
-    return 'Could not connect to the router. Check its address and your network connection, then try again.';
-  }
-  return error.toString().replaceFirst('Exception: ', '');
-}
-
 Uri _buildUrl(String ipAddress, bool useHttps, String path) {
   final scheme = useHttps ? 'https' : 'http';
   // Handle cases where ipAddress might already include a port
@@ -111,30 +21,11 @@ Uri _buildUrl(String ipAddress, bool useHttps, String path) {
   if (host.startsWith('http://') || host.startsWith('https://')) {
     return Uri.parse('$host$path');
   }
-  if (!host.startsWith('[') && ':'.allMatches(host).length > 1) {
-    host = '[$host]';
-  }
   return Uri.parse('$scheme://$host$path');
-}
-
-final RegExp _sysauthCookiePattern = RegExp(r'\bsysauth\w*=([^;,\s]+)');
-
-String? _extractSysauthToken(Headers headers) {
-  for (final header in headers['set-cookie'] ?? const <String>[]) {
-    final match = _sysauthCookiePattern.firstMatch(header);
-    if (match != null) return match.group(1);
-  }
-  return null;
 }
 
 class RealApiService implements IApiService {
   final HttpClientManager _httpClientManager = HttpClientManager();
-
-  List<dynamic> _requireRpcSuccess(dynamic result, String operation) {
-    if (result is List && result.isNotEmpty && result[0] == 0) return result;
-    final detail = result is List && result.length > 1 ? result[1] : result;
-    throw Exception('$operation failed: $detail');
-  }
 
   Dio _createHttpClient(
     bool useHttps,
@@ -221,23 +112,6 @@ class RealApiService implements IApiService {
     return LoginResult(token: null, actualUseHttps: initialUseHttps);
   }
 
-  Future<Response<dynamic>> _sendLogin(Dio client, Uri uri, String params) {
-    return client.post(
-      uri.toString(),
-      data: params,
-      options: Options(
-        contentType: Headers.formUrlEncodedContentType,
-        followRedirects: true,
-        validateStatus: (code) => code != null && code >= 200 && code < 400,
-      ),
-    );
-  }
-
-  Future<String?> _postLogin(Dio client, Uri uri, String params) async {
-    final response = await _sendLogin(client, uri, params);
-    return _extractSysauthToken(response.headers);
-  }
-
   Future<String?> _login(
     String ipAddress,
     String username,
@@ -253,39 +127,64 @@ class RealApiService implements IApiService {
 
     try {
       // Normal POST request - Dio will follow redirects by default
-      final response = await _sendLogin(client, uri, params);
+      final response = await client.post(
+        uri.toString(),
+        data: params,
+        options: Options(
+          contentType: Headers.formUrlEncodedContentType,
+          followRedirects: true,
+          validateStatus: (code) => code != null && code >= 200 && code < 400 || code == 302,
+        ),
+      );
 
       // Check if we were redirected to HTTPS (only relevant for initial HTTP attempts)
       if (checkRedirect && !useHttps) {
         final finalUrl = response.realUri;
         if (finalUrl.scheme == 'https') {
           Logger.info('Detected HTTP to HTTPS redirect: $uri -> $finalUrl');
-          // If we got a successful login after redirect, extract the token.
-          final token = _extractSysauthToken(response.headers);
-          if (token != null) {
-            // Signal that HTTPS should be used by returning a special marker.
-            return 'HTTPS_REDIRECT:$token';
+          // If we got a successful login after redirect, extract the token
+          if (response.statusCode == 302 || response.statusCode == 200) {
+            final setCookies = response.headers.map['set-cookie'];
+            if (setCookies != null && setCookies.isNotEmpty) {
+              final cookies = setCookies.join(',').split(',');
+              for (final cookie in cookies) {
+                if (cookie.contains('sysauth')) {
+                  final cookieValue = cookie.split(';')[0].split('=')[1];
+                  // Signal that HTTPS should be used by returning a special marker
+                  // We'll handle this in loginWithProtocolDetection
+                  return 'HTTPS_REDIRECT:$cookieValue';
+                }
+              }
+            }
           }
           // No token found, trigger HTTPS retry
           return null;
         }
       }
 
-      return _extractSysauthToken(response.headers);
+      if (response.statusCode == 302 || response.statusCode == 200) {
+        // Parse Set-Cookie headers to find sysauth cookie
+        final setCookies = response.headers.map['set-cookie'];
+        if (setCookies != null && setCookies.isNotEmpty) {
+          final cookies = setCookies.join(',').split(',');
+          for (final cookie in cookies) {
+            if (cookie.contains('sysauth')) {
+              final cookieValue = cookie.split(';')[0].split('=')[1];
+              return cookieValue;
+            }
+          }
+        }
+      }
+      return null;
     } on DioException catch (e, stack) {
       Logger.exception('Login failed', e, stack);
 
       final isCertError =
-          e.error is HandshakeException ||
-          e.message?.contains('CERTIFICATE_VERIFY_FAILED') == true;
+          e.error is HandshakeException || e.message?.contains('CERTIFICATE_VERIFY_FAILED') == true;
 
       if (!useHttps && checkRedirect && isCertError) {
-        Logger.info(
-          'Detected HTTPS certificate issue during redirect; retrying with HTTPS',
-        );
-        final retryContext = context != null && context.mounted
-            ? context
-            : null;
+        Logger.info('Detected HTTPS certificate issue during redirect; retrying with HTTPS');
+        final retryContext = context != null && context.mounted ? context : null;
         try {
           return await _login(
             ipAddress,
@@ -296,32 +195,44 @@ class RealApiService implements IApiService {
             checkRedirect: false,
           );
         } on DioException catch (httpsError, httpsStack) {
-          Logger.exception(
-            'HTTPS retry after redirect failed',
-            httpsError,
-            httpsStack,
-          );
+          Logger.exception('HTTPS retry after redirect failed', httpsError, httpsStack);
         }
       }
 
       if (useHttps && context != null && context.mounted && isCertError) {
         // Try to prompt for certificate acceptance
-        final accepted = await _httpClientManager
-            .promptForCertificateAcceptance(
-              context: context,
-              hostWithPort: ipAddress,
-              useHttps: useHttps,
-            );
+        final accepted = await _httpClientManager.promptForCertificateAcceptance(
+          context: context,
+          hostWithPort: ipAddress,
+          useHttps: useHttps,
+        );
 
         if (accepted && context.mounted) {
           // Create a new client and retry the login
-          final retryClient = _createHttpClient(
-            useHttps,
-            ipAddress,
-            context: context,
-          );
+          final retryClient = _createHttpClient(useHttps, ipAddress, context: context);
           try {
-            return await _postLogin(retryClient, uri, params);
+            final retryResponse = await retryClient.post(
+              uri.toString(),
+              data: params,
+              options: Options(
+                contentType: Headers.formUrlEncodedContentType,
+                followRedirects: true,
+                validateStatus: (code) => code != null && code >= 200 && code < 400 || code == 302,
+              ),
+            );
+
+            if (retryResponse.statusCode == 302 || retryResponse.statusCode == 200) {
+              final setCookies = retryResponse.headers.map['set-cookie'];
+              if (setCookies != null && setCookies.isNotEmpty) {
+                final cookies = setCookies.join(',').split(',');
+                for (final cookie in cookies) {
+                  if (cookie.contains('sysauth')) {
+                    final cookieValue = cookie.split(';')[0].split('=')[1];
+                    return cookieValue;
+                  }
+                }
+              }
+            }
           } on DioException catch (retryError, retryStack) {
             Logger.exception('Login retry failed', retryError, retryStack);
           }
@@ -399,33 +310,23 @@ class RealApiService implements IApiService {
       final response = await client.post(
         url.toString(),
         data: jsonEncode(rpcPayload),
-        options: Options(headers: {'Content-Type': 'application/json'}),
+        options: Options(
+          headers: {'Content-Type': 'application/json'},
+        ),
       );
 
       if (response.statusCode == 200) {
         final decoded = response.data is String
             ? jsonDecode(response.data as String)
             : response.data;
-        if (decoded is! Map) {
-          throw RpcException(
-            object: object,
-            method: method,
-            detail: 'invalid response',
-          );
-        }
         if (decoded['error'] != null) {
-          final error = decoded['error'];
-          throw RpcException(
-            object: object,
-            method: method,
-            detail: error is Map ? error['message']?.toString() : '$error',
-          );
+          throw Exception('RPC error: ${decoded['error']['message']}');
         }
         // Return in LuCI RPC format: [status, data]
         final result = decoded['result'];
         if (result is List && result.isNotEmpty) {
           // Result is already in [status, data] format
-          return validateRpcResult(result, object: object, method: method);
+          return result;
         } else {
           // Wrap single result in format: [0, data]
           return [0, result];
@@ -718,17 +619,14 @@ class RealApiService implements IApiService {
     required Map<String, String> values,
     BuildContext? context,
   }) async {
-    return _requireRpcSuccess(
-      await callWithContext(
-        ipAddress,
-        sysauth,
-        useHttps,
-        object: 'uci',
-        method: 'set',
-        params: {'config': config, 'section': section, 'values': values},
-        context: context,
-      ),
-      'uci.set',
+    return await callWithContext(
+      ipAddress,
+      sysauth,
+      useHttps,
+      object: 'uci',
+      method: 'set',
+      params: {'config': config, 'section': section, 'values': values},
+      context: context,
     );
   }
 
@@ -740,21 +638,17 @@ class RealApiService implements IApiService {
     required String config,
     BuildContext? context,
   }) async {
-    return _requireRpcSuccess(
-      await callWithContext(
-        ipAddress,
-        sysauth,
-        useHttps,
-        object: 'uci',
-        method: 'commit',
-        params: {'config': config},
-        context: context,
-      ),
-      'uci.commit',
+    return await callWithContext(
+      ipAddress,
+      sysauth,
+      useHttps,
+      object: 'uci',
+      method: 'commit',
+      params: {'config': config},
+      context: context,
     );
   }
 
-  /// Executes a command on the router via rpcd `file.exec`.
   @override
   Future<dynamic> systemExec(
     String ipAddress,
@@ -763,24 +657,14 @@ class RealApiService implements IApiService {
     required String command,
     BuildContext? context,
   }) async {
-    final result = _requireRpcSuccess(
-      await callWithContext(
-        ipAddress,
-        sysauth,
-        useHttps,
-        object: 'file',
-        method: 'exec',
-        params: {'command': command},
-        context: context,
-      ),
-      'file.exec',
+    return await callWithContext(
+      ipAddress,
+      sysauth,
+      useHttps,
+      object: 'system',
+      method: 'exec',
+      params: {'command': command},
+      context: context,
     );
-    final data = result.length > 1 ? result[1] : null;
-    if (data is Map && data['code'] is num && data['code'] != 0) {
-      throw Exception(
-        'file.exec failed: ${data['stderr'] ?? 'exit ${data['code']}'}',
-      );
-    }
-    return result;
   }
 }

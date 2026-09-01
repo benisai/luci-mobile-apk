@@ -460,8 +460,6 @@ class OpenwrtDnsHostEntry {
       ipAddress: read('ip'),
     );
   }
-
-  bool get isBlockedSinkhole => ipAddress.trim() == '127.0.0.1';
 }
 
 class OpenwrtAdblockSettings {
@@ -1881,14 +1879,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     // ignore: use_build_context_synchronously
     final loginSuccess = await login(
-      found.activeAddress,
+      found.ipAddress,
       found.username,
       found.password,
-      found.activeUseHttps,
+      found.useHttps,
       fromRouter: true,
-      alternateAddress: found.inactiveAddress,
-      alternateUseHttps: found.inactiveUseHttps,
-      activeAddressIndex: found.activeAddressIndex,
       context: safeContext, // ignore: use_build_context_synchronously
     );
     if (loginSuccess) {
@@ -1909,9 +1904,6 @@ class AppState extends ChangeNotifier {
     String pass,
     bool useHttps, {
     bool fromRouter = false,
-    String? alternateAddress,
-    bool? alternateUseHttps,
-    int activeAddressIndex = 0,
     BuildContext? context,
   }) async {
     _isLoading = true;
@@ -1924,19 +1916,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final fallbackResult = await _authService!.loginWithFallback(
-        activeAddress: ip,
-        activeHttps: useHttps,
-        activeIndex: activeAddressIndex,
-        fallbackAddress: alternateAddress,
-        fallbackHttps: alternateUseHttps,
-        username: user,
-        password: pass,
-        context: context,
-      );
+      await _authService!.login(ip, user, pass, useHttps, context: context);
 
       // Check if authentication was successful
-      if (fallbackResult.success && _authService!.isAuthenticated) {
+      if (_authService!.isAuthenticated) {
         // Get the actual protocol used (might be different due to redirect)
         final actualUseHttps = _authService!.useHttps;
 
@@ -1949,46 +1932,26 @@ class AppState extends ChangeNotifier {
               pass,
               actualUseHttps, // Use the detected protocol
             );
-            final routerWithFallback = router.copyWith(
-              alternateAddress: alternateAddress,
-              alternateUseHttps: alternateUseHttps,
-              activeAddressIndex: fallbackResult.usedAddressIndex,
-            );
             final idx = _routerService!.routers.indexWhere(
-              (r) => r.id == routerWithFallback.id,
+              (r) => r.id == router.id,
             );
             if (idx == -1) {
-              await addRouter(routerWithFallback);
+              await addRouter(router);
             } else {
-              await updateRouter(routerWithFallback);
+              await updateRouter(router);
             }
-            await _routerService!.setSelectedRouter(routerWithFallback.id);
+            await _routerService!.setSelectedRouter(router.id);
             await loadDashboardPreferences();
           }
-        } else if (_routerService != null) {
+        } else if (actualUseHttps != useHttps && _routerService != null) {
+          // If we're logging in from a saved router and the protocol changed, update it
           final router = _routerService!.selectedRouter;
           if (router != null) {
-            final needsUpdate =
-                actualUseHttps != useHttps ||
-                fallbackResult.usedAddressIndex != router.activeAddressIndex;
-            if (needsUpdate) {
-              final updatedRouter = fallbackResult.usedAddressIndex == 0
-                  ? router.copyWith(
-                      useHttps: actualUseHttps,
-                      activeAddressIndex: 0,
-                    )
-                  : router.copyWith(
-                      alternateUseHttps: actualUseHttps,
-                      activeAddressIndex: 1,
-                    );
-              await updateRouter(updatedRouter);
-              if (fallbackResult.usedAddressIndex !=
-                  router.activeAddressIndex) {
-                Logger.info(
-                  'Switched to ${fallbackResult.usedAddressIndex == 0 ? "primary" : "alternate"} address',
-                );
-              }
-            }
+            final updatedRouter = router.copyWith(useHttps: actualUseHttps);
+            await updateRouter(updatedRouter);
+            Logger.info(
+              'Updated router protocol from ${useHttps ? "HTTPS" : "HTTP"} to ${actualUseHttps ? "HTTPS" : "HTTP"}',
+            );
           }
         }
         await fetchDashboardData();
@@ -2030,26 +1993,20 @@ class AppState extends ChangeNotifier {
     _isDashboardLoading = true;
     _dashboardError = null;
     _cancelThroughputTimer();
-    _httpClientManager.disposeClient(
-      router.activeAddress,
-      router.activeUseHttps,
-    );
+    _httpClientManager.disposeClient(router.ipAddress, router.useHttps);
     notifyListeners();
 
     try {
       final safeContext = context?.mounted == true ? context : null;
-      final loginResult = await _authService!.loginWithFallback(
-        activeAddress: router.activeAddress,
-        activeHttps: router.activeUseHttps,
-        activeIndex: router.activeAddressIndex,
-        fallbackAddress: router.inactiveAddress,
-        fallbackHttps: router.inactiveUseHttps,
-        username: router.username,
-        password: router.password,
+      final loginSuccess = await _authService!.tryAutoLogin(
+        router.ipAddress,
+        router.username,
+        router.password,
+        router.useHttps,
         context: safeContext,
       );
 
-      if (!loginResult.success || _authService?.sysauth == null) {
+      if (!loginSuccess || _authService?.sysauth == null) {
         _dashboardError =
             'Failed to reconnect. Please check your router credentials and network connection.';
         _dashboardData = null;
@@ -2057,15 +2014,8 @@ class AppState extends ChangeNotifier {
       }
 
       final actualUseHttps = _authService!.useHttps;
-      if (actualUseHttps != router.activeUseHttps ||
-          loginResult.usedAddressIndex != router.activeAddressIndex) {
-        final updatedRouter = loginResult.usedAddressIndex == 0
-            ? router.copyWith(useHttps: actualUseHttps, activeAddressIndex: 0)
-            : router.copyWith(
-                alternateUseHttps: actualUseHttps,
-                activeAddressIndex: 1,
-              );
-        await updateRouter(updatedRouter);
+      if (actualUseHttps != router.useHttps) {
+        await updateRouter(router.copyWith(useHttps: actualUseHttps));
       }
 
       await fetchDashboardData();
@@ -2197,9 +2147,8 @@ class AppState extends ChangeNotifier {
 
     // If already loading, don't start another request (but this shouldn't prevent pull-to-refresh)
     // We'll let the new request proceed and the loading state will be handled properly
-    final selectedRouter = _routerService!.selectedRouter!;
-    final ip = _authService!.ipAddress ?? selectedRouter.activeAddress;
-    final useHttps = _authService!.useHttps;
+    final ip = _routerService!.selectedRouter!.ipAddress;
+    final useHttps = _routerService!.selectedRouter!.useHttps;
 
     _isDashboardLoading = true;
     _dashboardError = null;
@@ -3255,6 +3204,35 @@ class AppState extends ChangeNotifier {
       byIp.addAll(maps.$2);
     }
     return (byMac, byIp);
+  }
+
+  List<Client> _clientsFromDeviceDbRecords(
+    (Map<String, OpenwallaDeviceRecord>, Map<String, OpenwallaDeviceRecord>)
+    deviceRecords,
+  ) {
+    final clients = deviceRecords.$1.values.map((record) {
+      final hostname = record.hostname.trim();
+      final ip = record.ip.trim();
+      return Client(
+        ipAddress: ip.isEmpty ? 'N/A' : ip,
+        macAddress: record.mac,
+        hostname: hostname.isEmpty ? 'Unknown' : hostname,
+        connectionType: ConnectionType.unknown,
+        isBlocked: record.quarantined || record.status == 'blocked',
+        totalUploadBytes: record.totalUploadBytes,
+        totalDownloadBytes: record.totalDownloadBytes,
+        staticIpAddress: record.staticIpAddress.isEmpty
+            ? null
+            : record.staticIpAddress,
+        status: record.quarantined ? 'blocked' : record.status,
+      );
+    }).toList();
+
+    clients.sort((a, b) {
+      if (a.isBlocked != b.isBlocked) return a.isBlocked ? -1 : 1;
+      return a.hostname.toLowerCase().compareTo(b.hostname.toLowerCase());
+    });
+    return clients;
   }
 
   Future<bool> _sqliteTableExists({
@@ -7373,36 +7351,14 @@ class AppState extends ChangeNotifier {
         context: context,
       );
     }
-
-    if (_routerService != null && _routerService!.routers.isEmpty) {
-      await loadRouters();
-    }
-
-    final router = _routerService?.selectedRouter;
-    if (router != null && _authService != null) {
-      final result = await _authService!.loginWithFallback(
-        activeAddress: router.activeAddress,
-        activeHttps: router.activeUseHttps,
-        activeIndex: router.activeAddressIndex,
-        fallbackAddress: router.inactiveAddress,
-        fallbackHttps: router.inactiveUseHttps,
-        username: router.username,
-        password: router.password,
-        context: context?.mounted == true ? context : null,
-      );
-      if (result.success) {
-        if (result.usedAddressIndex != router.activeAddressIndex) {
-          await updateRouter(
-            router.copyWith(activeAddressIndex: result.usedAddressIndex),
-          );
-        }
-        return true;
-      }
-      return false;
-    }
-
-    await _authService?.logout();
-    return false;
+    return await _authService?.tryAutoLogin(
+          null,
+          null,
+          null,
+          null,
+          context: context,
+        ) ??
+        false;
   }
 
   /// Fetch all associated wireless MAC addresses from all wireless interfaces
@@ -7453,6 +7409,17 @@ class AppState extends ChangeNotifier {
   /// as wireless if their MAC appears in any router's associated stations list.
   Future<List<Client>> fetchAggregatedClients() async {
     try {
+      final activeDeviceRecords = await fetchDeviceRecords(
+        aggregateAllRouters: true,
+      );
+      if (activeDeviceRecords.$1.isNotEmpty) {
+        final quarantinedMacs = await fetchAggregatedQuarantinedMacs();
+        return _applyQuarantineState(
+          _clientsFromDeviceDbRecords(activeDeviceRecords),
+          quarantinedMacs,
+        );
+      }
+
       final quarantinedMacsFuture = fetchAggregatedQuarantinedMacs();
       final deviceRecordsFuture = fetchDeviceRecords(aggregateAllRouters: true);
       // Build a union of wireless MACs across all routers
@@ -7492,37 +7459,6 @@ class AppState extends ChangeNotifier {
 
       final quarantinedMacs = await quarantinedMacsFuture;
       final deviceRecords = await deviceRecordsFuture;
-
-      // Add offline/static devices from device records if not already in clients
-      for (final entry in deviceRecords.$1.entries) {
-        final macNorm = _normalizeMacAddress(entry.key);
-        if (!clients.containsKey(macNorm)) {
-          final record = entry.value;
-          final hostname = record.hostname.trim();
-          final ip = record.ip.trim();
-          clients[macNorm] = Client(
-            ipAddress: ip.isEmpty ? 'N/A' : ip,
-            macAddress: record.mac,
-            hostname:
-                (hostname.isEmpty ||
-                    hostname == '*' ||
-                    hostname.toLowerCase() == 'unknown')
-                ? 'Unknown'
-                : hostname,
-            connectionType: ConnectionType.unknown,
-            isBlocked: record.quarantined || record.status == 'blocked',
-            totalUploadBytes: record.totalUploadBytes,
-            totalDownloadBytes: record.totalDownloadBytes,
-            staticIpAddress: record.staticIpAddress.isEmpty
-                ? null
-                : record.staticIpAddress,
-            status: record.quarantined
-                ? 'blocked'
-                : (record.status.isNotEmpty ? record.status : 'offline'),
-          );
-        }
-      }
-
       final list = _applyQuarantineState(
         _applyDeviceDbRecords(clients.values, deviceRecords),
         quarantinedMacs,
@@ -7631,6 +7567,15 @@ class AppState extends ChangeNotifier {
       }
       final router = _routerService!.selectedRouter!;
 
+      final activeDeviceRecords = await fetchDeviceRecords();
+      if (activeDeviceRecords.$1.isNotEmpty) {
+        final quarantinedMacs = await fetchQuarantinedMacsForSelectedRouter();
+        return _applyQuarantineState(
+          _clientsFromDeviceDbRecords(activeDeviceRecords),
+          quarantinedMacs,
+        );
+      }
+
       final stationsFuture = _apiService!
           .fetchAllAssociatedWirelessMacsWithContext(
             ipAddress: router.ipAddress,
@@ -7689,41 +7634,11 @@ class AppState extends ChangeNotifier {
         }
       }
 
+      final clients = clientMap.values.toList();
       final deviceRecords = await deviceRecordsFuture;
       final quarantinedMacs = await quarantinedMacsFuture;
-
-      // Add offline/static devices from device records if not already in clientMap
-      for (final entry in deviceRecords.$1.entries) {
-        final macNorm = _normalizeMacAddress(entry.key);
-        if (!clientMap.containsKey(macNorm)) {
-          final record = entry.value;
-          final hostname = record.hostname.trim();
-          final ip = record.ip.trim();
-          clientMap[macNorm] = Client(
-            ipAddress: ip.isEmpty ? 'N/A' : ip,
-            macAddress: record.mac,
-            hostname:
-                (hostname.isEmpty ||
-                    hostname == '*' ||
-                    hostname.toLowerCase() == 'unknown')
-                ? 'Unknown'
-                : hostname,
-            connectionType: ConnectionType.unknown,
-            isBlocked: record.quarantined || record.status == 'blocked',
-            totalUploadBytes: record.totalUploadBytes,
-            totalDownloadBytes: record.totalDownloadBytes,
-            staticIpAddress: record.staticIpAddress.isEmpty
-                ? null
-                : record.staticIpAddress,
-            status: record.quarantined
-                ? 'blocked'
-                : (record.status.isNotEmpty ? record.status : 'offline'),
-          );
-        }
-      }
-
       final markedClients = _applyQuarantineState(
-        _applyDeviceDbRecords(clientMap.values, deviceRecords),
+        _applyDeviceDbRecords(clients, deviceRecords),
         quarantinedMacs,
       );
 
@@ -7823,36 +7738,15 @@ class AppState extends ChangeNotifier {
         continue;
       }
       final hostname = record.hostname.trim();
-      final hasCustomHostname =
-          hostname.isNotEmpty &&
-          hostname != '*' &&
-          hostname.toLowerCase() != 'unknown';
-      final ip = record.ip.trim();
-      final hasRecordIp = ip.isNotEmpty && ip != 'N/A';
-
       yield client.copyWith(
-        hostname: hasCustomHostname
-            ? hostname
-            : (client.hostname.isNotEmpty ? client.hostname : 'Unknown'),
-        ipAddress: client.ipAddress != 'N/A' && client.ipAddress.isNotEmpty
-            ? client.ipAddress
-            : (hasRecordIp ? ip : client.ipAddress),
-        isBlocked:
-            record.quarantined ||
-            record.status == 'blocked' ||
-            client.isBlocked,
-        totalUploadBytes: record.totalUploadBytes > 0
-            ? record.totalUploadBytes
-            : client.totalUploadBytes,
-        totalDownloadBytes: record.totalDownloadBytes > 0
-            ? record.totalDownloadBytes
-            : client.totalDownloadBytes,
-        staticIpAddress: record.staticIpAddress.isNotEmpty
-            ? record.staticIpAddress
-            : client.staticIpAddress,
-        status: record.quarantined || record.status == 'blocked'
-            ? 'blocked'
-            : client.status,
+        hostname: hostname.isEmpty ? client.hostname : hostname,
+        isBlocked: record.quarantined || record.status == 'blocked',
+        totalUploadBytes: record.totalUploadBytes,
+        totalDownloadBytes: record.totalDownloadBytes,
+        staticIpAddress: record.staticIpAddress.isEmpty
+            ? null
+            : record.staticIpAddress,
+        status: record.quarantined ? 'blocked' : record.status,
       );
     }
   }
@@ -8096,7 +7990,6 @@ class AppState extends ChangeNotifier {
         useHttps: router.useHttps,
         mac: normalizedMac,
         blocked: true,
-        client: client,
       );
     } else {
       for (final entry in sectionsForMac) {
@@ -8115,7 +8008,6 @@ class AppState extends ChangeNotifier {
         useHttps: router.useHttps,
         mac: normalizedMac,
         blocked: false,
-        client: client,
       );
     }
 
@@ -8404,28 +8296,14 @@ class AppState extends ChangeNotifier {
     required bool useHttps,
     required String mac,
     required bool blocked,
-    Client? client,
     BuildContext? context,
   }) async {
     final escMac = mac.replaceAll("'", "''");
-    final escIp = (client?.ipAddress != null && client!.ipAddress != 'N/A')
-        ? client.ipAddress.replaceAll("'", "''")
-        : '';
-    final escHostname =
-        (client?.hostname != null &&
-            client!.hostname.isNotEmpty &&
-            client.hostname != 'Unknown')
-        ? client.hostname.replaceAll("'", "''")
-        : '';
-    final escVendor = (client?.vendor != null && client!.vendor!.isNotEmpty)
-        ? client.vendor!.replaceAll("'", "''")
-        : '';
-
     const createSql =
         "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline');";
     final sql = blocked
-        ? "$createSql INSERT INTO devices (mac, ip, hostname, vendor, last_seen, status, quarantined) VALUES ('$escMac', '$escIp', '$escHostname', '$escVendor', strftime('%s','now'), 'blocked', 1) ON CONFLICT(mac) DO UPDATE SET status='blocked', quarantined=1, last_seen=strftime('%s','now'), ip=CASE WHEN excluded.ip != '' AND excluded.ip != 'N/A' THEN excluded.ip ELSE devices.ip END, hostname=CASE WHEN excluded.hostname != '' AND excluded.hostname != 'Unknown' THEN excluded.hostname ELSE devices.hostname END, vendor=CASE WHEN excluded.vendor != '' THEN excluded.vendor ELSE devices.vendor END;"
-        : "$createSql UPDATE devices SET quarantined = 0, status = 'online', last_seen=strftime('%s','now') WHERE upper(mac) = upper('$escMac');";
+        ? "$createSql INSERT INTO devices (mac, last_seen, status, quarantined) VALUES ('$escMac', strftime('%s','now'), 'blocked', 1) ON CONFLICT(mac) DO UPDATE SET status='blocked', quarantined=1, last_seen=strftime('%s','now');"
+        : "$createSql UPDATE devices SET quarantined = 0, status = CASE WHEN status = 'blocked' THEN 'online' ELSE status END, last_seen=strftime('%s','now') WHERE upper(mac) = upper('$escMac');";
     try {
       await _sqliteQueryOutputForRouter(
         router: router,
