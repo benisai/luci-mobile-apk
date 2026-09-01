@@ -318,17 +318,6 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen> {
                                         ),
                                         child: _UnifiedClientCard(
                                           client: client,
-                                          isBlockingActionRunning: _blockingMacs
-                                              .contains(
-                                                _normalizeMac(
-                                                  client.macAddress,
-                                                ),
-                                              ),
-                                          onToggleInternetBlock: (blocked) =>
-                                              _setClientInternetBlocked(
-                                                client,
-                                                blocked,
-                                              ),
                                           onOpenSettings: () =>
                                               _showDeviceSettingsSheet(client),
                                         ),
@@ -534,7 +523,11 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => _DeviceSettingsSheet(client: client),
+      builder: (context) => _DeviceSettingsSheet(
+        client: client,
+        onToggleInternetBlock: (blocked) =>
+            _setClientInternetBlocked(client, blocked),
+      ),
     );
     if (updated == true && mounted) {
       setState(() {
@@ -639,8 +632,12 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen> {
 
 class _DeviceSettingsSheet extends ConsumerStatefulWidget {
   final Client client;
+  final Future<void> Function(bool blocked) onToggleInternetBlock;
 
-  const _DeviceSettingsSheet({required this.client});
+  const _DeviceSettingsSheet({
+    required this.client,
+    required this.onToggleInternetBlock,
+  });
 
   @override
   ConsumerState<_DeviceSettingsSheet> createState() =>
@@ -651,7 +648,9 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
   final _nameController = TextEditingController();
   final _ipController = TextEditingController();
   bool _staticIpEnabled = false;
+  late bool _isBlocked;
   bool _isSaving = false;
+  bool _isBlocking = false;
 
   @override
   void initState() {
@@ -663,6 +662,7 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
         ? ''
         : widget.client.ipAddress;
     _staticIpEnabled = widget.client.staticIpAddress?.isNotEmpty == true;
+    _isBlocked = widget.client.isBlocked;
   }
 
   @override
@@ -700,6 +700,22 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
       if (!mounted) return;
       _showError('Failed to save device settings: $e');
       setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _toggleInternetBlock() async {
+    final nextBlocked = !_isBlocked;
+    setState(() => _isBlocking = true);
+    try {
+      await widget.onToggleInternetBlock(nextBlocked);
+      if (!mounted) return;
+      setState(() {
+        _isBlocked = nextBlocked;
+        _isBlocking = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isBlocking = false);
     }
   }
 
@@ -817,23 +833,61 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
                 ),
               ),
               const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _isSaving ? null : _save,
-                  icon: _isSaving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save_rounded),
-                  label: Text(_isSaving ? 'Saving' : 'Save Changes'),
-                ),
+              Row(
+                children: [
+                  Expanded(child: _buildBlockButton(context)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: (_isSaving || _isBlocking) ? null : _save,
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save_rounded),
+                      label: Text(_isSaving ? 'Saving' : 'Save'),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildBlockButton(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = _isBlocked
+        ? theme.colorScheme.primary
+        : theme.colorScheme.error;
+    return OutlinedButton.icon(
+      onPressed: (_isSaving || _isBlocking) ? null : _toggleInternetBlock,
+      icon: _isBlocking
+          ? SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: color.withValues(alpha: 0.9),
+              ),
+            )
+          : Icon(_isBlocked ? Icons.lock_open_rounded : Icons.block_rounded),
+      label: Text(
+        _isBlocking
+            ? 'Wait'
+            : _isBlocked
+            ? 'Unblock'
+            : 'Block',
+      ),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color,
+        side: BorderSide(color: color.withValues(alpha: 0.42)),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
@@ -949,15 +1003,11 @@ class _DeviceUsagePanel extends StatelessWidget {
 
 class _UnifiedClientCard extends StatelessWidget {
   final Client client;
-  final ValueChanged<bool> onToggleInternetBlock;
   final VoidCallback onOpenSettings;
-  final bool isBlockingActionRunning;
 
   const _UnifiedClientCard({
     required this.client,
-    required this.onToggleInternetBlock,
     required this.onOpenSettings,
-    required this.isBlockingActionRunning,
   });
 
   @override
@@ -1080,8 +1130,6 @@ class _UnifiedClientCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              _buildBlockActionButton(context),
-              const SizedBox(width: 6),
               Icon(
                 Icons.chevron_right_rounded,
                 color: colorScheme.onSurfaceVariant,
@@ -1091,51 +1139,6 @@ class _UnifiedClientCard extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildBlockActionButton(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = client.isBlocked
-        ? theme.colorScheme.primary
-        : theme.colorScheme.error;
-    return OutlinedButton.icon(
-      onPressed: isBlockingActionRunning
-          ? null
-          : () => onToggleInternetBlock(!client.isBlocked),
-      icon: isBlockingActionRunning
-          ? SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: color.withValues(alpha: 0.9),
-              ),
-            )
-          : Icon(
-              client.isBlocked ? Icons.lock_open_rounded : Icons.block_rounded,
-              size: 16,
-            ),
-      label: Text(
-        isBlockingActionRunning
-            ? 'Wait'
-            : client.isBlocked
-            ? 'Unblock'
-            : 'Block',
-      ),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: color,
-        side: BorderSide(color: color.withValues(alpha: 0.34)),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        minimumSize: const Size(0, 34),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-        textStyle: theme.textTheme.labelSmall?.copyWith(
-          fontWeight: FontWeight.w900,
-          letterSpacing: 0,
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       ),
     );
   }
