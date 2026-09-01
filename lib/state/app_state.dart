@@ -7746,7 +7746,9 @@ class AppState extends ChangeNotifier {
         staticIpAddress: record.staticIpAddress.isEmpty
             ? null
             : record.staticIpAddress,
-        status: record.quarantined ? 'blocked' : record.status,
+        status: record.quarantined || record.status == 'blocked'
+            ? 'blocked'
+            : client.status,
       );
     }
   }
@@ -8303,7 +8305,7 @@ class AppState extends ChangeNotifier {
         "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline');";
     final sql = blocked
         ? "$createSql INSERT INTO devices (mac, last_seen, status, quarantined) VALUES ('$escMac', strftime('%s','now'), 'blocked', 1) ON CONFLICT(mac) DO UPDATE SET status='blocked', quarantined=1, last_seen=strftime('%s','now');"
-        : "$createSql UPDATE devices SET quarantined = 0, status = CASE WHEN status = 'blocked' THEN 'online' ELSE status END, last_seen=strftime('%s','now') WHERE upper(mac) = upper('$escMac');";
+        : "$createSql UPDATE devices SET quarantined = 0, status = 'online', last_seen=strftime('%s','now') WHERE upper(mac) = upper('$escMac');";
     try {
       await _sqliteQueryOutputForRouter(
         router: router,
