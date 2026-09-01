@@ -343,6 +343,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     return InputDecoration(
       labelText: label,
       helperText: helperText,
+      helperMaxLines: 2,
+      helperStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
+        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.78),
+        fontWeight: FontWeight.w600,
+        height: 1.35,
+      ),
       prefixIcon: Icon(icon),
       suffixIcon: suffixIcon,
       filled: true,
@@ -607,7 +613,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                               },
                                             ),
                                           ),
-                                          const SizedBox(height: 16),
+                                          const SizedBox(height: 22),
                                           AnimatedSwitcher(
                                             duration: const Duration(
                                               milliseconds: 180,
@@ -648,7 +654,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                                 : const SizedBox.shrink(),
                                           ),
                                           if (_advancedLogin)
-                                            const SizedBox(height: 16),
+                                            const SizedBox(height: 18),
                                           Tooltip(
                                             message:
                                                 'Enter your router password',
@@ -683,7 +689,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                                   TextInputAction.done,
                                             ),
                                           ),
-                                          const SizedBox(height: 14),
+                                          const SizedBox(height: 18),
                                           Row(
                                             children: [
                                               Checkbox(

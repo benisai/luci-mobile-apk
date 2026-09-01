@@ -1658,6 +1658,8 @@ class AppState extends ChangeNotifier {
         'params': ['-c', command],
       },
       context: context,
+      receiveTimeout: const Duration(minutes: 5),
+      sendTimeout: const Duration(minutes: 5),
     );
     final output = _commandOutput(result);
     if (!output.contains('OK')) {

@@ -40,6 +40,8 @@ class MockApiService implements IApiService {
     required String method,
     Map<String, dynamic>? params,
     BuildContext? context,
+    Duration? receiveTimeout,
+    Duration? sendTimeout,
   }) async {
     // Simulate a short delay for realism
     await Future.delayed(const Duration(milliseconds: 200));

@@ -24,6 +24,8 @@ abstract class IApiService {
     required String method,
     Map<String, dynamic>? params,
     BuildContext? context,
+    Duration? receiveTimeout,
+    Duration? sendTimeout,
   });
   // Simplified call method for reviewer mode
   Future<dynamic> callSimple(
