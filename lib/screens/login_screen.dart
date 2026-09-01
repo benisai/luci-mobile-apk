@@ -7,6 +7,7 @@ import 'package:luci_mobile/main.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:luci_mobile/config/app_config.dart';
+import 'package:luci_mobile/models/router.dart' as model;
 import 'package:luci_mobile/services/secure_storage_service.dart';
 import 'package:luci_mobile/utils/url_parser.dart';
 
@@ -26,6 +27,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   final _confirmationController = TextEditingController();
   bool _isCheckingAutoLogin = true;
   bool _passwordVisible = false;
+  bool _advancedLogin = false;
   late AnimationController _logoAnimController;
   late AnimationController _progressAnimController;
   bool _isActivatingReviewerMode = false;
@@ -158,6 +160,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   Future<void> _tryAutoLogin() async {
     final appState = ref.read(appStateProvider);
+    if (appState.routers.isNotEmpty) {
+      _prefillRouter(appState.selectedRouter ?? appState.routers.first);
+      if (mounted) {
+        setState(() {
+          _isCheckingAutoLogin = false;
+        });
+      }
+      return;
+    }
+
     final success = await appState.tryAutoLogin(context: context);
     if (success && mounted) {
       unawaited(Navigator.of(context).pushReplacementNamed('/'));
@@ -168,6 +180,98 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         });
       }
     }
+  }
+
+  void _prefillRouter(model.Router router) {
+    _ipController.text = router.useHttps
+        ? 'https://${router.ipAddress}'
+        : router.ipAddress;
+    _usernameController.text = router.username.trim().isEmpty
+        ? 'root'
+        : router.username;
+    _passwordController.text = router.password;
+  }
+
+  String _routerSubtitle(model.Router router) {
+    final protocol = router.useHttps ? 'https' : 'http';
+    final user = router.username.trim().isEmpty ? 'root' : router.username;
+    return '$protocol • $user';
+  }
+
+  Future<void> _showSavedRoutersSheet() async {
+    final routers = ref.read(appStateProvider).routers;
+    if (routers.isEmpty) return;
+
+    final selected = await showModalBottomSheet<model.Router>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        final theme = Theme.of(context);
+        final colorScheme = theme.colorScheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.router_rounded, color: colorScheme.primary),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Saved Routers',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                ...routers.map((router) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Material(
+                      color: colorScheme.surfaceContainerHighest.withValues(
+                        alpha: 0.26,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      child: ListTile(
+                        onTap: () => Navigator.of(context).pop(router),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        leading: Icon(
+                          Icons.router_rounded,
+                          color: colorScheme.primary,
+                        ),
+                        title: Text(
+                          router.lastKnownHostname?.isNotEmpty == true
+                              ? router.lastKnownHostname!
+                              : router.ipAddress,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        subtitle: Text(_routerSubtitle(router)),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected == null || !mounted) return;
+    setState(() => _prefillRouter(selected));
   }
 
   Future<void> _connect() async {
@@ -223,6 +327,43 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         ),
       );
     }
+  }
+
+  InputDecoration _loginInputDecoration({
+    required BuildContext context,
+    required String label,
+    required IconData icon,
+    String? helperText,
+    Widget? suffixIcon,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return InputDecoration(
+      labelText: label,
+      helperText: helperText,
+      prefixIcon: Icon(icon),
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.32),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.36),
+        ),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.36),
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: BorderSide(
+          color: colorScheme.primary.withValues(alpha: 0.78),
+          width: 1.4,
+        ),
+      ),
+    );
   }
 
   @override
@@ -382,7 +523,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                         ),
                         const SizedBox(height: 24),
                         ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(24),
                           child: BackdropFilter(
                             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                             child: Card(
@@ -391,7 +532,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                 alpha: 0.94,
                               ),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(24),
                                 side: BorderSide(
                                   color: colorScheme.outline.withValues(
                                     alpha: 0.14,
@@ -425,14 +566,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                                 AutofillHints.url,
                                                 AutofillHints.username,
                                               ],
-                                              decoration: const InputDecoration(
-                                                labelText: 'Router Address',
-                                                border: OutlineInputBorder(),
-                                                prefixIcon: Icon(
-                                                  Icons.router_outlined,
-                                                ),
+                                              decoration: _loginInputDecoration(
+                                                context: context,
+                                                label: 'Router Address',
+                                                icon: Icons.shield_outlined,
                                                 helperText:
-                                                    'e.g. 192.168.1.1, router.local:8080, https://192.168.1.1',
+                                                    '192.168.1.1, router.local:8080, or https://192.168.1.1',
+                                                suffixIcon:
+                                                    appState.routers.isEmpty
+                                                    ? null
+                                                    : IconButton(
+                                                        tooltip:
+                                                            'Saved routers',
+                                                        onPressed:
+                                                            _showSavedRoutersSheet,
+                                                        icon: const Icon(
+                                                          Icons
+                                                              .arrow_drop_down_rounded,
+                                                        ),
+                                                      ),
                                               ),
                                               textInputAction:
                                                   TextInputAction.next,
@@ -453,35 +605,47 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                             ),
                                           ),
                                           const SizedBox(height: 10),
-                                          Tooltip(
-                                            message:
-                                                'Enter your router username',
-                                            child: TextFormField(
-                                              controller: _usernameController,
-                                              autofillHints: const [
-                                                AutofillHints.username,
-                                              ],
-                                              decoration: const InputDecoration(
-                                                labelText: 'Username',
-                                                border: OutlineInputBorder(),
-                                                prefixIcon: Icon(
-                                                  Icons.person_outline,
-                                                ),
-                                                helperText:
-                                                    'Default is usually root',
-                                              ),
-                                              textInputAction:
-                                                  TextInputAction.next,
-                                              validator: (value) {
-                                                if (value == null ||
-                                                    value.isEmpty) {
-                                                  return 'Please enter the username';
-                                                }
-                                                return null;
-                                              },
+                                          AnimatedSwitcher(
+                                            duration: const Duration(
+                                              milliseconds: 180,
                                             ),
+                                            child: _advancedLogin
+                                                ? Tooltip(
+                                                    key: const ValueKey(
+                                                      'username',
+                                                    ),
+                                                    message:
+                                                        'Enter your router username',
+                                                    child: TextFormField(
+                                                      controller:
+                                                          _usernameController,
+                                                      autofillHints: const [
+                                                        AutofillHints.username,
+                                                      ],
+                                                      decoration:
+                                                          _loginInputDecoration(
+                                                            context: context,
+                                                            label: 'Username',
+                                                            icon: Icons
+                                                                .person_outline,
+                                                            helperText:
+                                                                'Default is root',
+                                                          ),
+                                                      textInputAction:
+                                                          TextInputAction.next,
+                                                      validator: (value) {
+                                                        if (value == null ||
+                                                            value.isEmpty) {
+                                                          return 'Please enter the username';
+                                                        }
+                                                        return null;
+                                                      },
+                                                    ),
+                                                  )
+                                                : const SizedBox.shrink(),
                                           ),
-                                          const SizedBox(height: 10),
+                                          if (_advancedLogin)
+                                            const SizedBox(height: 10),
                                           Tooltip(
                                             message:
                                                 'Enter your router password',
@@ -491,15 +655,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                               autofillHints: const [
                                                 AutofillHints.password,
                                               ],
-                                              decoration: InputDecoration(
-                                                labelText: 'Password',
-                                                border:
-                                                    const OutlineInputBorder(),
-                                                prefixIcon: const Icon(
-                                                  Icons.lock_outline,
-                                                ),
-                                                helperText:
-                                                    'Your router password',
+                                              decoration: _loginInputDecoration(
+                                                context: context,
+                                                label: 'Password',
+                                                icon: Icons.lock_outline,
                                                 suffixIcon: IconButton(
                                                   icon: Icon(
                                                     _passwordVisible
@@ -520,6 +679,45 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                               textInputAction:
                                                   TextInputAction.done,
                                             ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.save_rounded,
+                                                size: 18,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  'Credentials are saved for this router.',
+                                                  style: textTheme.bodySmall
+                                                      ?.copyWith(
+                                                        color: colorScheme
+                                                            .onSurfaceVariant,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
+                                                ),
+                                              ),
+                                              TextButton.icon(
+                                                onPressed: () => setState(
+                                                  () => _advancedLogin =
+                                                      !_advancedLogin,
+                                                ),
+                                                icon: Icon(
+                                                  _advancedLogin
+                                                      ? Icons.expand_less
+                                                      : Icons.tune_rounded,
+                                                  size: 18,
+                                                ),
+                                                label: Text(
+                                                  _advancedLogin
+                                                      ? 'Standard'
+                                                      : 'Advanced',
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                           AnimatedSwitcher(
                                             duration: const Duration(
