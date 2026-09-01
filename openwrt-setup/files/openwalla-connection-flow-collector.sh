@@ -15,7 +15,7 @@ DEFAULT_IGNORE_IPV6="1"
 DEFAULT_LAN_TO_WAN_ONLY="0"
 LOG_FILE="/tmp/openwalla-connection-flows-collector.log"
 
-FLOW_DB="$DEFAULT_DB"
+FLOW_DB="${OPENWALLA_CONNECTION_FLOWS_DB:-$DEFAULT_DB}"
 POLL_SECONDS="$DEFAULT_POLL_SECONDS"
 RETENTION_ROWS="$DEFAULT_RETENTION_ROWS"
 EXCLUDE_ENDPOINTS="$DEFAULT_EXCLUDE_ENDPOINTS"
@@ -258,7 +258,7 @@ parse_conntrack() {
 				if (t ~ /^dport=/ && dport=="") dport=substr(t,7);
 				if (t ~ /^bytes=/) bytes += substr(t,7)+0;
 				if (t ~ /^packets=/) packets += substr(t,9)+0;
-				if (t ~ /^\[(NEW|UPDATE|DESTROY)\]$/) next;
+				if (t ~ /^\[(NEW|UPDATE|DESTROY)\]$/) continue;
 				if (t ~ /^(ESTABLISHED|SYN_SENT|SYN_RECV|FIN_WAIT|TIME_WAIT|CLOSE|CLOSE_WAIT|LAST_ACK|LISTEN|CLOSING|UNREPLIED|ASSURED)$/) state=t;
 				if (state=="ACTIVE" && t ~ /^\[[A-Z_]+\]$/) {
 					state=substr(t,2,length(t)-2);
@@ -369,6 +369,13 @@ run_once() {
 	prune_db
 }
 
+parse_stdin() {
+	load_config
+	ensure_db_file
+	parse_conntrack | insert_rows
+	prune_db
+}
+
 run_daemon() {
 	local started ended elapsed
 	log "starting connection flow collector daemon"
@@ -420,11 +427,14 @@ main() {
 		--once)
 			run_once
 			;;
+		--parse-stdin)
+			parse_stdin
+			;;
 		--daemon|"")
 			run_daemon
 			;;
 		*)
-			echo "Usage: $0 [--init-db|--once|--daemon]"
+			echo "Usage: $0 [--init-db|--once|--parse-stdin|--daemon]"
 			exit 1
 			;;
 	esac
