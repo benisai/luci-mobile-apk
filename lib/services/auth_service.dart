@@ -31,8 +31,16 @@ class RealAuthService implements IAuthService {
     String password,
     bool useHttps, {
     BuildContext? context,
+    bool saveCredentials = true,
   }) async {
-    await _login(ipAddress, username, password, useHttps, context: context);
+    await _login(
+      ipAddress,
+      username,
+      password,
+      useHttps,
+      context: context,
+      saveCredentials: saveCredentials,
+    );
   }
 
   Future<bool> _login(
@@ -41,6 +49,7 @@ class RealAuthService implements IAuthService {
     String pass,
     bool useHttps, {
     BuildContext? context,
+    bool saveCredentials = true,
   }) async {
     try {
       // Check if the API service is RealApiService to use protocol detection
@@ -59,12 +68,15 @@ class RealAuthService implements IAuthService {
           _ipAddress = ip;
           _useHttps = loginResult.actualUseHttps; // Use the detected protocol
 
-          await _secureStorageService.saveCredentials(
-            ipAddress: ip,
-            username: user,
-            password: pass,
-            useHttps: loginResult.actualUseHttps, // Save the detected protocol
-          );
+          if (saveCredentials) {
+            await _secureStorageService.saveCredentials(
+              ipAddress: ip,
+              username: user,
+              password: pass,
+              useHttps:
+                  loginResult.actualUseHttps, // Save the detected protocol
+            );
+          }
 
           if (loginResult.actualUseHttps != useHttps) {
             Logger.info(
@@ -88,12 +100,14 @@ class RealAuthService implements IAuthService {
         _ipAddress = ip;
         _useHttps = useHttps;
 
-        await _secureStorageService.saveCredentials(
-          ipAddress: ip,
-          username: user,
-          password: pass,
-          useHttps: useHttps,
-        );
+        if (saveCredentials) {
+          await _secureStorageService.saveCredentials(
+            ipAddress: ip,
+            username: user,
+            password: pass,
+            useHttps: useHttps,
+          );
+        }
 
         return true;
       }

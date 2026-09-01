@@ -28,6 +28,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   bool _isCheckingAutoLogin = true;
   bool _passwordVisible = false;
   bool _advancedLogin = false;
+  bool _saveCredentials = true;
   late AnimationController _logoAnimController;
   late AnimationController _progressAnimController;
   bool _isActivatingReviewerMode = false;
@@ -190,6 +191,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         ? 'root'
         : router.username;
     _passwordController.text = router.password;
+    _saveCredentials = true;
   }
 
   String _routerSubtitle(model.Router router) {
@@ -300,6 +302,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
         pass,
         parsedUrl.useHttps,
         fromRouter: false,
+        saveCredentials: _saveCredentials,
         context: context,
       );
 
@@ -604,7 +607,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                               },
                                             ),
                                           ),
-                                          const SizedBox(height: 10),
+                                          const SizedBox(height: 16),
                                           AnimatedSwitcher(
                                             duration: const Duration(
                                               milliseconds: 180,
@@ -645,7 +648,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                                 : const SizedBox.shrink(),
                                           ),
                                           if (_advancedLogin)
-                                            const SizedBox(height: 10),
+                                            const SizedBox(height: 16),
                                           Tooltip(
                                             message:
                                                 'Enter your router password',
@@ -680,24 +683,41 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                                   TextInputAction.done,
                                             ),
                                           ),
-                                          const SizedBox(height: 8),
+                                          const SizedBox(height: 14),
                                           Row(
                                             children: [
-                                              const Icon(
-                                                Icons.save_rounded,
-                                                size: 18,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  'Credentials are saved for this router.',
-                                                  style: textTheme.bodySmall
-                                                      ?.copyWith(
-                                                        color: colorScheme
-                                                            .onSurfaceVariant,
-                                                        fontWeight:
-                                                            FontWeight.w700,
+                                              Checkbox(
+                                                value: _saveCredentials,
+                                                onChanged: appState.isLoading
+                                                    ? null
+                                                    : (value) => setState(
+                                                        () => _saveCredentials =
+                                                            value ?? true,
                                                       ),
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Expanded(
+                                                child: GestureDetector(
+                                                  behavior:
+                                                      HitTestBehavior.opaque,
+                                                  onTap: appState.isLoading
+                                                      ? null
+                                                      : () => setState(
+                                                          () => _saveCredentials =
+                                                              !_saveCredentials,
+                                                        ),
+                                                  child: Text(
+                                                    'Save credentials',
+                                                    style: textTheme.bodyMedium
+                                                        ?.copyWith(
+                                                          color: colorScheme
+                                                              .onSurfaceVariant,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                        ),
+                                                  ),
                                                 ),
                                               ),
                                               TextButton.icon(

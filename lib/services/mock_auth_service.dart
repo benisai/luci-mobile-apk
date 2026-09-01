@@ -26,6 +26,7 @@ class MockAuthService implements IAuthService {
     String password,
     bool useHttps, {
     BuildContext? context,
+    bool saveCredentials = true,
   }) async {
     // Simulate a short delay for realism
     await Future.delayed(const Duration(milliseconds: 500));

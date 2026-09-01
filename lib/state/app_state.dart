@@ -1908,6 +1908,7 @@ class AppState extends ChangeNotifier {
     String pass,
     bool useHttps, {
     bool fromRouter = false,
+    bool saveCredentials = true,
     BuildContext? context,
   }) async {
     _isLoading = true;
@@ -1920,14 +1921,21 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await _authService!.login(ip, user, pass, useHttps, context: context);
+      await _authService!.login(
+        ip,
+        user,
+        pass,
+        useHttps,
+        context: context,
+        saveCredentials: saveCredentials,
+      );
 
       // Check if authentication was successful
       if (_authService!.isAuthenticated) {
         // Get the actual protocol used (might be different due to redirect)
         final actualUseHttps = _authService!.useHttps;
 
-        if (!fromRouter) {
+        if (!fromRouter && saveCredentials) {
           // If not from router selection, add or update router with detected protocol
           if (_routerService != null) {
             final router = _routerService!.createRouter(
