@@ -44,8 +44,7 @@ Examples:
 
 Feature groups:
   stack        Standard Openwrt apps plus Openwalla monitoring, usage,
-               notifications, devices, blocking, state sync, quarantine,
-               and simple Conntrack flows.
+               notifications, devices, blocking, state sync, and quarantine.
   monitoring   Standard apps plus usage, ping, DNS, speedtest, notifications,
                devices, device bandwidth, blocking, and state sync.
   flows        Simple Conntrack flows plus detailed Netify flows.
@@ -180,7 +179,6 @@ append_monitoring_features() {
 
 append_stack_features() {
 	append_monitoring_features
-	append_feature conntrack
 	append_feature quarantine
 }
 

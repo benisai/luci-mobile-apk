@@ -18,12 +18,13 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
   static const _rawSetupBase =
       'https://raw.githubusercontent.com/benisai/luci-mobile-apk/main/openwrt-setup';
 
-  static const _defaultFeatures = ['monitoring', 'conntrack'];
+  static const _defaultFeatures = ['monitoring'];
 
   int _wizardStep = 0;
   bool _installAdblock = false;
   bool _installQosScripts = false;
   bool _installNetify = false;
+  bool _installSimpleFlows = false;
   bool _installBanip = false;
   bool _installPbr = false;
   bool _isInstalling = false;
@@ -35,6 +36,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
     return [
       if (_installAdblock) 'adblock',
       if (_installQosScripts) 'qos',
+      if (_installSimpleFlows) 'conntrack',
       if (_installNetify) 'netify',
       if (_installBanip) 'banip',
       if (_installPbr) 'pbr',
@@ -130,11 +132,13 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
             showNetworkPerformanceCard: true,
             showUsageCard: true,
             showMonthlyUsageCard: true,
-            showFlowsCard: true,
+            showFlowsCard: _installSimpleFlows || _installNetify,
             showStatisticsTab: true,
             flowMode: _installNetify
                 ? DashboardFlowMode.detailed
-                : DashboardFlowMode.simple,
+                : _installSimpleFlows
+                ? DashboardFlowMode.simple
+                : appState.dashboardPreferences.flowMode,
           );
 
     await appState.saveDashboardPreferences(prefs);
@@ -345,6 +349,15 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
               onChanged: (value) => setState(() => _installNetify = value),
             ),
             _ExtraSoftwareTile(
+              icon: Icons.route_rounded,
+              title: 'Simple Flows',
+              subtitle:
+                  'Conntrack event flow history. Leave off for lower-end routers.',
+              value: _installSimpleFlows,
+              enabled: !_isInstalling,
+              onChanged: (value) => setState(() => _installSimpleFlows = value),
+            ),
+            _ExtraSoftwareTile(
               icon: Icons.shield_outlined,
               title: 'banip',
               subtitle: 'OpenWrt IP blocklist support.',
@@ -369,7 +382,12 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
           subtitle:
               'The app downloads the setup dispatcher with wget, then it fetches each selected feature bundle.',
           child: const _InstallerList(
-            items: ['Monitoring Tools', 'Simple Conntrack Flows'],
+            items: [
+              'Ping, DNS, and speedtest monitors',
+              'Notifications and device inventory',
+              'Usage and per-device bandwidth helpers',
+              'Internet blocking and state sync helpers',
+            ],
           ),
         );
       default:
