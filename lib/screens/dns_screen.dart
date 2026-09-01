@@ -4,6 +4,8 @@ import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 
+enum _DnsPanel { dns, blocked }
+
 class DnsScreen extends ConsumerStatefulWidget {
   const DnsScreen({super.key});
 
@@ -13,6 +15,7 @@ class DnsScreen extends ConsumerStatefulWidget {
 
 class _DnsScreenState extends ConsumerState<DnsScreen> {
   List<OpenwrtDnsHostEntry> _entries = const [];
+  _DnsPanel _panel = _DnsPanel.dns;
   bool _isLoading = true;
   String? _error;
 
@@ -93,6 +96,22 @@ class _DnsScreenState extends ConsumerState<DnsScreen> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final dnsEntries = _entries
+        .where((entry) => !entry.isBlockedSinkhole)
+        .toList(growable: false);
+    final blockedEntries = _entries
+        .where((entry) => entry.isBlockedSinkhole)
+        .toList(growable: false);
+    final visibleEntries = _panel == _DnsPanel.dns
+        ? dnsEntries
+        : blockedEntries;
+    final title = _panel == _DnsPanel.dns ? 'DNS Entries' : 'Blocked Domains';
+    final emptyMessage = _panel == _DnsPanel.dns
+        ? 'No custom DNS entries found.'
+        : 'No blocked DNS entries found.';
+    final description = _panel == _DnsPanel.dns
+        ? 'Map hostnames to local IP addresses through OpenWrt dnsmasq.'
+        : 'Domains sinkholed to 127.0.0.1 are listed here.';
 
     return Scaffold(
       appBar: LuciAppBar(title: 'DNS', showBack: true),
@@ -103,11 +122,30 @@ class _DnsScreenState extends ConsumerState<DnsScreen> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
+              SegmentedButton<_DnsPanel>(
+                segments: const [
+                  ButtonSegment(
+                    value: _DnsPanel.dns,
+                    label: Text('DNS'),
+                    icon: Icon(Icons.dns_rounded),
+                  ),
+                  ButtonSegment(
+                    value: _DnsPanel.blocked,
+                    label: Text('Blocked'),
+                    icon: Icon(Icons.block_rounded),
+                  ),
+                ],
+                selected: {_panel},
+                onSelectionChanged: (selection) {
+                  setState(() => _panel = selection.first);
+                },
+              ),
+              const SizedBox(height: 18),
               Row(
                 children: [
                   Expanded(
                     child: Text(
-                      'Custom DNS Entries',
+                      title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w900,
@@ -116,15 +154,27 @@ class _DnsScreenState extends ConsumerState<DnsScreen> {
                     ),
                   ),
                   FilledButton.icon(
-                    onPressed: () => _showEntrySheet(),
-                    icon: const Icon(Icons.add_rounded),
-                    label: const Text('Add'),
+                    onPressed: () => _showEntrySheet(
+                      _panel == _DnsPanel.blocked
+                          ? const OpenwrtDnsHostEntry(
+                              section: '',
+                              hostname: '',
+                              ipAddress: '127.0.0.1',
+                            )
+                          : null,
+                    ),
+                    icon: Icon(
+                      _panel == _DnsPanel.blocked
+                          ? Icons.block_rounded
+                          : Icons.add_rounded,
+                    ),
+                    label: Text(_panel == _DnsPanel.blocked ? 'Block' : 'Add'),
                   ),
                 ],
               ),
               const SizedBox(height: 6),
               Text(
-                'Map hostnames to local IP addresses through OpenWrt dnsmasq.',
+                description,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w700,
@@ -139,13 +189,10 @@ class _DnsScreenState extends ConsumerState<DnsScreen> {
                 )
               else if (_error != null)
                 _DnsEmptyCard(message: _error!, onRefresh: _load)
-              else if (_entries.isEmpty)
-                _DnsEmptyCard(
-                  message: 'No custom DNS entries found.',
-                  onRefresh: _load,
-                )
+              else if (visibleEntries.isEmpty)
+                _DnsEmptyCard(message: emptyMessage, onRefresh: _load)
               else
-                ..._entries.map(
+                ...visibleEntries.map(
                   (entry) => _DnsEntryCard(
                     entry: entry,
                     onEdit: () => _showEntrySheet(entry),
@@ -187,7 +234,12 @@ class _DnsEntryCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.dns_rounded, color: colorScheme.primary),
+          Icon(
+            entry.isBlockedSinkhole ? Icons.block_rounded : Icons.dns_rounded,
+            color: entry.isBlockedSinkhole
+                ? colorScheme.error
+                : colorScheme.primary,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -336,6 +388,12 @@ class _DnsEntrySheetState extends ConsumerState<_DnsEntrySheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isNew = widget.entry == null || widget.entry!.section.trim().isEmpty;
+    final isBlockedEntry = widget.entry?.isBlockedSinkhole ?? false;
+    final title = isBlockedEntry
+        ? (isNew ? 'Block Domain' : 'Edit Blocked Domain')
+        : (isNew ? 'Add DNS Entry' : 'Edit DNS Entry');
+
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -347,7 +405,7 @@ class _DnsEntrySheetState extends ConsumerState<_DnsEntrySheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            widget.entry == null ? 'Add DNS Entry' : 'Edit DNS Entry',
+            title,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w900,
               letterSpacing: 0,
@@ -357,7 +415,9 @@ class _DnsEntrySheetState extends ConsumerState<_DnsEntrySheet> {
           TextField(
             controller: _hostnameController,
             enabled: !_isSaving,
-            decoration: const InputDecoration(labelText: 'Hostname'),
+            decoration: InputDecoration(
+              labelText: isBlockedEntry ? 'Domain' : 'Hostname',
+            ),
           ),
           const SizedBox(height: 12),
           TextField(

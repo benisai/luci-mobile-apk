@@ -460,6 +460,8 @@ class OpenwrtDnsHostEntry {
       ipAddress: read('ip'),
     );
   }
+
+  bool get isBlockedSinkhole => ipAddress.trim() == '127.0.0.1';
 }
 
 class OpenwrtAdblockSettings {
