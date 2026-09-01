@@ -112,7 +112,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     return ((value / 65536) / coreCount * 100).clamp(0, 100).toDouble();
   }
 
-  double _legacyCpuLoadPercent(Map<String, dynamic>? sysInfo) {
+  double _cpuUsagePercent(Map<String, dynamic>? sysInfo) {
     final sampledCpu = sysInfo?['cpuUsagePercent'];
     if (sampledCpu is num) return sampledCpu.clamp(0, 100).toDouble();
     return 0;
@@ -1113,7 +1113,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   Widget _buildSystemVitalsCard(AppState appState) {
     final sysInfo = appState.dashboardData?['sysInfo'] as Map<String, dynamic>?;
 
-    final cpuPercent = _legacyCpuLoadPercent(sysInfo);
+    final cpuPercent = _cpuUsagePercent(sysInfo);
     final memoryPercent = _legacyMemoryPercent(sysInfo);
     final loadPercent = _loadAveragePercent(sysInfo, 2);
 
