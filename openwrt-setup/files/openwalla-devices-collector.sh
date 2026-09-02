@@ -142,9 +142,11 @@ ensure_db_file() {
 
 init_db() {
 	sql_exec "PRAGMA journal_mode=WAL;" || return 1
-	sql_exec "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline', static_ip TEXT NOT NULL DEFAULT '', icon TEXT NOT NULL DEFAULT '');" || return 1
+	sql_exec "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline', static_ip TEXT NOT NULL DEFAULT '', icon TEXT NOT NULL DEFAULT '', scheduled_block INTEGER NOT NULL DEFAULT 0, schedule_until TEXT NOT NULL DEFAULT '');" || return 1
 	sql_exec "ALTER TABLE devices ADD COLUMN static_ip TEXT NOT NULL DEFAULT '';" 2>/dev/null || true
 	sql_exec "ALTER TABLE devices ADD COLUMN icon TEXT NOT NULL DEFAULT '';" 2>/dev/null || true
+	sql_exec "ALTER TABLE devices ADD COLUMN scheduled_block INTEGER NOT NULL DEFAULT 0;" 2>/dev/null || true
+	sql_exec "ALTER TABLE devices ADD COLUMN schedule_until TEXT NOT NULL DEFAULT '';" 2>/dev/null || true
 	sql_exec "CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);" || return 1
 	sql_exec "CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON devices(last_seen);" || return 1
 	sql_exec "CREATE INDEX IF NOT EXISTS idx_devices_quarantined ON devices(quarantined);" || return 1
@@ -286,7 +288,7 @@ collect_once() {
 		esc_mac="$(sql_escape "$mac")"
 		esc_ip="$(sql_escape "$ip")"
 		esc_host="$(sql_escape "$host")"
-		sql="INSERT INTO devices (mac, ip, hostname, vendor, quarantined, last_seen, total_up, total_down, status) VALUES ('$esc_mac', '$esc_ip', '$esc_host', '', $is_quarantined, $now, $tx, $rx, 'online') ON CONFLICT(mac) DO UPDATE SET ip=CASE WHEN excluded.ip != '' THEN excluded.ip ELSE devices.ip END, hostname=CASE WHEN devices.hostname = '' AND excluded.hostname != '' THEN excluded.hostname ELSE devices.hostname END, quarantined=excluded.quarantined, last_seen=excluded.last_seen, total_up=excluded.total_up, total_down=excluded.total_down, status=excluded.status;"
+		sql="INSERT INTO devices (mac, ip, hostname, vendor, quarantined, last_seen, total_up, total_down, status) VALUES ('$esc_mac', '$esc_ip', '$esc_host', '', $is_quarantined, $now, $tx, $rx, 'online') ON CONFLICT(mac) DO UPDATE SET ip=CASE WHEN excluded.ip != '' THEN excluded.ip ELSE devices.ip END, hostname=CASE WHEN devices.hostname = '' AND excluded.hostname != '' THEN excluded.hostname ELSE devices.hostname END, quarantined=excluded.quarantined, last_seen=excluded.last_seen, total_up=excluded.total_up, total_down=excluded.total_down, status=CASE WHEN devices.scheduled_block=1 THEN 'block-scheduled' ELSE excluded.status END;"
 		sql_exec "$sql" || true
 	done <"$candidates"
 
@@ -296,7 +298,7 @@ collect_once() {
 		sql_exec "UPDATE devices SET quarantined=1 WHERE mac='$esc_mac';" || true
 	done <"$quarantined"
 
-	sql_exec "UPDATE devices SET status='offline' WHERE last_seen < $cutoff AND quarantined = 0;"
+	sql_exec "UPDATE devices SET status='offline' WHERE last_seen < $cutoff AND quarantined = 0 AND scheduled_block = 0;"
 	sql_exec "UPDATE devices SET status='blocked' WHERE quarantined = 1;"
 
 	rm -f "$candidates" "$totals" "$quarantined"

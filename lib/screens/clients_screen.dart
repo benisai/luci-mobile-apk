@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/models/client.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/design/luci_design_system.dart';
+import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/widgets/luci_loading_states.dart';
 import 'package:luci_mobile/widgets/luci_refresh_components.dart';
@@ -976,6 +977,7 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
               ),
               const SizedBox(height: 18),
               _DeviceUsagePanel(client: widget.client),
+              _ActiveScheduleNotice(client: widget.client),
               const SizedBox(height: 22),
               Text(
                 'MAC Address',
@@ -1180,6 +1182,67 @@ class _DeviceUsagePanel extends StatelessWidget {
         ? 1
         : 2;
     return '${value.toStringAsFixed(decimals)} ${units[unit]}';
+  }
+}
+
+class _ActiveScheduleNotice extends ConsumerWidget {
+  final Client client;
+
+  const _ActiveScheduleNotice({required this.client});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return FutureBuilder<OpenwallaActiveSchedule?>(
+      future: ref
+          .read(appStateProvider)
+          .fetchActiveScheduleForMac(client.macAddress, context: context),
+      builder: (context, snapshot) {
+        final schedule = snapshot.data;
+        final fallbackUntil = client.scheduledBlockUntil;
+        if (schedule == null &&
+            !client.hasScheduledBlock &&
+            (fallbackUntil == null || fallbackUntil.isEmpty)) {
+          return const SizedBox.shrink();
+        }
+        final until = schedule?.endTime ?? fallbackUntil ?? '';
+        final name = schedule?.name ?? 'Scheduled block';
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colorScheme.tertiaryContainer.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: colorScheme.tertiary.withValues(alpha: 0.26),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.event_busy_rounded,
+                  color: colorScheme.tertiary,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    until.isEmpty
+                        ? '$name is active'
+                        : '$name is active until $until',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 

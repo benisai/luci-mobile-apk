@@ -720,6 +720,20 @@ class _RouterDashboardSettingsScreenState
                   _onPreferenceChanged();
                 },
               ),
+              _buildCardVisibilitySwitch(
+                title: 'Scheduler Shortcut',
+                subtitle: 'Show the device block scheduler on the dashboard',
+                icon: Icons.event_available_rounded,
+                value: _preferences.showSchedulerShortcut,
+                onChanged: (value) {
+                  setState(() {
+                    _preferences = _preferences.copyWith(
+                      showSchedulerShortcut: value,
+                    );
+                  });
+                  _onPreferenceChanged();
+                },
+              ),
               const Divider(height: 1),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
@@ -782,6 +796,7 @@ class _RouterDashboardSettingsScreenState
       'adblock' => 'AdBlock',
       'services' => 'Services',
       'vpn' => 'VPN',
+      'scheduler' => 'Scheduler',
       _ => id,
     };
   }
@@ -796,6 +811,7 @@ class _RouterDashboardSettingsScreenState
       'adblock' => Icons.block_rounded,
       'services' => Icons.miscellaneous_services_rounded,
       'vpn' => Icons.security_rounded,
+      'scheduler' => Icons.event_available_rounded,
       _ => Icons.apps_rounded,
     };
   }

@@ -1,0 +1,526 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:luci_mobile/main.dart';
+import 'package:luci_mobile/models/client.dart';
+import 'package:luci_mobile/state/app_state.dart';
+import 'package:luci_mobile/widgets/luci_app_bar.dart';
+
+class SchedulerScreen extends ConsumerStatefulWidget {
+  const SchedulerScreen({super.key});
+
+  @override
+  ConsumerState<SchedulerScreen> createState() => _SchedulerScreenState();
+}
+
+class _SchedulerScreenState extends ConsumerState<SchedulerScreen> {
+  List<OpenwallaDeviceSchedule> _schedules = const [];
+  List<Client> _clients = const [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final appState = ref.read(appStateProvider);
+      final results = await Future.wait([
+        appState.fetchDeviceSchedules(context: context),
+        appState.fetchClientsForSelectedRouter(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _schedules = results[0] as List<OpenwallaDeviceSchedule>;
+        _clients = results[1] as List<Client>;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error =
+            'Unable to load schedules. Install the Openwalla scheduler from Router Setup.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _openEditor([OpenwallaDeviceSchedule? schedule]) async {
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) =>
+          _ScheduleEditorSheet(schedule: schedule, clients: _clients),
+    );
+    if (saved == true) await _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: LuciAppBar(
+        title: 'Scheduler',
+        showBack: true,
+        actions: [
+          IconButton(
+            tooltip: 'Add schedule',
+            onPressed: _isLoading ? null : () => _openEditor(),
+            icon: const Icon(Icons.add_rounded),
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            Text(
+              'Device Groups',
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Block internet access for grouped devices during daily windows.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _isLoading ? null : () => _openEditor(),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Create Schedule'),
+            ),
+            const SizedBox(height: 18),
+            if (_isLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 48),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_error != null)
+              _ScheduleEmptyCard(
+                icon: Icons.event_busy_rounded,
+                title: 'Scheduler not ready',
+                message: _error!,
+                onRefresh: _load,
+              )
+            else if (_schedules.isEmpty)
+              _ScheduleEmptyCard(
+                icon: Icons.schedule_rounded,
+                title: 'No schedules yet',
+                message:
+                    'Create a group, choose devices, and set a block window.',
+                onRefresh: _load,
+              )
+            else
+              ..._schedules.map(
+                (schedule) => _ScheduleCard(
+                  schedule: schedule,
+                  onTap: () => _openEditor(schedule),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScheduleCard extends StatelessWidget {
+  final OpenwallaDeviceSchedule schedule;
+  final VoidCallback onTap;
+
+  const _ScheduleCard({required this.schedule, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final activeColor = schedule.enabled
+        ? colorScheme.primary
+        : colorScheme.onSurfaceVariant;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: activeColor.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.family_restroom_rounded, color: activeColor),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      schedule.name,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${schedule.startTime} to ${schedule.endTime} • ${schedule.macAddresses.length} devices',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScheduleEmptyCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String message;
+  final Future<void> Function() onRefresh;
+
+  const _ScheduleEmptyCard({
+    required this.icon,
+    required this.title,
+    required this.message,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Icon(icon, color: colorScheme.primary, size: 34),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colorScheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: onRefresh,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Check Again'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScheduleEditorSheet extends ConsumerStatefulWidget {
+  final OpenwallaDeviceSchedule? schedule;
+  final List<Client> clients;
+
+  const _ScheduleEditorSheet({required this.schedule, required this.clients});
+
+  @override
+  ConsumerState<_ScheduleEditorSheet> createState() =>
+      _ScheduleEditorSheetState();
+}
+
+class _ScheduleEditorSheetState extends ConsumerState<_ScheduleEditorSheet> {
+  final _nameController = TextEditingController();
+  final _startController = TextEditingController();
+  final _endController = TextEditingController();
+  final Set<String> _selectedMacs = {};
+  bool _enabled = true;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final schedule = widget.schedule;
+    _nameController.text = schedule?.name ?? 'Kids';
+    _startController.text = schedule?.startTime ?? '21:00';
+    _endController.text = schedule?.endTime ?? '07:00';
+    _enabled = schedule?.enabled ?? true;
+    _selectedMacs.addAll(
+      schedule?.macAddresses.map(_normalizeMac) ?? const <String>[],
+    );
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _startController.dispose();
+    _endController.dispose();
+    super.dispose();
+  }
+
+  String _normalizeMac(String mac) =>
+      mac.trim().toUpperCase().replaceAll('-', ':');
+
+  bool _validTime(String value) {
+    return RegExp(r'^([01][0-9]|2[0-3]):[0-5][0-9]$').hasMatch(value.trim());
+  }
+
+  Future<void> _save() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      _showError('Schedule name is required.');
+      return;
+    }
+    if (!_validTime(_startController.text) ||
+        !_validTime(_endController.text)) {
+      _showError('Use 24-hour time like 21:00.');
+      return;
+    }
+    if (_selectedMacs.isEmpty) {
+      _showError('Choose at least one device.');
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    try {
+      await ref
+          .read(appStateProvider)
+          .saveDeviceSchedule(
+            OpenwallaDeviceSchedule(
+              id: widget.schedule?.id ?? 0,
+              name: name,
+              startTime: _startController.text.trim(),
+              endTime: _endController.text.trim(),
+              enabled: _enabled,
+              macAddresses: _selectedMacs.toList(),
+            ),
+            context: context,
+          );
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      _showError('Failed to save schedule: $e');
+      setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _delete() async {
+    final schedule = widget.schedule;
+    if (schedule == null || schedule.isNew) return;
+    setState(() => _isSaving = true);
+    try {
+      await ref
+          .read(appStateProvider)
+          .deleteDeviceSchedule(schedule, context: context);
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e) {
+      if (!mounted) return;
+      _showError('Failed to delete schedule: $e');
+      setState(() => _isSaving = false);
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final clients =
+        widget.clients
+            .where((client) => _normalizeMac(client.macAddress).isNotEmpty)
+            .toList()
+          ..sort(
+            (a, b) =>
+                a.hostname.toLowerCase().compareTo(b.hostname.toLowerCase()),
+          );
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          18,
+          0,
+          18,
+          MediaQuery.of(context).viewInsets.bottom + 18,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      widget.schedule == null
+                          ? 'Create Schedule'
+                          : 'Edit Schedule',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: _isSaving
+                        ? null
+                        : () => Navigator.of(context).pop(false),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _nameController,
+                enabled: !_isSaving,
+                decoration: const InputDecoration(
+                  labelText: 'Group Name',
+                  prefixIcon: Icon(Icons.group_rounded),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _startController,
+                      enabled: !_isSaving,
+                      decoration: const InputDecoration(
+                        labelText: 'Start',
+                        hintText: '21:00',
+                        prefixIcon: Icon(Icons.schedule_rounded),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: _endController,
+                      enabled: !_isSaving,
+                      decoration: const InputDecoration(
+                        labelText: 'End',
+                        hintText: '07:00',
+                        prefixIcon: Icon(Icons.alarm_rounded),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Schedule Enabled'),
+                value: _enabled,
+                onChanged: _isSaving
+                    ? null
+                    : (value) => setState(() => _enabled = value),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Devices',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (clients.isEmpty)
+                Text(
+                  'No devices found yet.',
+                  style: TextStyle(color: colorScheme.onSurfaceVariant),
+                )
+              else
+                ...clients.map((client) {
+                  final mac = _normalizeMac(client.macAddress);
+                  final selected = _selectedMacs.contains(mac);
+                  return CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(client.hostname),
+                    subtitle: Text(mac),
+                    value: selected,
+                    onChanged: _isSaving
+                        ? null
+                        : (value) {
+                            setState(() {
+                              if (value ?? false) {
+                                _selectedMacs.add(mac);
+                              } else {
+                                _selectedMacs.remove(mac);
+                              }
+                            });
+                          },
+                  );
+                }),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  if (widget.schedule != null) ...[
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _isSaving ? null : _delete,
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        label: const Text('Delete'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _isSaving ? null : _save,
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save_rounded),
+                      label: Text(_isSaving ? 'Saving' : 'Save'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

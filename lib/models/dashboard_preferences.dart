@@ -14,6 +14,7 @@ class DashboardPreferences {
   final bool showSmartQueueShortcut;
   final bool showAdblockShortcut;
   final bool showVpnShortcut;
+  final bool showSchedulerShortcut;
   final int shortcutPanelVisibleCount;
   final List<String> shortcutOrder;
   final DashboardFlowMode flowMode;
@@ -32,6 +33,7 @@ class DashboardPreferences {
     this.showSmartQueueShortcut = true,
     this.showAdblockShortcut = true,
     this.showVpnShortcut = true,
+    this.showSchedulerShortcut = true,
     this.shortcutPanelVisibleCount = 6,
     List<String>? shortcutOrder,
     this.flowMode = DashboardFlowMode.detailed,
@@ -48,6 +50,7 @@ class DashboardPreferences {
     'adblock',
     'services',
     'vpn',
+    'scheduler',
   ];
 
   DashboardPreferences copyWith({
@@ -64,6 +67,7 @@ class DashboardPreferences {
     bool? showSmartQueueShortcut,
     bool? showAdblockShortcut,
     bool? showVpnShortcut,
+    bool? showSchedulerShortcut,
     int? shortcutPanelVisibleCount,
     List<String>? shortcutOrder,
     DashboardFlowMode? flowMode,
@@ -87,6 +91,8 @@ class DashboardPreferences {
           showSmartQueueShortcut ?? this.showSmartQueueShortcut,
       showAdblockShortcut: showAdblockShortcut ?? this.showAdblockShortcut,
       showVpnShortcut: showVpnShortcut ?? this.showVpnShortcut,
+      showSchedulerShortcut:
+          showSchedulerShortcut ?? this.showSchedulerShortcut,
       shortcutPanelVisibleCount:
           shortcutPanelVisibleCount ?? this.shortcutPanelVisibleCount,
       shortcutOrder: shortcutOrder ?? this.shortcutOrder,
@@ -108,6 +114,7 @@ class DashboardPreferences {
     'showSmartQueueShortcut': showSmartQueueShortcut,
     'showAdblockShortcut': showAdblockShortcut,
     'showVpnShortcut': showVpnShortcut,
+    'showSchedulerShortcut': showSchedulerShortcut,
     'shortcutPanelVisibleCount': shortcutPanelVisibleCount,
     'shortcutOrder': shortcutOrder,
     'flowMode': flowMode.name,
@@ -132,6 +139,7 @@ class DashboardPreferences {
       showSmartQueueShortcut: json['showSmartQueueShortcut'] ?? true,
       showAdblockShortcut: json['showAdblockShortcut'] ?? true,
       showVpnShortcut: json['showVpnShortcut'] ?? true,
+      showSchedulerShortcut: json['showSchedulerShortcut'] ?? true,
       shortcutPanelVisibleCount: _parseShortcutPanelVisibleCount(
         json['shortcutPanelVisibleCount'],
       ),

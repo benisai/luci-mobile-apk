@@ -776,6 +776,8 @@ class OpenwallaDeviceRecord {
   final String status;
   final bool quarantined;
   final String icon;
+  final bool scheduledBlock;
+  final String scheduleUntil;
 
   const OpenwallaDeviceRecord({
     required this.mac,
@@ -787,7 +789,36 @@ class OpenwallaDeviceRecord {
     this.status = '',
     this.quarantined = false,
     this.icon = '',
+    this.scheduledBlock = false,
+    this.scheduleUntil = '',
   });
+}
+
+class OpenwallaDeviceSchedule {
+  final int id;
+  final String name;
+  final String startTime;
+  final String endTime;
+  final bool enabled;
+  final List<String> macAddresses;
+
+  const OpenwallaDeviceSchedule({
+    required this.id,
+    required this.name,
+    required this.startTime,
+    required this.endTime,
+    required this.enabled,
+    required this.macAddresses,
+  });
+
+  bool get isNew => id <= 0;
+}
+
+class OpenwallaActiveSchedule {
+  final String name;
+  final String endTime;
+
+  const OpenwallaActiveSchedule({required this.name, required this.endTime});
 }
 
 class WireGuardServerSettings {
@@ -3153,6 +3184,8 @@ class AppState extends ChangeNotifier {
       final status = parts.length > 6 ? parts[6].trim() : '';
       final quarantined = parts.length > 7 && parts[7].trim() == '1';
       final icon = parts.length > 8 ? parts[8].trim() : '';
+      final scheduledBlock = parts.length > 9 && parts[9].trim() == '1';
+      final scheduleUntil = parts.length > 10 ? parts[10].trim() : '';
       final record = OpenwallaDeviceRecord(
         mac: mac,
         ip: ip,
@@ -3163,6 +3196,8 @@ class AppState extends ChangeNotifier {
         status: status,
         quarantined: quarantined,
         icon: icon,
+        scheduledBlock: scheduledBlock || status == 'block-scheduled',
+        scheduleUntil: scheduleUntil,
       );
       if (mac.isNotEmpty && mac != 'N/A') byMac[mac] = record;
       if (ip.isNotEmpty) byIp[ip] = record;
@@ -3190,6 +3225,8 @@ class AppState extends ChangeNotifier {
         status: 'blocked',
         quarantined: true,
         icon: 'router',
+        scheduledBlock: false,
+        scheduleUntil: '',
       );
       return ({record.mac: record}, {record.ip: record});
     }
@@ -3202,6 +3239,8 @@ class AppState extends ChangeNotifier {
           ? " WHERE status != 'offline' OR quarantined = 1"
           : "";
       final sqlWithStatic =
+          "SELECT mac, ip, hostname, total_up, total_down, static_ip, status, quarantined, icon, scheduled_block, schedule_until FROM devices$where ORDER BY last_seen DESC;";
+      final sqlWithoutSchedule =
           "SELECT mac, ip, hostname, total_up, total_down, static_ip, status, quarantined, icon FROM devices$where ORDER BY last_seen DESC;";
       final sqlWithoutIcon =
           "SELECT mac, ip, hostname, total_up, total_down, static_ip, status, quarantined, '' FROM devices$where ORDER BY last_seen DESC;";
@@ -3227,30 +3266,46 @@ class AppState extends ChangeNotifier {
           final output = router == null || sysauth == null || useHttps == null
               ? await _sqliteQueryOutput(
                   dbExpression: _devicesDbExpression(),
-                  sql: sqlWithoutIcon,
+                  sql: sqlWithoutSchedule,
                 )
               : await _sqliteQueryOutputForRouter(
                   router: router,
                   sysauth: sysauth,
                   useHttps: useHttps,
                   dbExpression: _devicesDbExpression(),
-                  sql: sqlWithoutIcon,
+                  sql: sqlWithoutSchedule,
                 );
           return _parseDeviceRecordsOutput(output);
         } catch (_) {
-          final output = router == null || sysauth == null || useHttps == null
-              ? await _sqliteQueryOutput(
-                  dbExpression: _devicesDbExpression(),
-                  sql: sqlFallback,
-                )
-              : await _sqliteQueryOutputForRouter(
-                  router: router,
-                  sysauth: sysauth,
-                  useHttps: useHttps,
-                  dbExpression: _devicesDbExpression(),
-                  sql: sqlFallback,
-                );
-          return _parseDeviceRecordsOutput(output);
+          try {
+            final output = router == null || sysauth == null || useHttps == null
+                ? await _sqliteQueryOutput(
+                    dbExpression: _devicesDbExpression(),
+                    sql: sqlWithoutIcon,
+                  )
+                : await _sqliteQueryOutputForRouter(
+                    router: router,
+                    sysauth: sysauth,
+                    useHttps: useHttps,
+                    dbExpression: _devicesDbExpression(),
+                    sql: sqlWithoutIcon,
+                  );
+            return _parseDeviceRecordsOutput(output);
+          } catch (_) {
+            final output = router == null || sysauth == null || useHttps == null
+                ? await _sqliteQueryOutput(
+                    dbExpression: _devicesDbExpression(),
+                    sql: sqlFallback,
+                  )
+                : await _sqliteQueryOutputForRouter(
+                    router: router,
+                    sysauth: sysauth,
+                    useHttps: useHttps,
+                    dbExpression: _devicesDbExpression(),
+                    sql: sqlFallback,
+                  );
+            return _parseDeviceRecordsOutput(output);
+          }
         }
       }
     }
@@ -3336,14 +3391,25 @@ class AppState extends ChangeNotifier {
         macAddress: record.mac,
         hostname: hostname.isEmpty ? 'Unknown' : hostname,
         connectionType: ConnectionType.unknown,
-        isBlocked: record.quarantined || record.status == 'blocked',
+        isBlocked:
+            record.quarantined ||
+            record.status == 'blocked' ||
+            record.status == 'block-scheduled' ||
+            record.scheduledBlock,
         totalUploadBytes: record.totalUploadBytes,
         totalDownloadBytes: record.totalDownloadBytes,
         staticIpAddress: record.staticIpAddress.isEmpty
             ? null
             : record.staticIpAddress,
-        status: record.quarantined ? 'blocked' : record.status,
+        status: record.quarantined
+            ? 'blocked'
+            : record.scheduledBlock
+            ? 'block-scheduled'
+            : record.status,
         deviceIcon: record.icon.isEmpty ? null : record.icon,
+        scheduledBlockUntil: record.scheduleUntil.isEmpty
+            ? null
+            : record.scheduleUntil,
       );
     }).toList();
 
@@ -7803,6 +7869,7 @@ class AppState extends ChangeNotifier {
     'openwalla_parental_',
     'moci_parental_',
     'openwalla_quarantine_',
+    'openwalla_schedule_',
   ];
 
   static const String _mockQuarantineMac = 'AA:BB:CC:DD:EE:FF';
@@ -7863,9 +7930,13 @@ class AppState extends ChangeNotifier {
         continue;
       }
       final hostname = record.hostname.trim();
+      final isScheduled =
+          record.scheduledBlock || record.status == 'block-scheduled';
+      final isBlocked =
+          record.quarantined || record.status == 'blocked' || isScheduled;
       yield client.copyWith(
         hostname: hostname.isEmpty ? client.hostname : hostname,
-        isBlocked: record.quarantined || record.status == 'blocked',
+        isBlocked: isBlocked,
         totalUploadBytes: record.totalUploadBytes,
         totalDownloadBytes: record.totalDownloadBytes,
         staticIpAddress: record.staticIpAddress.isEmpty
@@ -7873,8 +7944,13 @@ class AppState extends ChangeNotifier {
             : record.staticIpAddress,
         status: record.quarantined || record.status == 'blocked'
             ? 'blocked'
+            : isScheduled
+            ? 'block-scheduled'
             : client.status,
         deviceIcon: record.icon.isEmpty ? client.deviceIcon : record.icon,
+        scheduledBlockUntil: record.scheduleUntil.isEmpty
+            ? client.scheduledBlockUntil
+            : record.scheduleUntil,
       );
     }
   }
@@ -7971,15 +8047,27 @@ class AppState extends ChangeNotifier {
     BuildContext? context,
   }) async {
     try {
-      final output = await _sqliteQueryOutputForRouter(
-        router: router,
-        sysauth: sysauth,
-        useHttps: useHttps,
-        dbExpression: _devicesDbExpression(),
-        sql:
-            "SELECT mac FROM devices WHERE quarantined = 1 OR status = 'blocked';",
-        context: context,
-      );
+      String output;
+      try {
+        output = await _sqliteQueryOutputForRouter(
+          router: router,
+          sysauth: sysauth,
+          useHttps: useHttps,
+          dbExpression: _devicesDbExpression(),
+          sql:
+              "SELECT mac FROM devices WHERE quarantined = 1 OR status IN ('blocked', 'block-scheduled') OR scheduled_block = 1;",
+          context: context,
+        );
+      } catch (_) {
+        output = await _sqliteQueryOutputForRouter(
+          router: router,
+          sysauth: sysauth,
+          useHttps: useHttps,
+          dbExpression: _devicesDbExpression(),
+          sql:
+              "SELECT mac FROM devices WHERE quarantined = 1 OR status IN ('blocked', 'block-scheduled');",
+        );
+      }
       final macs = output
           .split('\n')
           .map((line) => line.trim())
@@ -8025,6 +8113,131 @@ class AppState extends ChangeNotifier {
       }
     }
     return macs;
+  }
+
+  Future<List<OpenwallaDeviceSchedule>> fetchDeviceSchedules({
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      return const [
+        OpenwallaDeviceSchedule(
+          id: 1,
+          name: 'Kids',
+          startTime: '21:00',
+          endTime: '07:00',
+          enabled: true,
+          macAddresses: [_mockQuarantineMac],
+        ),
+      ];
+    }
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) return [];
+
+    final output = await _runOpenwallaScheduler(['list'], context: context);
+    final schedules = <OpenwallaDeviceSchedule>[];
+    for (final line in output.split('\n')) {
+      final parts = line.trim().split('|');
+      if (parts.length < 6) continue;
+      schedules.add(
+        OpenwallaDeviceSchedule(
+          id: int.tryParse(parts[0]) ?? 0,
+          name: parts[1].trim().isEmpty ? 'Kids' : parts[1].trim(),
+          startTime: parts[2].trim().isEmpty ? '21:00' : parts[2].trim(),
+          endTime: parts[3].trim().isEmpty ? '07:00' : parts[3].trim(),
+          enabled: parts[4].trim() == '1',
+          macAddresses: parts[5]
+              .split(',')
+              .map(_normalizeMacAddress)
+              .where((mac) => mac.isNotEmpty)
+              .toList(),
+        ),
+      );
+    }
+    return schedules;
+  }
+
+  Future<OpenwallaActiveSchedule?> fetchActiveScheduleForMac(
+    String mac, {
+    BuildContext? context,
+  }) async {
+    final normalizedMac = _normalizeMacAddress(mac);
+    if (!RegExp(r'^([0-9A-F]{2}:){5}[0-9A-F]{2}$').hasMatch(normalizedMac)) {
+      return null;
+    }
+    if (_reviewerModeEnabled) {
+      return const OpenwallaActiveSchedule(name: 'Kids', endTime: '07:00');
+    }
+    try {
+      final output = await _runOpenwallaScheduler([
+        'active-for-mac',
+        normalizedMac,
+      ], context: context);
+      final parts = output.trim().split('|');
+      if (parts.length < 2 || parts[0].trim().isEmpty) return null;
+      return OpenwallaActiveSchedule(
+        name: parts[0].trim(),
+        endTime: parts[1].trim(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveDeviceSchedule(
+    OpenwallaDeviceSchedule schedule, {
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      notifyListeners();
+      return;
+    }
+    final args = [
+      'save',
+      schedule.isNew ? 'new' : schedule.id.toString(),
+      schedule.name,
+      schedule.startTime,
+      schedule.endTime,
+      schedule.enabled ? '1' : '0',
+      ...schedule.macAddresses.map(_normalizeMacAddress),
+    ];
+    await _runOpenwallaScheduler(args, context: context);
+    await fetchDashboardData();
+    notifyListeners();
+  }
+
+  Future<void> deleteDeviceSchedule(
+    OpenwallaDeviceSchedule schedule, {
+    BuildContext? context,
+  }) async {
+    if (schedule.isNew || _reviewerModeEnabled) return;
+    await _runOpenwallaScheduler([
+      'delete',
+      schedule.id.toString(),
+    ], context: context);
+    await fetchDashboardData();
+    notifyListeners();
+  }
+
+  Future<String> _runOpenwallaScheduler(
+    List<String> args, {
+    BuildContext? context,
+  }) async {
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      throw StateError('No selected router connection is available');
+    }
+    final result = await _apiService!.call(
+      router.ipAddress,
+      sysauth,
+      router.useHttps,
+      object: 'file',
+      method: 'exec',
+      params: {'command': '/usr/bin/openwalla-scheduler', 'params': args},
+      context: context,
+    );
+    return _commandOutput(result);
   }
 
   Future<void> setClientInternetBlocked(Client client, bool blocked) async {
@@ -8292,7 +8505,7 @@ class AppState extends ChangeNotifier {
     final escStaticIp = staticIpAddress.replaceAll("'", "''");
     final escDeviceIcon = deviceIcon.replaceAll("'", "''");
     const createSql =
-        "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline', static_ip TEXT NOT NULL DEFAULT '', icon TEXT NOT NULL DEFAULT '');";
+        "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline', static_ip TEXT NOT NULL DEFAULT '', icon TEXT NOT NULL DEFAULT '', scheduled_block INTEGER NOT NULL DEFAULT 0, schedule_until TEXT NOT NULL DEFAULT '');";
     final upsertSql =
         "INSERT INTO devices (mac, ip, hostname, static_ip, icon, last_seen, status) VALUES ('$escMac', '$escIp', '$escHostname', '$escStaticIp', '$escDeviceIcon', strftime('%s','now'), 'online') ON CONFLICT(mac) DO UPDATE SET hostname=excluded.hostname, ip=CASE WHEN excluded.ip != '' THEN excluded.ip ELSE devices.ip END, static_ip=excluded.static_ip, icon=excluded.icon, last_seen=excluded.last_seen;";
     return 'db="${_devicesDbExpression()}"; '
@@ -8302,6 +8515,8 @@ class AppState extends ChangeNotifier {
         '"\$sqlite" "\$db" ${_shellQuote(createSql)}; '
         '"\$sqlite" "\$db" "ALTER TABLE devices ADD COLUMN static_ip TEXT NOT NULL DEFAULT \'\';" 2>/dev/null || true; '
         '"\$sqlite" "\$db" "ALTER TABLE devices ADD COLUMN icon TEXT NOT NULL DEFAULT \'\';" 2>/dev/null || true; '
+        '"\$sqlite" "\$db" "ALTER TABLE devices ADD COLUMN scheduled_block INTEGER NOT NULL DEFAULT 0;" 2>/dev/null || true; '
+        '"\$sqlite" "\$db" "ALTER TABLE devices ADD COLUMN schedule_until TEXT NOT NULL DEFAULT \'\';" 2>/dev/null || true; '
         '"\$sqlite" "\$db" ${_shellQuote(upsertSql)}';
   }
 

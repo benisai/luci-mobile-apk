@@ -19,6 +19,7 @@ class Client {
   final String? staticIpAddress;
   final String status;
   final String? deviceIcon;
+  final String? scheduledBlockUntil;
 
   Client({
     required this.ipAddress,
@@ -39,6 +40,7 @@ class Client {
     this.staticIpAddress,
     this.status = 'online',
     this.deviceIcon,
+    this.scheduledBlockUntil,
   });
 
   // Helper function to determine connection type from MAC address or other data
@@ -209,6 +211,7 @@ class Client {
   }
 
   bool get isOffline => status.toLowerCase() == 'offline';
+  bool get hasScheduledBlock => status.toLowerCase() == 'block-scheduled';
 
   // Get formatted lease time (e.g., "2d 4h 30m")
   String get formattedLeaseTime {
@@ -267,6 +270,7 @@ class Client {
     String? staticIpAddress,
     String? status,
     String? deviceIcon,
+    String? scheduledBlockUntil,
   }) {
     return Client(
       ipAddress: ipAddress ?? this.ipAddress,
@@ -287,6 +291,7 @@ class Client {
       staticIpAddress: staticIpAddress ?? this.staticIpAddress,
       status: status ?? this.status,
       deviceIcon: deviceIcon ?? this.deviceIcon,
+      scheduledBlockUntil: scheduledBlockUntil ?? this.scheduledBlockUntil,
     );
   }
 }

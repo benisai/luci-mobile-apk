@@ -60,6 +60,7 @@ Individual features:
   devices          devices sqlite collector
   bandwidth        per-device bandwidth collector
   blocking         internet/parental blocking helper
+  scheduler        device group block scheduler
   conntrack        simple flow collector
   netify           detailed Netify flow collector
   quarantine       device quarantine helper service
@@ -127,6 +128,7 @@ feature_to_installer() {
 	devices) echo "install-devices-collector.sh" ;;
 	bandwidth) echo "install-device-bandwidth.sh" ;;
 	blocking) echo "install-internet-blocking.sh" ;;
+	scheduler) echo "install-scheduler.sh" ;;
 	conntrack) echo "install-conntrack.sh" ;;
 	netify) echo "install-netify.sh" ;;
 	quarantine) echo "install-quarantine.sh" ;;
@@ -151,6 +153,7 @@ canonical_feature() {
 	devices|device-db|devices-collector) echo "devices" ;;
 	bandwidth|device-bandwidth|device-bandwidth-collector) echo "bandwidth" ;;
 	blocking|internet-blocking|parental-blocking|paternal-pause) echo "blocking" ;;
+	scheduler|schedules|device-scheduler|block-scheduler) echo "scheduler" ;;
 	conntrack|simple-flow|simple-flows|connection-flows) echo "conntrack" ;;
 	netify|detailed-flow|detailed-flows) echo "netify" ;;
 	quarantine|device-quarantine) echo "quarantine" ;;
@@ -174,6 +177,7 @@ append_monitoring_features() {
 	append_feature devices
 	append_feature bandwidth
 	append_feature blocking
+	append_feature scheduler
 	append_feature state-sync
 }
 
