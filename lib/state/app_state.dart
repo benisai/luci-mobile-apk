@@ -2067,7 +2067,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchDashboardData() async {
+  Future<void> fetchDashboardData({bool allowAuthRetry = true}) async {
     if (_reviewerModeEnabled) {
       // For reviewer mode, return mock data immediately
       _isDashboardLoading = true;
@@ -2503,6 +2503,10 @@ class AppState extends ChangeNotifier {
         _updateThroughputOnly();
       });
     } catch (e) {
+      if (allowAuthRetry && await _tryRefreshDashboardSession(e)) {
+        return fetchDashboardData(allowAuthRetry: false);
+      }
+
       final errorMessage = e.toString();
       if (errorMessage.contains('Access denied')) {
         _dashboardError = 'Access Denied: Check RPC permissions for this user.';
@@ -2517,6 +2521,43 @@ class AppState extends ChangeNotifier {
       _isDashboardLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<bool> _tryRefreshDashboardSession(Object error) async {
+    if (!_looksLikeExpiredSession(error)) return false;
+
+    final router = _routerService?.selectedRouter;
+    if (router == null || _authService == null) return false;
+    if (router.username.trim().isEmpty || router.password.isEmpty) return false;
+
+    Logger.info('Dashboard RPC failed with a likely stale session. Reauthing.');
+    _httpClientManager.disposeClient(router.ipAddress, router.useHttps);
+
+    final loginSuccess = await _authService!.tryAutoLogin(
+      router.ipAddress,
+      router.username,
+      router.password,
+      router.useHttps,
+    );
+    if (!loginSuccess || _authService?.sysauth == null) return false;
+
+    final actualUseHttps = _authService!.useHttps;
+    if (actualUseHttps != router.useHttps) {
+      await updateRouter(router.copyWith(useHttps: actualUseHttps));
+    }
+
+    return true;
+  }
+
+  bool _looksLikeExpiredSession(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('access denied') ||
+        text.contains('permission denied') ||
+        text.contains('unauthorized') ||
+        text.contains('forbidden') ||
+        text.contains('invalid session') ||
+        text.contains('session') ||
+        text.contains('login');
   }
 
   Map<String, dynamic> _processDhcpLeases(Map<String, dynamic> rawDhcpData) {
