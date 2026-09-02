@@ -4,6 +4,8 @@ import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 
+enum _RulesPanel { openwalla, defaults }
+
 class RulesScreen extends ConsumerStatefulWidget {
   const RulesScreen({super.key});
 
@@ -12,15 +14,22 @@ class RulesScreen extends ConsumerStatefulWidget {
 }
 
 class _RulesScreenState extends ConsumerState<RulesScreen> {
+  final PageController _pageController = PageController();
   List<OpenwrtFirewallRule> _rules = const [];
+  int _panelIndex = 0;
   bool _isLoading = true;
-  bool _showOpenwrtRules = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadRules());
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadRules() async {
@@ -46,6 +55,15 @@ class _RulesScreenState extends ConsumerState<RulesScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  void _selectPanel(int index) {
+    setState(() => _panelIndex = index);
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Future<void> _setRuleEnabled(OpenwrtFirewallRule rule, bool enabled) async {
@@ -142,74 +160,213 @@ class _RulesScreenState extends ConsumerState<RulesScreen> {
       appBar: const LuciAppBar(title: 'Rules', showBack: true),
       body: SafeArea(
         top: false,
-        child: RefreshIndicator(
-          onRefresh: _loadRules,
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
-            children: [
-              Text(
-                'Firewall Rules',
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _formatCount(_rules.length),
-                style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.w900,
-                  height: 0.95,
-                ),
-              ),
-              const SizedBox(height: 18),
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 44),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (_error != null)
-                _RulesEmptyCard(message: _error!, action: _loadRules)
-              else if (_rules.isEmpty)
-                _RulesEmptyCard(
-                  message: 'No firewall rules found.',
-                  action: _loadRules,
-                )
-              else ...[
-                _RuleGroupHeader(
-                  title: 'Openwalla Rules',
-                  count: openwallaRules.length,
-                ),
-                if (openwallaRules.isEmpty)
-                  _RulesEmptyCard(
-                    message: 'No Openwalla rules found.',
-                    action: _loadRules,
-                  )
-                else
-                  ...openwallaRules.map(
-                    (rule) => _RuleCard(
-                      rule: rule,
-                      onTap: () => _showRuleDetails(rule),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Firewall Rules',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                const SizedBox(height: 10),
-                _RuleGroupHeader(
-                  title: 'OpenWrt Default Rules',
-                  count: openwrtRules.length,
-                  isExpanded: _showOpenwrtRules,
-                  onTap: () =>
-                      setState(() => _showOpenwrtRules = !_showOpenwrtRules),
-                ),
-                if (_showOpenwrtRules)
-                  ...openwrtRules.map(
-                    (rule) => _RuleCard(
-                      rule: rule,
-                      onTap: () => _showRuleDetails(rule),
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatCount(_rules.length),
+                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w900,
+                      height: 0.95,
                     ),
                   ),
-              ],
-            ],
+                ],
+              ),
+            ),
+            _RulesPanelSwitcher(
+              selectedIndex: _panelIndex,
+              onSelected: _selectPanel,
+            ),
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                onPageChanged: (index) => setState(() => _panelIndex = index),
+                children: [
+                  _buildPanel(
+                    panel: _RulesPanel.openwalla,
+                    title: 'Openwalla Rules',
+                    count: openwallaRules.length,
+                    rules: openwallaRules,
+                    emptyMessage: 'No Openwalla rules found.',
+                  ),
+                  _buildPanel(
+                    panel: _RulesPanel.defaults,
+                    title: 'Default Rules',
+                    count: openwrtRules.length,
+                    rules: openwrtRules,
+                    emptyMessage: 'No default OpenWrt rules found.',
+                  ),
+                ],
+              ),
+            ),
+            _RulesPanelDots(count: 2, currentIndex: _panelIndex),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPanel({
+    required _RulesPanel panel,
+    required String title,
+    required int count,
+    required List<OpenwrtFirewallRule> rules,
+    required String emptyMessage,
+  }) {
+    final isOpenwallaPanel = panel == _RulesPanel.openwalla;
+
+    return RefreshIndicator(
+      onRefresh: _loadRules,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        children: [
+          _RuleGroupHeader(title: title, count: count),
+          if (isOpenwallaPanel)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(2, 0, 2, 10),
+              child: Text(
+                'Rules created by Openwalla are shown here first.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0,
+                ),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(2, 0, 2, 10),
+              child: Text(
+                'OpenWrt default firewall rules are separated for easier review.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0,
+                ),
+              ),
+            ),
+          if (_isLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 44),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_error != null)
+            _RulesEmptyCard(message: _error!, action: _loadRules)
+          else if (_rules.isEmpty)
+            _RulesEmptyCard(
+              message: 'No firewall rules found.',
+              action: _loadRules,
+            )
+          else if (rules.isEmpty)
+            _RulesEmptyCard(message: emptyMessage, action: _loadRules)
+          else
+            ...rules.map(
+              (rule) =>
+                  _RuleCard(rule: rule, onTap: () => _showRuleDetails(rule)),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RulesPanelSwitcher extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  const _RulesPanelSwitcher({
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    const tabs = ['Openwalla', 'Default'];
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.36),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Row(
+        children: List.generate(tabs.length, (index) {
+          final selected = selectedIndex == index;
+          return Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(7),
+              onTap: () => onSelected(index),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: selected ? colorScheme.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(
+                  tabs[index],
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: selected
+                        ? colorScheme.onPrimary
+                        : colorScheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _RulesPanelDots extends StatelessWidget {
+  final int count;
+  final int currentIndex;
+
+  const _RulesPanelDots({required this.count, required this.currentIndex});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(
+        count,
+        (index) => AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          width: index == currentIndex ? 16 : 6,
+          height: 6,
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          decoration: BoxDecoration(
+            color: index == currentIndex
+                ? colorScheme.primary
+                : colorScheme.onSurfaceVariant.withValues(alpha: 0.34),
+            borderRadius: BorderRadius.circular(999),
           ),
         ),
       ),
@@ -220,20 +377,13 @@ class _RulesScreenState extends ConsumerState<RulesScreen> {
 class _RuleGroupHeader extends StatelessWidget {
   final String title;
   final int count;
-  final bool? isExpanded;
-  final VoidCallback? onTap;
 
-  const _RuleGroupHeader({
-    required this.title,
-    required this.count,
-    this.isExpanded,
-    this.onTap,
-  });
+  const _RuleGroupHeader({required this.title, required this.count});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final content = Padding(
+    return Padding(
       padding: const EdgeInsets.fromLTRB(2, 12, 2, 8),
       child: Row(
         children: [
@@ -247,18 +397,9 @@ class _RuleGroupHeader extends StatelessWidget {
               ),
             ),
           ),
-          if (isExpanded != null)
-            Icon(
-              isExpanded!
-                  ? Icons.expand_less_rounded
-                  : Icons.expand_more_rounded,
-              color: colorScheme.onSurfaceVariant,
-            ),
         ],
       ),
     );
-    if (onTap == null) return content;
-    return InkWell(onTap: onTap, child: content);
   }
 }
 
