@@ -334,14 +334,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   InputDecoration _loginInputDecoration({
     required BuildContext context,
-    required String label,
     required IconData icon,
     String? helperText,
     Widget? suffixIcon,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     return InputDecoration(
-      labelText: label,
+      isDense: false,
       helperText: helperText,
       helperMaxLines: 2,
       helperStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -372,6 +371,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           width: 1.4,
         ),
       ),
+    );
+  }
+
+  Widget _loginField({
+    Key? key,
+    required BuildContext context,
+    required String label,
+    required Widget child,
+  }) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      key: key,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 22, bottom: 8),
+          child: Text(
+            label,
+            style: textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.86),
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+        ),
+        child,
+      ],
     );
   }
 
@@ -565,52 +592,54 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                             CrossAxisAlignment.stretch,
                                         mainAxisSize: MainAxisSize.min,
                                         children: <Widget>[
-                                          Tooltip(
-                                            message:
-                                                'Enter the IP address, hostname, or full URL of your router',
-                                            child: TextFormField(
-                                              controller: _ipController,
-                                              autofocus: true,
-                                              autofillHints: const [
-                                                AutofillHints.url,
-                                                AutofillHints.username,
-                                              ],
-                                              decoration: _loginInputDecoration(
-                                                context: context,
-                                                label: 'Router Address',
-                                                icon: Icons.shield_outlined,
-                                                helperText:
-                                                    '192.168.1.1, router.local:8080, or https://192.168.1.1',
-                                                suffixIcon:
-                                                    appState.routers.isEmpty
-                                                    ? null
-                                                    : IconButton(
-                                                        tooltip:
-                                                            'Saved routers',
-                                                        onPressed:
-                                                            _showSavedRoutersSheet,
-                                                        icon: const Icon(
-                                                          Icons
-                                                              .arrow_drop_down_rounded,
+                                          _loginField(
+                                            context: context,
+                                            label: 'Router Address',
+                                            child: Tooltip(
+                                              message:
+                                                  'Enter the IP address, hostname, or full URL of your router',
+                                              child: TextFormField(
+                                                controller: _ipController,
+                                                autofocus: true,
+                                                autofillHints: const [
+                                                  AutofillHints.url,
+                                                  AutofillHints.username,
+                                                ],
+                                                decoration: _loginInputDecoration(
+                                                  context: context,
+                                                  icon: Icons.shield_outlined,
+                                                  helperText:
+                                                      '192.168.1.1, router.local:8080, or https://192.168.1.1',
+                                                  suffixIcon:
+                                                      appState.routers.isEmpty
+                                                      ? null
+                                                      : IconButton(
+                                                          tooltip:
+                                                              'Saved routers',
+                                                          onPressed:
+                                                              _showSavedRoutersSheet,
+                                                          icon: const Icon(
+                                                            Icons
+                                                                .arrow_drop_down_rounded,
+                                                          ),
                                                         ),
-                                                      ),
+                                                ),
+                                                textInputAction:
+                                                    TextInputAction.next,
+                                                validator: (value) {
+                                                  if (value == null ||
+                                                      value.isEmpty) {
+                                                    return 'Please enter the router address';
+                                                  }
+                                                  final parsed =
+                                                      UrlParser.parse(value);
+                                                  if (!parsed.isValid) {
+                                                    return parsed.error ??
+                                                        'Invalid address format';
+                                                  }
+                                                  return null;
+                                                },
                                               ),
-                                              textInputAction:
-                                                  TextInputAction.next,
-                                              validator: (value) {
-                                                if (value == null ||
-                                                    value.isEmpty) {
-                                                  return 'Please enter the router address';
-                                                }
-                                                final parsed = UrlParser.parse(
-                                                  value,
-                                                );
-                                                if (!parsed.isValid) {
-                                                  return parsed.error ??
-                                                      'Invalid address format';
-                                                }
-                                                return null;
-                                              },
                                             ),
                                           ),
                                           const SizedBox(height: 22),
@@ -619,74 +648,82 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                               milliseconds: 180,
                                             ),
                                             child: _advancedLogin
-                                                ? Tooltip(
+                                                ? _loginField(
                                                     key: const ValueKey(
                                                       'username',
                                                     ),
-                                                    message:
-                                                        'Enter your router username',
-                                                    child: TextFormField(
-                                                      controller:
-                                                          _usernameController,
-                                                      autofillHints: const [
-                                                        AutofillHints.username,
-                                                      ],
-                                                      decoration:
-                                                          _loginInputDecoration(
-                                                            context: context,
-                                                            label: 'Username',
-                                                            icon: Icons
-                                                                .person_outline,
-                                                            helperText:
-                                                                'Default is root',
-                                                          ),
-                                                      textInputAction:
-                                                          TextInputAction.next,
-                                                      validator: (value) {
-                                                        if (value == null ||
-                                                            value.isEmpty) {
-                                                          return 'Please enter the username';
-                                                        }
-                                                        return null;
-                                                      },
+                                                    context: context,
+                                                    label: 'Username',
+                                                    child: Tooltip(
+                                                      message:
+                                                          'Enter your router username',
+                                                      child: TextFormField(
+                                                        controller:
+                                                            _usernameController,
+                                                        autofillHints: const [
+                                                          AutofillHints
+                                                              .username,
+                                                        ],
+                                                        decoration:
+                                                            _loginInputDecoration(
+                                                              context: context,
+                                                              icon: Icons
+                                                                  .person_outline,
+                                                              helperText:
+                                                                  'Default is root',
+                                                            ),
+                                                        textInputAction:
+                                                            TextInputAction
+                                                                .next,
+                                                        validator: (value) {
+                                                          if (value == null ||
+                                                              value.isEmpty) {
+                                                            return 'Please enter the username';
+                                                          }
+                                                          return null;
+                                                        },
+                                                      ),
                                                     ),
                                                   )
                                                 : const SizedBox.shrink(),
                                           ),
                                           if (_advancedLogin)
                                             const SizedBox(height: 18),
-                                          Tooltip(
-                                            message:
-                                                'Enter your router password',
-                                            child: TextFormField(
-                                              controller: _passwordController,
-                                              obscureText: !_passwordVisible,
-                                              autofillHints: const [
-                                                AutofillHints.password,
-                                              ],
-                                              decoration: _loginInputDecoration(
-                                                context: context,
-                                                label: 'Password',
-                                                icon: Icons.lock_outline,
-                                                suffixIcon: IconButton(
-                                                  icon: Icon(
-                                                    _passwordVisible
-                                                        ? Icons
-                                                              .visibility_outlined
-                                                        : Icons
-                                                              .visibility_off_outlined,
+                                          _loginField(
+                                            context: context,
+                                            label: 'Password',
+                                            child: Tooltip(
+                                              message:
+                                                  'Enter your router password',
+                                              child: TextFormField(
+                                                controller: _passwordController,
+                                                obscureText: !_passwordVisible,
+                                                autofillHints: const [
+                                                  AutofillHints.password,
+                                                ],
+                                                decoration: _loginInputDecoration(
+                                                  context: context,
+                                                  icon: Icons.lock_outline,
+                                                  suffixIcon: IconButton(
+                                                    icon: Icon(
+                                                      _passwordVisible
+                                                          ? Icons
+                                                                .visibility_outlined
+                                                          : Icons
+                                                                .visibility_off_outlined,
+                                                    ),
+                                                    onPressed: () => setState(
+                                                      () => _passwordVisible =
+                                                          !_passwordVisible,
+                                                    ),
+                                                    tooltip: _passwordVisible
+                                                        ? 'Hide password'
+                                                        : 'Show password',
                                                   ),
-                                                  onPressed: () => setState(
-                                                    () => _passwordVisible =
-                                                        !_passwordVisible,
-                                                  ),
-                                                  tooltip: _passwordVisible
-                                                      ? 'Hide password'
-                                                      : 'Show password',
                                                 ),
+                                                textInputAction:
+                                                    TextInputAction.done,
                                               ),
-                                              textInputAction:
-                                                  TextInputAction.done,
                                             ),
                                           ),
                                           const SizedBox(height: 18),
@@ -739,8 +776,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                                 ),
                                                 label: Text(
                                                   _advancedLogin
-                                                      ? 'Standard'
-                                                      : 'Advanced',
+                                                      ? 'Hide User'
+                                                      : 'Show User',
                                                 ),
                                               ),
                                             ],
