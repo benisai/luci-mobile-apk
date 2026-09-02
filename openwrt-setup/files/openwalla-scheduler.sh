@@ -52,6 +52,13 @@ is_valid_mac() {
 	printf "%s" "$1" | grep -Eq '^([0-9A-F]{2}:){5}[0-9A-F]{2}$'
 }
 
+is_number() {
+	case "$1" in
+	""|*[!0-9]*) return 1 ;;
+	*) return 0 ;;
+	esac
+}
+
 to_minutes() {
 	value="$1"
 	hour="${value%%:*}"
@@ -103,22 +110,30 @@ init_db() {
 	sql_exec "CREATE TABLE IF NOT EXISTS schedule_groups (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL DEFAULT 'Kids');"
 	sql_exec "CREATE TABLE IF NOT EXISTS schedule_members (group_id INTEGER NOT NULL, mac TEXT NOT NULL, PRIMARY KEY(group_id, mac));"
 	sql_exec "CREATE TABLE IF NOT EXISTS schedules (id INTEGER PRIMARY KEY AUTOINCREMENT, group_id INTEGER NOT NULL, start_time TEXT NOT NULL DEFAULT '21:00', end_time TEXT NOT NULL DEFAULT '07:00', enabled INTEGER NOT NULL DEFAULT 1);"
+	sql_exec "CREATE TABLE IF NOT EXISTS schedule_pauses (group_id INTEGER PRIMARY KEY, pause_until INTEGER NOT NULL DEFAULT 0);"
 	sql_exec "CREATE INDEX IF NOT EXISTS idx_schedule_members_mac ON schedule_members(mac);"
 	sql_exec "CREATE INDEX IF NOT EXISTS idx_schedules_group ON schedules(group_id);"
+	sql_exec "CREATE INDEX IF NOT EXISTS idx_schedule_pauses_until ON schedule_pauses(pause_until);"
 }
 
 list_schedules() {
 	init_db || return 1
-	sql_exec "SELECT g.id, g.name, COALESCE(s.start_time,''), COALESCE(s.end_time,''), COALESCE(s.enabled,0), COALESCE(group_concat(m.mac, ','), '') FROM schedule_groups g LEFT JOIN schedules s ON s.group_id = g.id LEFT JOIN schedule_members m ON m.group_id = g.id GROUP BY g.id ORDER BY lower(g.name);"
+	current="$(date +%s)"
+	sql_exec "DELETE FROM schedule_pauses WHERE pause_until <= $current;" >/dev/null 2>&1 || true
+	sql_exec "SELECT g.id, g.name, COALESCE(s.start_time,''), COALESCE(s.end_time,''), COALESCE(s.enabled,0), COALESCE(group_concat(m.mac, ','), ''), COALESCE(p.pause_until,0) FROM schedule_groups g LEFT JOIN schedules s ON s.group_id = g.id LEFT JOIN schedule_members m ON m.group_id = g.id LEFT JOIN schedule_pauses p ON p.group_id = g.id GROUP BY g.id ORDER BY lower(g.name);"
 }
 
 active_for_mac() {
 	init_db || return 1
+	current="$(date +%s)"
+	sql_exec "DELETE FROM schedule_pauses WHERE pause_until <= $current;" >/dev/null 2>&1 || true
 	mac="$(normalize_mac "$1")"
 	esc_mac="$(sql_escape "$mac")"
-	sql_exec "SELECT g.name, s.start_time, s.end_time FROM schedules s JOIN schedule_groups g ON g.id = s.group_id JOIN schedule_members m ON m.group_id = g.id WHERE s.enabled = 1 AND upper(m.mac) = '$esc_mac';" |
-	while IFS='|' read -r name start_time end_time; do
+	sql_exec "SELECT g.name, s.start_time, s.end_time, COALESCE(p.pause_until,0) FROM schedules s JOIN schedule_groups g ON g.id = s.group_id JOIN schedule_members m ON m.group_id = g.id LEFT JOIN schedule_pauses p ON p.group_id = g.id WHERE s.enabled = 1 AND upper(m.mac) = '$esc_mac';" |
+	while IFS='|' read -r name start_time end_time pause_until; do
 		[ -n "$name" ] || continue
+		is_number "$pause_until" || pause_until=0
+		[ "$pause_until" -gt "$current" ] && continue
 		if time_is_active "$start_time" "$end_time"; then
 			printf "%s|%s\n" "$name" "$end_time"
 			break
@@ -170,7 +185,41 @@ delete_schedule() {
 	id="$1"
 	sql_exec "DELETE FROM schedule_members WHERE group_id=$id;"
 	sql_exec "DELETE FROM schedules WHERE group_id=$id;"
+	sql_exec "DELETE FROM schedule_pauses WHERE group_id=$id;"
 	sql_exec "DELETE FROM schedule_groups WHERE id=$id;"
+	apply_schedules >/dev/null 2>&1 || true
+}
+
+pause_schedule() {
+	init_db || return 1
+	id="$1"
+	minutes="$2"
+	is_number "$id" || {
+		echo "invalid schedule id" >&2
+		return 1
+	}
+	is_number "$minutes" || {
+		echo "invalid pause minutes" >&2
+		return 1
+	}
+	[ "$minutes" -gt 0 ] || {
+		echo "pause minutes must be greater than 0" >&2
+		return 1
+	}
+	pause_until=$(($(date +%s) + minutes * 60))
+	sql_exec "INSERT INTO schedule_pauses (group_id, pause_until) VALUES ($id, $pause_until) ON CONFLICT(group_id) DO UPDATE SET pause_until=excluded.pause_until;"
+	apply_schedules >/dev/null 2>&1 || true
+	echo "$pause_until"
+}
+
+resume_schedule() {
+	init_db || return 1
+	id="$1"
+	is_number "$id" || {
+		echo "invalid schedule id" >&2
+		return 1
+	}
+	sql_exec "DELETE FROM schedule_pauses WHERE group_id=$id;"
 	apply_schedules >/dev/null 2>&1 || true
 }
 
@@ -200,11 +249,15 @@ add_schedule_rule() {
 
 apply_schedules() {
 	init_db || return 1
+	current="$(date +%s)"
+	sql_exec "DELETE FROM schedule_pauses WHERE pause_until <= $current;" >/dev/null 2>&1 || true
 	active="/tmp/.openwalla-schedule-active.$$"
 	: >"$active"
-	sql_exec "SELECT g.name, s.start_time, s.end_time, m.mac FROM schedules s JOIN schedule_groups g ON g.id = s.group_id JOIN schedule_members m ON m.group_id = g.id WHERE s.enabled = 1;" |
-	while IFS='|' read -r name start_time end_time mac; do
+	sql_exec "SELECT g.name, s.start_time, s.end_time, m.mac, COALESCE(p.pause_until,0) FROM schedules s JOIN schedule_groups g ON g.id = s.group_id JOIN schedule_members m ON m.group_id = g.id LEFT JOIN schedule_pauses p ON p.group_id = g.id WHERE s.enabled = 1;" |
+	while IFS='|' read -r name start_time end_time mac pause_until; do
 		[ -n "$mac" ] || continue
+		is_number "$pause_until" || pause_until=0
+		[ "$pause_until" -gt "$current" ] && continue
 		if time_is_active "$start_time" "$end_time"; then
 			printf "%s|%s|%s\n" "$(normalize_mac "$mac")" "$name" "$end_time" >>"$active"
 		fi
@@ -245,11 +298,19 @@ delete)
 	shift
 	delete_schedule "$@"
 	;;
+pause)
+	shift
+	pause_schedule "$@"
+	;;
+resume)
+	shift
+	resume_schedule "$@"
+	;;
 apply|--apply)
 	apply_schedules
 	;;
 *)
-	echo "usage: $0 {init-db|list|active-for-mac MAC|save ID NAME START END ENABLED MAC...|delete ID|apply}" >&2
+	echo "usage: $0 {init-db|list|active-for-mac MAC|save ID NAME START END ENABLED MAC...|delete ID|pause ID MINUTES|resume ID|apply}" >&2
 	exit 1
 	;;
 esac

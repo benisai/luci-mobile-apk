@@ -67,6 +67,48 @@ class _SchedulerScreenState extends ConsumerState<SchedulerScreen> {
     if (saved == true) await _load();
   }
 
+  Future<void> _pauseSchedule(
+    OpenwallaDeviceSchedule schedule,
+    Duration duration,
+  ) async {
+    try {
+      await ref
+          .read(appStateProvider)
+          .pauseDeviceSchedule(schedule, duration, context: context);
+      if (!mounted) return;
+      final label = duration.inMinutes >= 60
+          ? '${duration.inHours} hour${duration.inHours == 1 ? '' : 's'}'
+          : '${duration.inMinutes} minutes';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Paused ${schedule.name} for $label.')),
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to pause schedule: $e')));
+    }
+  }
+
+  Future<void> _resumeSchedule(OpenwallaDeviceSchedule schedule) async {
+    try {
+      await ref
+          .read(appStateProvider)
+          .resumeDeviceSchedule(schedule, context: context);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Resumed ${schedule.name}.')));
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to resume schedule: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -132,6 +174,8 @@ class _SchedulerScreenState extends ConsumerState<SchedulerScreen> {
                 (schedule) => _ScheduleCard(
                   schedule: schedule,
                   onTap: () => _openEditor(schedule),
+                  onPause: (duration) => _pauseSchedule(schedule, duration),
+                  onResume: () => _resumeSchedule(schedule),
                 ),
               ),
           ],
@@ -144,8 +188,25 @@ class _SchedulerScreenState extends ConsumerState<SchedulerScreen> {
 class _ScheduleCard extends StatelessWidget {
   final OpenwallaDeviceSchedule schedule;
   final VoidCallback onTap;
+  final ValueChanged<Duration> onPause;
+  final VoidCallback onResume;
 
-  const _ScheduleCard({required this.schedule, required this.onTap});
+  const _ScheduleCard({
+    required this.schedule,
+    required this.onTap,
+    required this.onPause,
+    required this.onResume,
+  });
+
+  String _formatPauseUntil() {
+    final dateTime = DateTime.fromMillisecondsSinceEpoch(
+      schedule.pauseUntil * 1000,
+    ).toLocal();
+    final hour12 = dateTime.hour % 12 == 0 ? 12 : dateTime.hour % 12;
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final suffix = dateTime.hour >= 12 ? 'PM' : 'AM';
+    return '$hour12:$minute $suffix';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -153,6 +214,10 @@ class _ScheduleCard extends StatelessWidget {
     final activeColor = schedule.enabled
         ? colorScheme.primary
         : colorScheme.onSurfaceVariant;
+    final isPaused = schedule.isPaused;
+    final subtitle = isPaused
+        ? 'Paused until ${_formatPauseUntil()}'
+        : '${schedule.startTime} to ${schedule.endTime} • ${schedule.macAddresses.length} devices';
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -184,16 +249,52 @@ class _ScheduleCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${schedule.startTime} to ${schedule.endTime} • ${schedule.macAddresses.length} devices',
+                      subtitle,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
+                        color: isPaused
+                            ? colorScheme.primary
+                            : colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded),
+              PopupMenuButton<String>(
+                tooltip: 'Schedule actions',
+                icon: const Icon(Icons.more_horiz_rounded),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'pause30':
+                      onPause(const Duration(minutes: 30));
+                    case 'pause60':
+                      onPause(const Duration(hours: 1));
+                    case 'pause120':
+                      onPause(const Duration(hours: 2));
+                    case 'resume':
+                      onResume();
+                  }
+                },
+                itemBuilder: (context) => [
+                  if (isPaused)
+                    const PopupMenuItem(
+                      value: 'resume',
+                      child: Text('Resume now'),
+                    ),
+                  const PopupMenuItem(
+                    value: 'pause30',
+                    child: Text('Pause 30 minutes'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'pause60',
+                    child: Text('Pause 1 hour'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'pause120',
+                    child: Text('Pause 2 hours'),
+                  ),
+                ],
+              ),
             ],
           ),
         ),

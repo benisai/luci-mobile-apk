@@ -801,6 +801,7 @@ class OpenwallaDeviceSchedule {
   final String endTime;
   final bool enabled;
   final List<String> macAddresses;
+  final int pauseUntil;
 
   const OpenwallaDeviceSchedule({
     required this.id,
@@ -809,9 +810,15 @@ class OpenwallaDeviceSchedule {
     required this.endTime,
     required this.enabled,
     required this.macAddresses,
+    this.pauseUntil = 0,
   });
 
   bool get isNew => id <= 0;
+
+  bool get isPaused {
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    return pauseUntil > now;
+  }
 }
 
 class OpenwallaActiveSchedule {
@@ -8151,6 +8158,7 @@ class AppState extends ChangeNotifier {
               .map(_normalizeMacAddress)
               .where((mac) => mac.isNotEmpty)
               .toList(),
+          pauseUntil: parts.length > 6 ? int.tryParse(parts[6].trim()) ?? 0 : 0,
         ),
       );
     }
@@ -8202,6 +8210,35 @@ class AppState extends ChangeNotifier {
       ...schedule.macAddresses.map(_normalizeMacAddress),
     ];
     await _runOpenwallaScheduler(args, context: context);
+    await fetchDashboardData();
+    notifyListeners();
+  }
+
+  Future<void> pauseDeviceSchedule(
+    OpenwallaDeviceSchedule schedule,
+    Duration duration, {
+    BuildContext? context,
+  }) async {
+    if (schedule.isNew || _reviewerModeEnabled) return;
+    final minutes = duration.inMinutes.clamp(1, 10080);
+    await _runOpenwallaScheduler([
+      'pause',
+      schedule.id.toString(),
+      minutes.toString(),
+    ], context: context);
+    await fetchDashboardData();
+    notifyListeners();
+  }
+
+  Future<void> resumeDeviceSchedule(
+    OpenwallaDeviceSchedule schedule, {
+    BuildContext? context,
+  }) async {
+    if (schedule.isNew || _reviewerModeEnabled) return;
+    await _runOpenwallaScheduler([
+      'resume',
+      schedule.id.toString(),
+    ], context: context);
     await fetchDashboardData();
     notifyListeners();
   }
