@@ -13,6 +13,7 @@ import 'package:luci_mobile/screens/clients_screen.dart';
 import 'package:luci_mobile/screens/dns_screen.dart';
 import 'package:luci_mobile/screens/flows_screen.dart';
 import 'package:luci_mobile/screens/interfaces_screen.dart';
+import 'package:luci_mobile/screens/live_throughput_screen.dart';
 import 'package:luci_mobile/screens/network_performance_screen.dart';
 import 'package:luci_mobile/screens/notifications_screen.dart';
 import 'package:luci_mobile/screens/rules_screen.dart';
@@ -869,8 +870,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       ),
     );
 
-    // Always return the card without fixed height - let parent control sizing
-    return card;
+    return InkWell(
+      borderRadius: BorderRadius.circular(_openwallaRadius),
+      onTap: () {
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const LiveThroughputScreen()));
+      },
+      child: card,
+    );
   }
 
   Widget _buildSpeedIndicator(

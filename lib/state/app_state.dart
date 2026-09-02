@@ -766,6 +766,20 @@ class NlbwProtocolUsage {
   int get totalBytes => downloadBytes + uploadBytes;
 }
 
+class LiveDeviceTrafficCounter {
+  final String ip;
+  final String mac;
+  final int downloadBytes;
+  final int uploadBytes;
+
+  const LiveDeviceTrafficCounter({
+    required this.ip,
+    required this.mac,
+    required this.downloadBytes,
+    required this.uploadBytes,
+  });
+}
+
 class OpenwallaDeviceRecord {
   final String mac;
   final String ip;
@@ -3428,6 +3442,88 @@ class AppState extends ChangeNotifier {
       return a.hostname.toLowerCase().compareTo(b.hostname.toLowerCase());
     });
     return clients;
+  }
+
+  Future<List<LiveDeviceTrafficCounter>> fetchLiveDeviceTrafficCounters({
+    BuildContext? context,
+  }) async {
+    if (_reviewerModeEnabled) {
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      return [
+        LiveDeviceTrafficCounter(
+          ip: '10.0.0.21',
+          mac: '60:1D:9D:A9:1D:25',
+          downloadBytes: 300000000 + (now * 180000),
+          uploadBytes: 12000000 + (now * 12000),
+        ),
+        LiveDeviceTrafficCounter(
+          ip: '10.0.0.42',
+          mac: '96:72:CC:DC:FA:66',
+          downloadBytes: 160000000 + (now * 92000),
+          uploadBytes: 9000000 + (now * 8500),
+        ),
+        LiveDeviceTrafficCounter(
+          ip: '10.0.0.77',
+          mac: 'AA:BB:CC:DD:EE:77',
+          downloadBytes: 60000000 + (now * 14000),
+          uploadBytes: 5000000 + (now * 4000),
+        ),
+      ];
+    }
+
+    final router = _routerService?.selectedRouter;
+    final sysauth = _authService?.sysauth;
+    if (router == null || sysauth == null || _apiService == null) {
+      return const [];
+    }
+
+    try {
+      final result = await _apiService!.call(
+        router.ipAddress,
+        sysauth,
+        router.useHttps,
+        object: 'file',
+        method: 'exec',
+        params: {
+          'command': '/usr/bin/openwalla-device-traffic-summary',
+          'params': const [],
+        },
+        context: context,
+      );
+      return _parseLiveDeviceTrafficCounters(_commandOutput(result));
+    } catch (e, stack) {
+      Logger.warning('Optional live device traffic fetch failed: $e');
+      Logger.debug('Optional live device traffic stack: $stack');
+      return const [];
+    }
+  }
+
+  List<LiveDeviceTrafficCounter> _parseLiveDeviceTrafficCounters(
+    String output,
+  ) {
+    final trimmed = output.trim();
+    if (trimmed.isEmpty || !trimmed.startsWith('[')) return const [];
+
+    try {
+      final decoded = jsonDecode(trimmed);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((row) {
+            return LiveDeviceTrafficCounter(
+              ip: row['ip']?.toString() ?? '',
+              mac: _normalizeMacAddress(row['mac']?.toString() ?? ''),
+              downloadBytes: _asInt(row['rx_bytes']),
+              uploadBytes: _asInt(row['tx_bytes']),
+            );
+          })
+          .where((row) => row.ip.isNotEmpty)
+          .toList();
+    } catch (e, stack) {
+      Logger.debug('Unable to parse live device traffic output: $e');
+      Logger.debug('Live device traffic parse stack: $stack');
+      return const [];
+    }
   }
 
   Future<bool> _sqliteTableExists({
