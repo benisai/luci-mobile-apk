@@ -220,8 +220,32 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     return '$protocol • $user';
   }
 
+  Future<bool> _confirmDeleteSavedRouter(model.Router router) async {
+    final label = router.lastKnownHostname?.isNotEmpty == true
+        ? router.lastKnownHostname!
+        : router.ipAddress;
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Delete saved router?'),
+            content: Text('Remove $label from saved routers on this device?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   Future<void> _showSavedRoutersSheet() async {
-    final routers = ref.read(appStateProvider).routers;
+    var routers = List<model.Router>.of(ref.read(appStateProvider).routers);
     if (routers.isEmpty) return;
 
     final selected = await showModalBottomSheet<model.Router>(
@@ -234,65 +258,112 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       builder: (context) {
         final theme = Theme.of(context);
         final colorScheme = theme.colorScheme;
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.router_rounded, color: colorScheme.primary),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Saved Routers',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                ...routers.map((router) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Material(
-                      color: colorScheme.surfaceContainerHighest.withValues(
-                        alpha: 0.26,
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                      child: ListTile(
-                        onTap: () => Navigator.of(context).pop(router),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        leading: Icon(
-                          Icons.router_rounded,
-                          color: colorScheme.primary,
-                        ),
-                        title: Text(
-                          router.lastKnownHostname?.isNotEmpty == true
-                              ? router.lastKnownHostname!
-                              : router.ipAddress,
-                          style: theme.textTheme.titleMedium?.copyWith(
+                    Row(
+                      children: [
+                        Icon(Icons.router_rounded, color: colorScheme.primary),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Saved Routers',
+                          style: theme.textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        subtitle: Text(_routerSubtitle(router)),
-                        trailing: const Icon(Icons.chevron_right_rounded),
-                      ),
+                      ],
                     ),
-                  );
-                }),
-              ],
-            ),
-          ),
+                    const SizedBox(height: 14),
+                    ...routers.map((router) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Material(
+                          color: colorScheme.surfaceContainerHighest.withValues(
+                            alpha: 0.26,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          child: ListTile(
+                            onTap: () => Navigator.of(context).pop(router),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            leading: Icon(
+                              Icons.router_rounded,
+                              color: colorScheme.primary,
+                            ),
+                            title: Text(
+                              router.lastKnownHostname?.isNotEmpty == true
+                                  ? router.lastKnownHostname!
+                                  : router.ipAddress,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            subtitle: Text(_routerSubtitle(router)),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  tooltip: 'Delete saved router',
+                                  onPressed: () async {
+                                    final confirmed =
+                                        await _confirmDeleteSavedRouter(router);
+                                    if (!confirmed ||
+                                        !mounted ||
+                                        !context.mounted) {
+                                      return;
+                                    }
+                                    await ref
+                                        .read(appStateProvider)
+                                        .removeRouter(router.id);
+                                    if (!mounted || !context.mounted) return;
+                                    final updatedRouters = ref
+                                        .read(appStateProvider)
+                                        .routers;
+                                    if (updatedRouters.isEmpty) {
+                                      Navigator.of(context).pop();
+                                      return;
+                                    }
+                                    setSheetState(() {
+                                      routers = List<model.Router>.of(
+                                        updatedRouters,
+                                      );
+                                    });
+                                  },
+                                  icon: Icon(
+                                    Icons.delete_outline_rounded,
+                                    color: colorScheme.error,
+                                  ),
+                                ),
+                                const Icon(Icons.chevron_right_rounded),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
 
-    if (selected == null || !mounted) return;
+    if (selected == null || !mounted) {
+      final selectedRouter = ref.read(appStateProvider).selectedRouter;
+      if (selectedRouter != null && mounted) {
+        setState(() => _prefillRouter(selectedRouter));
+      }
+      return;
+    }
     setState(() => _prefillRouter(selected));
   }
 
