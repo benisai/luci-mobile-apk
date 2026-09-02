@@ -32,6 +32,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   Future<List<NlbwDeviceUsage>>? _topDevicesFuture;
   Future<List<NlbwProtocolUsage>>? _protocolUsageFuture;
   final Map<String, Future<List<VnstatUsageSample>>> _usageFutures = {};
+  bool _isInstallingSupport = false;
   final PageController _usageRangeController = PageController(
     initialPage: _StatsUsageRange.day.index,
   );
@@ -106,8 +107,10 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
                       title: 'Statistics tools are not installed',
                       message:
                           'Install vnStat or nlbwmon with the Openwalla helper scripts to enable usage graphs.',
-                      buttonLabel: 'Open Router Setup',
-                      onPressed: _openRouterSetup,
+                      buttonLabel: 'Install Statistics Tools',
+                      isInstalling: _isInstallingSupport,
+                      onPressed: _installStatisticsSupport,
+                      onRouterSetup: _openRouterSetup,
                     );
                   }
                   return FutureBuilder<MonthlyUsageSettings>(
@@ -171,6 +174,37 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (context) => const RouterSetupScreen()));
+  }
+
+  Future<void> _installStatisticsSupport() async {
+    setState(() => _isInstallingSupport = true);
+    try {
+      await ref.read(appStateProvider).installOpenwallaSetupFeatures(
+        const ['usage', 'bandwidth'],
+        postInstallCheck:
+            'if command -v vnstat >/dev/null 2>&1 || command -v nlbw >/dev/null 2>&1 || command -v nlbwmon >/dev/null 2>&1; then echo OK; else exit 1; fi',
+      );
+      if (!mounted) return;
+      setState(() {
+        _usageFutures.clear();
+        _monthlyUsageSettingsFuture = null;
+        _statisticsSupportFuture = null;
+        _topDevicesFuture = null;
+        _protocolUsageFuture = null;
+      });
+      await ref.read(appStateProvider).fetchDashboardData();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Statistics tools installed.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Install failed: $e')));
+    } finally {
+      if (mounted) setState(() => _isInstallingSupport = false);
+    }
   }
 
   void _openUsageSettings() {
@@ -1135,13 +1169,17 @@ class _SetupRequiredCard extends StatelessWidget {
   final String title;
   final String message;
   final String buttonLabel;
+  final bool isInstalling;
   final VoidCallback onPressed;
+  final VoidCallback onRouterSetup;
 
   const _SetupRequiredCard({
     required this.title,
     required this.message,
     required this.buttonLabel,
+    required this.isInstalling,
     required this.onPressed,
+    required this.onRouterSetup,
   });
 
   @override
@@ -1186,9 +1224,21 @@ class _SetupRequiredCard extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             FilledButton.icon(
-              onPressed: onPressed,
+              onPressed: isInstalling ? null : onPressed,
+              icon: isInstalling
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.download_rounded),
+              label: Text(isInstalling ? 'Installing...' : buttonLabel),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: isInstalling ? null : onRouterSetup,
               icon: const Icon(Icons.router_rounded),
-              label: Text(buttonLabel),
+              label: const Text('Router Setup'),
             ),
           ],
         ),

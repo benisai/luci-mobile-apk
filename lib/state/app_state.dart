@@ -1510,6 +1510,52 @@ class AppState extends ChangeNotifier {
     return output;
   }
 
+  String _buildOpenwallaSetupCommand(
+    List<String> features, {
+    String? postInstallCheck,
+  }) {
+    final featureArgs = features.where((feature) => feature.trim().isNotEmpty);
+    final commandParts = [
+      'export OPENWALLA_RAW_BASE=https://raw.githubusercontent.com/benisai/luci-mobile-apk/main/openwrt-setup',
+      'export OPENWALLA_ROOT=/tmp/openwalla-app-setup',
+      'fetch() { if command -v wget >/dev/null 2>&1; then wget -qO "\$2" "\$1"; else curl -fsSL "\$1" -o "\$2"; fi; }',
+      'cd /tmp',
+      'rm -rf "\$OPENWALLA_ROOT"',
+      'rm -f setup-openwrt-router.sh',
+      'fetch "\$OPENWALLA_RAW_BASE/setup-openwrt-router.sh" "setup-openwrt-router.sh"',
+      'chmod 0755 setup-openwrt-router.sh',
+      'sh ./setup-openwrt-router.sh ${featureArgs.join(' ')}',
+      if (postInstallCheck != null && postInstallCheck.trim().isNotEmpty)
+        postInstallCheck,
+    ];
+    return commandParts.join(' && ');
+  }
+
+  Future<String> installOpenwallaSetupFeatures(
+    List<String> features, {
+    String? postInstallCheck,
+    void Function(String chunk)? onOutput,
+  }) async {
+    if (_reviewerModeEnabled) {
+      const output =
+          'Connecting with saved router credentials...\n'
+          'Installing selected Openwalla setup components...\n'
+          'Setup finished.';
+      onOutput?.call(output);
+      return output;
+    }
+
+    if (features.where((feature) => feature.trim().isNotEmpty).isEmpty) {
+      throw StateError('Choose at least one setup feature to install');
+    }
+
+    final command = _buildOpenwallaSetupCommand(
+      features,
+      postInstallCheck: postInstallCheck,
+    );
+    return runRouterSetupCommandViaSsh(command, onOutput: onOutput);
+  }
+
   Future<bool> hasStatisticsSupport({BuildContext? context}) async {
     if (_reviewerModeEnabled) return true;
     final hasInstalledCommand = await _routerCommandSucceeds(
@@ -1630,38 +1676,17 @@ class AppState extends ChangeNotifier {
     }
 
     final router = _routerService?.selectedRouter;
-    final sysauth = _authService?.sysauth;
-    if (router == null || sysauth == null || _apiService == null) {
+    if (router == null) {
       throw Exception('Router is not connected');
+    }
+    if (router.username.trim().isEmpty || router.password.isEmpty) {
+      throw Exception('Saved router SSH credentials are missing');
     }
 
     final installerFeature = _openwrtFeatureInstallerFeature(feature);
-    final command =
-        'export OPENWALLA_RAW_BASE=https://raw.githubusercontent.com/benisai/luci-mobile-apk/main/openwrt-setup; '
-        'export OPENWALLA_ROOT=/tmp/openwalla-app-setup; '
-        'fetch() { if command -v wget >/dev/null 2>&1; then wget -qO "\$2" "\$1"; else curl -fsSL "\$1" -o "\$2"; fi; }; '
-        'cd /tmp && '
-        'rm -rf "\$OPENWALLA_ROOT" && '
-        'rm -f setup-openwrt-router.sh && '
-        'fetch "\$OPENWALLA_RAW_BASE/setup-openwrt-router.sh" "setup-openwrt-router.sh" && '
-        'chmod 0755 setup-openwrt-router.sh && '
-        'sh ./setup-openwrt-router.sh $installerFeature && '
-        '${_openwrtFeatureCheckCommand(feature)}';
-    final result = await _apiService!.call(
-      router.ipAddress,
-      sysauth,
-      router.useHttps,
-      object: 'file',
-      method: 'exec',
-      params: {
-        'command': '/bin/sh',
-        'params': ['-c', command],
-      },
-      context: context,
-      receiveTimeout: const Duration(minutes: 5),
-      sendTimeout: const Duration(minutes: 5),
-    );
-    final output = _commandOutput(result);
+    final output = await installOpenwallaSetupFeatures([
+      installerFeature,
+    ], postInstallCheck: _openwrtFeatureCheckCommand(feature));
     if (!output.contains('OK')) {
       throw Exception(
         output.trim().isEmpty ? 'Package install failed' : output,

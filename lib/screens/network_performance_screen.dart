@@ -89,6 +89,7 @@ class _NetworkPerformanceScreenState
   List<SpeedtestMonitorSample>? _speedtestSamples;
   List<OpenwallaNotification>? _recentNotifications;
   Future<bool>? _supportFuture;
+  bool _isInstallingSupport = false;
 
   @override
   void initState() {
@@ -153,7 +154,9 @@ class _NetworkPerformanceScreenState
                   }
                   if (snapshot.data != true) {
                     return _NetworkSetupRequiredCard(
-                      onPressed: _openRouterSetup,
+                      isInstalling: _isInstallingSupport,
+                      onInstall: _installNetworkPerformanceSupport,
+                      onRouterSetup: _openRouterSetup,
                     );
                   }
                   return Column(
@@ -188,6 +191,36 @@ class _NetworkPerformanceScreenState
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (context) => const RouterSetupScreen()));
+  }
+
+  Future<void> _installNetworkPerformanceSupport() async {
+    setState(() => _isInstallingSupport = true);
+    try {
+      await ref.read(appStateProvider).installOpenwallaSetupFeatures(
+        const ['ping', 'dns', 'speedtest', 'notifications'],
+        postInstallCheck:
+            '[ -x /usr/bin/openwalla-ping-monitor ] && [ -x /usr/bin/openwalla-dns-monitor ] && [ -x /usr/bin/openwalla-speedtest-monitor ] && echo OK',
+      );
+      if (!mounted) return;
+      setState(() {
+        _supportFuture = null;
+        _freshSamples = null;
+        _speedtestSamples = null;
+        _recentNotifications = null;
+      });
+      await _refreshSamples();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Network monitoring installed.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Install failed: $e')));
+    } finally {
+      if (mounted) setState(() => _isInstallingSupport = false);
+    }
   }
 
   void _openPerformanceSettings() {
@@ -232,9 +265,15 @@ class _OpenwallaPanel extends StatelessWidget {
 }
 
 class _NetworkSetupRequiredCard extends StatelessWidget {
-  final VoidCallback onPressed;
+  final bool isInstalling;
+  final VoidCallback onInstall;
+  final VoidCallback onRouterSetup;
 
-  const _NetworkSetupRequiredCard({required this.onPressed});
+  const _NetworkSetupRequiredCard({
+    required this.isInstalling,
+    required this.onInstall,
+    required this.onRouterSetup,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -276,9 +315,23 @@ class _NetworkSetupRequiredCard extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           FilledButton.icon(
-            onPressed: onPressed,
+            onPressed: isInstalling ? null : onInstall,
+            icon: isInstalling
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.download_rounded),
+            label: Text(
+              isInstalling ? 'Installing...' : 'Install Monitoring Tools',
+            ),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: isInstalling ? null : onRouterSetup,
             icon: const Icon(Icons.router_rounded),
-            label: const Text('Open Router Setup'),
+            label: const Text('Router Setup'),
           ),
         ],
       ),
