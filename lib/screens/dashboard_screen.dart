@@ -722,16 +722,26 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             icon: Icons.show_chart_rounded,
             title: 'Live Traffic',
             color: _openwallaCyan,
-            trailing: throughputLabel.isNotEmpty
-                ? Text(
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (throughputLabel.isNotEmpty) ...[
+                  Text(
                     throughputLabel.replaceFirst(' - ', ''),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontWeight: FontWeight.w700,
                     ),
                     overflow: TextOverflow.ellipsis,
-                  )
-                : null,
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 12),
           Padding(

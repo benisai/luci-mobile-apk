@@ -472,10 +472,6 @@ class _LiveDeviceSpeedCard extends StatelessWidget {
                   ),
                 ),
               ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: colorScheme.onSurfaceVariant,
-              ),
             ],
           ),
           const SizedBox(height: 12),
