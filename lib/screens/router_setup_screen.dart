@@ -334,8 +334,8 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
             ),
             _ExtraSoftwareTile(
               icon: Icons.speed_rounded,
-              title: 'qos-scripts',
-              subtitle: 'QoS/SQM packages for traffic shaping.',
+              title: 'Smart Queue (SQM)',
+              subtitle: 'Install sqm-scripts for traffic shaping.',
               value: _installQosScripts,
               enabled: !_isInstalling,
               onChanged: (value) => setState(() => _installQosScripts = value),

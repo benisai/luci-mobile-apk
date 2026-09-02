@@ -1700,7 +1700,7 @@ class AppState extends ChangeNotifier {
       OpenwrtFeature.adblock =>
         r'([ -x /etc/init.d/adblock ] || command -v adblock >/dev/null 2>&1 || uci -q get adblock.global >/dev/null 2>&1 || opkg list-installed 2>/dev/null | grep -Eq "^(adblock|luci-app-adblock) ") && echo OK',
       OpenwrtFeature.sqm =>
-        r'([ -x /etc/init.d/sqm ] || [ -x /etc/init.d/qos ] || command -v sqm >/dev/null 2>&1 || command -v qos-scripts >/dev/null 2>&1 || [ -d /usr/lib/sqm ] || [ -d /usr/lib/qos ] || opkg list-installed 2>/dev/null | grep -Eq "^(sqm-scripts|luci-app-sqm|qos-scripts|luci-app-qos) ") && echo OK',
+        r'([ -x /etc/init.d/sqm ] || command -v sqm >/dev/null 2>&1 || [ -d /usr/lib/sqm ] || opkg list-installed 2>/dev/null | grep -Eq "^(sqm-scripts|luci-app-sqm) ") && echo OK',
     };
   }
 

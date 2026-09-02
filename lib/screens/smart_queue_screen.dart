@@ -127,7 +127,7 @@ class _SmartQueueScreenState extends ConsumerState<SmartQueueScreen> {
                 title: 'SQM is not installed',
                 message:
                     'Install sqm-scripts before configuring Smart Queue traffic shaping on this router.',
-                installLabel: 'Install sqm-scripts',
+                installLabel: 'Install Smart Queue',
                 builder: (_) => _buildInstalledContent(queue),
               ),
             ],

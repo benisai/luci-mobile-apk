@@ -48,7 +48,7 @@ Feature groups:
   monitoring   Standard apps plus usage, ping, DNS, speedtest, notifications,
                devices, device bandwidth, blocking, and state sync.
   flows        Simple Conntrack flows plus detailed Netify flows.
-  all          Everything in stack plus AdBlock, PBR, Netify, banIP, and QoS/SQM.
+  all          Everything in stack plus AdBlock, PBR, Netify, banIP, and SQM.
 
 Individual features:
   standard          uhttpd-mod-ubus, nlbwmon, vnstat2, sqlite, conntrack, qrencode
@@ -68,7 +68,7 @@ Individual features:
   adblock          OpenWrt adblock packages and config
   banip            OpenWrt banIP packages and config
   pbr              OpenWrt PBR packages and config
-  qos              QoS/SQM packages
+  qos              Smart Queue/SQM packages
 
 Compatibility options:
   --profile=1         Same as stack
