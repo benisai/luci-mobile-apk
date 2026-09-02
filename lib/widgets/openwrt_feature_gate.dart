@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/screens/router_setup_screen.dart';
 import 'package:luci_mobile/state/app_state.dart';
+import 'package:luci_mobile/widgets/ssh_console_sheet.dart';
 
 class OpenwrtFeatureGate extends ConsumerStatefulWidget {
   final OpenwrtFeature feature;
@@ -51,11 +54,38 @@ class _OpenwrtFeatureGateState extends ConsumerState<OpenwrtFeatureGate> {
 
   Future<void> _install() async {
     setState(() => _isInstalling = true);
+    final console = SshConsoleController(
+      initialOutput:
+          'Connecting to router over SSH...\nRunning ${widget.installLabel}...\n\nConsole output will appear here as the install runs.',
+      running: true,
+    );
+    if (mounted) {
+      unawaited(
+        showSshConsoleSheet(
+          context: context,
+          controller: console,
+          title: widget.installLabel,
+        ).whenComplete(console.dispose),
+      );
+    }
     try {
+      final outputBuffer = StringBuffer();
       final status = await ref
           .read(appStateProvider)
-          .installOpenwrtFeature(widget.feature, context: context);
+          .installOpenwrtFeature(
+            widget.feature,
+            context: context,
+            onOutput: (chunk) {
+              outputBuffer.write(chunk);
+              console.setOutput(outputBuffer.toString().trimRight());
+            },
+          );
       if (!mounted) return;
+      console.setOutput(
+        outputBuffer.toString().trim().isEmpty
+            ? '${status.label} install finished. The router did not return console output.'
+            : outputBuffer.toString().trimRight(),
+      );
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -67,11 +97,13 @@ class _OpenwrtFeatureGateState extends ConsumerState<OpenwrtFeatureGate> {
       );
       setState(() => _statusFuture = Future.value(status));
     } catch (e) {
+      console.setOutput('Install failed.\n\n$e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Install failed: $e')));
     } finally {
+      console.complete();
       if (mounted) setState(() => _isInstalling = false);
     }
   }

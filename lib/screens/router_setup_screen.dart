@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/models/dashboard_preferences.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
+import 'package:luci_mobile/widgets/ssh_console_sheet.dart';
 
 class RouterSetupScreen extends ConsumerStatefulWidget {
   final bool netifyOnly;
@@ -86,6 +89,19 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
       _lastOutput =
           'Connecting to router over SSH...\nRunning Openwalla setup command...\n\nConsole output will appear here as the install runs.';
     });
+    final console = SshConsoleController(
+      initialOutput: _lastOutput!,
+      running: true,
+    );
+    if (mounted) {
+      unawaited(
+        showSshConsoleSheet(
+          context: context,
+          controller: console,
+          title: 'Openwalla Router Setup',
+        ).whenComplete(console.dispose),
+      );
+    }
 
     try {
       final appState = ref.read(appStateProvider);
@@ -94,6 +110,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
         command,
         onOutput: (chunk) {
           outputBuffer.write(chunk);
+          console.setOutput(outputBuffer.toString().trimRight());
           if (!mounted) return;
           setState(() {
             _lastOutput = outputBuffer.toString().trimRight();
@@ -107,9 +124,13 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
             ? 'Setup finished. The router did not return console output.'
             : output.trim();
       });
+      console.setOutput(_lastOutput!);
       _showSnack('Router setup finished.');
     } catch (e) {
       if (!mounted) return;
+      console.setOutput(
+        'SSH install failed. Make sure SSH is enabled on the router and the saved router username/password can log in as root. You can still copy the SSH command below and run it manually.\n\n$e',
+      );
       setState(() {
         _lastOutput =
             'SSH install failed. Make sure SSH is enabled on the router and the saved router username/password can log in as root. You can still copy the SSH command below and run it manually.\n\n$e';
@@ -117,6 +138,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
       });
       _showSnack('Router setup could not run over SSH.');
     } finally {
+      console.complete();
       if (mounted) setState(() => _isInstalling = false);
     }
   }
@@ -252,7 +274,10 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
               ],
               if (_lastOutput != null) ...[
                 const SizedBox(height: 16),
-                _OutputPreview(output: _lastOutput!, isRunning: _isInstalling),
+                SshConsolePreview(
+                  output: _lastOutput!,
+                  isRunning: _isInstalling,
+                ),
               ],
             ],
           ],
@@ -823,51 +848,6 @@ class _CommandPreview extends StatelessWidget {
             const SizedBox(height: 10),
             SelectableText(
               command.isEmpty ? 'Choose at least one setup option.' : command,
-              style: TextStyle(
-                color: colorScheme.onSurfaceVariant,
-                fontFamily: 'monospace',
-                fontSize: 12,
-                height: 1.35,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _OutputPreview extends StatelessWidget {
-  final String output;
-  final bool isRunning;
-
-  const _OutputPreview({required this.output, required this.isRunning});
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              isRunning ? 'SSH Console Running' : 'SSH Console Output',
-              style: Theme.of(
-                context,
-              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            if (isRunning) ...[
-              const SizedBox(height: 10),
-              LinearProgressIndicator(
-                minHeight: 3,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ],
-            const SizedBox(height: 10),
-            SelectableText(
-              output,
               style: TextStyle(
                 color: colorScheme.onSurfaceVariant,
                 fontFamily: 'monospace',

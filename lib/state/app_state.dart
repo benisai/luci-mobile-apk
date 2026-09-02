@@ -1663,6 +1663,7 @@ class AppState extends ChangeNotifier {
   Future<OpenwrtFeatureStatus> installOpenwrtFeature(
     OpenwrtFeature feature, {
     BuildContext? context,
+    void Function(String chunk)? onOutput,
   }) async {
     if (_reviewerModeEnabled) {
       final status = OpenwrtFeatureStatus(
@@ -1684,9 +1685,11 @@ class AppState extends ChangeNotifier {
     }
 
     final installerFeature = _openwrtFeatureInstallerFeature(feature);
-    final output = await installOpenwallaSetupFeatures([
-      installerFeature,
-    ], postInstallCheck: _openwrtFeatureCheckCommand(feature));
+    final output = await installOpenwallaSetupFeatures(
+      [installerFeature],
+      postInstallCheck: _openwrtFeatureCheckCommand(feature),
+      onOutput: onOutput,
+    );
     if (!output.contains('OK')) {
       throw Exception(
         output.trim().isEmpty ? 'Package install failed' : output,

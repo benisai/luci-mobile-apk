@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
@@ -5,6 +7,7 @@ import 'package:luci_mobile/screens/network_performance_settings_screen.dart';
 import 'package:luci_mobile/screens/router_setup_screen.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
+import 'package:luci_mobile/widgets/ssh_console_sheet.dart';
 
 class NetworkPerformanceScreen extends ConsumerStatefulWidget {
   const NetworkPerformanceScreen({super.key});
@@ -195,11 +198,37 @@ class _NetworkPerformanceScreenState
 
   Future<void> _installNetworkPerformanceSupport() async {
     setState(() => _isInstallingSupport = true);
+    final console = SshConsoleController(
+      initialOutput:
+          'Connecting to router over SSH...\nInstalling Network Performance tools...\n\nConsole output will appear here as the install runs.',
+      running: true,
+    );
+    if (mounted) {
+      unawaited(
+        showSshConsoleSheet(
+          context: context,
+          controller: console,
+          title: 'Install Network Performance',
+        ).whenComplete(console.dispose),
+      );
+    }
     try {
-      await ref.read(appStateProvider).installOpenwallaSetupFeatures(
-        const ['ping', 'dns', 'speedtest', 'notifications'],
-        postInstallCheck:
-            '[ -x /usr/bin/openwalla-ping-monitor ] && [ -x /usr/bin/openwalla-dns-monitor ] && [ -x /usr/bin/openwalla-speedtest-monitor ] && echo OK',
+      final outputBuffer = StringBuffer();
+      await ref
+          .read(appStateProvider)
+          .installOpenwallaSetupFeatures(
+            const ['ping', 'dns', 'speedtest', 'notifications'],
+            postInstallCheck:
+                '[ -x /usr/bin/openwalla-ping-monitor ] && [ -x /usr/bin/openwalla-dns-monitor ] && [ -x /usr/bin/openwalla-speedtest-monitor ] && echo OK',
+            onOutput: (chunk) {
+              outputBuffer.write(chunk);
+              console.setOutput(outputBuffer.toString().trimRight());
+            },
+          );
+      console.setOutput(
+        outputBuffer.toString().trim().isEmpty
+            ? 'Network monitoring install finished. The router did not return console output.'
+            : outputBuffer.toString().trimRight(),
       );
       if (!mounted) return;
       setState(() {
@@ -214,11 +243,13 @@ class _NetworkPerformanceScreenState
         const SnackBar(content: Text('Network monitoring installed.')),
       );
     } catch (e) {
+      console.setOutput('Install failed.\n\n$e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Install failed: $e')));
     } finally {
+      console.complete();
       if (mounted) setState(() => _isInstallingSupport = false);
     }
   }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:fl_chart/fl_chart.dart';
@@ -10,6 +11,7 @@ import 'package:luci_mobile/screens/usage_settings_screen.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
 import 'package:luci_mobile/widgets/luci_refresh_components.dart';
+import 'package:luci_mobile/widgets/ssh_console_sheet.dart';
 
 enum _StatsUsageRange { minute, hour, day, week }
 
@@ -178,11 +180,37 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
 
   Future<void> _installStatisticsSupport() async {
     setState(() => _isInstallingSupport = true);
+    final console = SshConsoleController(
+      initialOutput:
+          'Connecting to router over SSH...\nInstalling Statistics tools...\n\nConsole output will appear here as the install runs.',
+      running: true,
+    );
+    if (mounted) {
+      unawaited(
+        showSshConsoleSheet(
+          context: context,
+          controller: console,
+          title: 'Install Statistics Tools',
+        ).whenComplete(console.dispose),
+      );
+    }
     try {
-      await ref.read(appStateProvider).installOpenwallaSetupFeatures(
-        const ['usage', 'bandwidth'],
-        postInstallCheck:
-            'if command -v vnstat >/dev/null 2>&1 || command -v nlbw >/dev/null 2>&1 || command -v nlbwmon >/dev/null 2>&1; then echo OK; else exit 1; fi',
+      final outputBuffer = StringBuffer();
+      await ref
+          .read(appStateProvider)
+          .installOpenwallaSetupFeatures(
+            const ['usage', 'bandwidth'],
+            postInstallCheck:
+                'if command -v vnstat >/dev/null 2>&1 || command -v nlbw >/dev/null 2>&1 || command -v nlbwmon >/dev/null 2>&1; then echo OK; else exit 1; fi',
+            onOutput: (chunk) {
+              outputBuffer.write(chunk);
+              console.setOutput(outputBuffer.toString().trimRight());
+            },
+          );
+      console.setOutput(
+        outputBuffer.toString().trim().isEmpty
+            ? 'Statistics tools install finished. The router did not return console output.'
+            : outputBuffer.toString().trimRight(),
       );
       if (!mounted) return;
       setState(() {
@@ -198,11 +226,13 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
         const SnackBar(content: Text('Statistics tools installed.')),
       );
     } catch (e) {
+      console.setOutput('Install failed.\n\n$e');
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Install failed: $e')));
     } finally {
+      console.complete();
       if (mounted) setState(() => _isInstallingSupport = false);
     }
   }
