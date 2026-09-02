@@ -18,6 +18,7 @@ require_file "$RPCD_ACL"
 
 update_package_feeds
 install_first_available_pkg "sqlite-cli" sqlite3-cli sqlite3
+install_pkg_if_available "conntrack"
 
 ensure_openwalla_config
 ensure_uci_section device_bandwidth device_bandwidth

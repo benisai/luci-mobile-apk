@@ -62,6 +62,7 @@ Individual features:
   speedtest        speedtest monitor script and cron
   notifications    notifications sqlite helper
   devices          devices sqlite collector
+  device-speed     live per-device speed helper
   bandwidth        per-device bandwidth collector
   blocking         internet/parental blocking helper
   scheduler        device group block scheduler
@@ -130,6 +131,7 @@ feature_to_installer() {
 	speedtest) echo "install-speedtest-monitor.sh" ;;
 	notifications) echo "install-notifications-db.sh" ;;
 	devices) echo "install-devices-collector.sh" ;;
+	device-speed) echo "install-device-speed.sh" ;;
 	bandwidth) echo "install-device-bandwidth.sh" ;;
 	blocking) echo "install-internet-blocking.sh" ;;
 	scheduler) echo "install-scheduler.sh" ;;
@@ -155,6 +157,7 @@ canonical_feature() {
 	speedtest|speed-test|speedtest-monitor) echo "speedtest" ;;
 	notifications|notification|notifications-db) echo "notifications" ;;
 	devices|device-db|devices-collector) echo "devices" ;;
+	device-speed|live-speed|speed-helper|traffic-summary|device-traffic-summary) echo "device-speed" ;;
 	bandwidth|device-bandwidth|device-bandwidth-collector) echo "bandwidth" ;;
 	blocking|internet-blocking|parental-blocking|paternal-pause) echo "blocking" ;;
 	scheduler|schedules|device-scheduler|block-scheduler) echo "scheduler" ;;
@@ -452,6 +455,9 @@ uninstall_feature() {
 		stop_disable_service openwalla-device-bandwidth-collector
 		rm -f /usr/bin/openwalla-device-bandwidth-collector /usr/bin/openwalla-device-traffic-summary /etc/init.d/openwalla-device-bandwidth-collector
 		clear_openwalla_section device_bandwidth
+		;;
+	device-speed)
+		rm -f /usr/bin/openwalla-device-traffic-summary
 		;;
 	blocking)
 		remove_cron_marker "OPENWALLA_PATERNAL_PAUSE"
