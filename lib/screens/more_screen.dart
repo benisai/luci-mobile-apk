@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/screens/login_screen.dart';
+import 'package:luci_mobile/screens/reboot_countdown_screen.dart';
 import 'package:luci_mobile/screens/settings_screen.dart';
 import 'package:luci_mobile/screens/router_setup_screen.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
@@ -196,13 +197,21 @@ class _MoreScreenState extends ConsumerState<MoreScreen> {
                 );
                 final success = await appState.reboot();
                 if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      success
-                          ? 'Reboot command sent successfully.'
-                          : 'Failed to send reboot command.',
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                if (success) {
+                  unawaited(
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            const RebootCountdownScreen(duration: 60),
+                      ),
                     ),
+                  );
+                  return;
+                }
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Failed to send reboot command.'),
                   ),
                 );
               },
