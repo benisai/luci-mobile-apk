@@ -130,9 +130,16 @@ class _RouterDashboardSettingsScreenState
           for (var interface in interfaces) {
             final config = interface['config'] ?? {};
             final iwinfo = interface['iwinfo'] ?? {};
+            final radioDisabled = radioData is Map
+                ? _isDisabled(radioData['disabled'])
+                : false;
+            final interfaceDisabled = _isDisabled(config['disabled']);
             final ssid = iwinfo['ssid'] ?? config['ssid'];
             final deviceName = config['device'] ?? radioName;
-            if (ssid != null && ssid.toString().isNotEmpty) {
+            if (!radioDisabled &&
+                !interfaceDisabled &&
+                ssid != null &&
+                ssid.toString().isNotEmpty) {
               final interfaceId = '$ssid ($deviceName)';
               _availableWirelessInterfaces.add(interfaceId);
               _allInterfaces.add(interfaceId);
@@ -148,13 +155,24 @@ class _RouterDashboardSettingsScreenState
       for (var item in interfaces) {
         final interface = item as Map<String, dynamic>;
         final name = interface['interface'] as String? ?? '';
-        if (name.isNotEmpty && name != 'loopback' && name != 'lo') {
+        final isUp = interface['up'] == true;
+        final isDisabled = _isDisabled(interface['disabled']);
+        if (name.isNotEmpty &&
+            name != 'loopback' &&
+            name != 'lo' &&
+            isUp &&
+            !isDisabled) {
           _availableWiredInterfaces.add(name);
           _allInterfaces.add(name);
         }
       }
     }
     _allInterfaces.sort();
+  }
+
+  bool _isDisabled(dynamic value) {
+    final normalized = value?.toString().trim().toLowerCase();
+    return normalized == '1' || normalized == 'true' || normalized == 'yes';
   }
 
   void _onPreferenceChanged() => _scheduleAutoSave();

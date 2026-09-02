@@ -2609,15 +2609,48 @@ class _NetworkInterfaceEditSheetState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Expanded(
-                          child: Text(
-                            'Edit ${widget.interfaceName}',
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w900),
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: colorScheme.primaryContainer.withValues(
+                              alpha: 0.55,
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Icon(
+                            Icons.router_rounded,
+                            color: colorScheme.primary,
                           ),
                         ),
-                        IconButton(
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${widget.interfaceName.toUpperCase()} Settings',
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(
+                                      color: colorScheme.onSurface,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'IPv4 and DHCP configuration',
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton.filledTonal(
                           tooltip: 'Close',
                           onPressed: _isSaving
                               ? null
@@ -2626,7 +2659,7 @@ class _NetworkInterfaceEditSheetState
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 22),
                     Text(
                       'IPv4',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -2641,6 +2674,7 @@ class _NetworkInterfaceEditSheetState
                           initialValue: _protocol,
                           decoration: const InputDecoration(
                             labelText: 'Protocol',
+                            prefixIcon: Icon(Icons.settings_ethernet_rounded),
                           ),
                           items: const ['static', 'dhcp', 'dhcpv6', 'wireguard']
                               .map(
@@ -2663,6 +2697,7 @@ class _NetworkInterfaceEditSheetState
                           decoration: const InputDecoration(
                             labelText: 'IP Address',
                             hintText: '192.168.10.1',
+                            prefixIcon: Icon(Icons.dns_rounded),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -2672,6 +2707,7 @@ class _NetworkInterfaceEditSheetState
                           decoration: const InputDecoration(
                             labelText: 'Subnet Mask',
                             hintText: '255.255.255.0',
+                            prefixIcon: Icon(Icons.grid_4x4_rounded),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -2681,6 +2717,7 @@ class _NetworkInterfaceEditSheetState
                           decoration: const InputDecoration(
                             labelText: 'Upstream DNS Servers',
                             hintText: '1.1.1.1 8.8.8.8',
+                            prefixIcon: Icon(Icons.travel_explore_rounded),
                           ),
                         ),
                       ],
@@ -2697,22 +2734,37 @@ class _NetworkInterfaceEditSheetState
                       const SizedBox(height: 10),
                       _FormPanel(
                         children: [
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('DHCPv4 Server'),
-                            value: _dhcpEnabled,
-                            onChanged: _isSaving
-                                ? null
-                                : (value) =>
-                                      setState(() => _dhcpEnabled = value),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surfaceContainerHighest
+                                  .withValues(alpha: 0.36),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text('DHCPv4 Server'),
+                              subtitle: const Text(
+                                'Assign addresses to LAN devices',
+                              ),
+                              value: _dhcpEnabled,
+                              onChanged: _isSaving
+                                  ? null
+                                  : (value) =>
+                                        setState(() => _dhcpEnabled = value),
+                            ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 14),
                           TextField(
                             controller: _startIpController,
                             enabled: !_isSaving && _dhcpEnabled,
                             decoration: const InputDecoration(
                               labelText: 'Start IP Address',
                               hintText: '192.168.10.100',
+                              prefixIcon: Icon(Icons.first_page_rounded),
                             ),
                           ),
                           const SizedBox(height: 12),
@@ -2722,6 +2774,7 @@ class _NetworkInterfaceEditSheetState
                             decoration: const InputDecoration(
                               labelText: 'End IP Address',
                               hintText: '192.168.10.249',
+                              prefixIcon: Icon(Icons.last_page_rounded),
                             ),
                           ),
                           const SizedBox(height: 12),
@@ -2731,6 +2784,7 @@ class _NetworkInterfaceEditSheetState
                             decoration: const InputDecoration(
                               labelText: 'Lease Time',
                               hintText: '12h',
+                              prefixIcon: Icon(Icons.schedule_rounded),
                             ),
                           ),
                         ],
@@ -3061,15 +3115,25 @@ class _FormPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       decoration: BoxDecoration(
-        color: colorScheme.surface,
+        color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.74),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+          color: colorScheme.outlineVariant.withValues(alpha: 0.28),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
-      child: Column(children: children),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
     );
   }
 }
