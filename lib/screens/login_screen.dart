@@ -161,13 +161,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   Future<void> _tryAutoLogin() async {
     final appState = ref.read(appStateProvider);
-    if (appState.routers.isNotEmpty) {
-      _prefillRouter(appState.selectedRouter ?? appState.routers.first);
-      if (mounted) {
-        setState(() {
-          _isCheckingAutoLogin = false;
-        });
+    await appState.initialized;
+    if (!mounted) return;
+
+    final savedRouter =
+        appState.selectedRouter ??
+        (appState.routers.isNotEmpty ? appState.routers.first : null);
+
+    if (savedRouter != null) {
+      _prefillRouter(savedRouter);
+
+      if (savedRouter.password.isNotEmpty) {
+        final success = await appState.login(
+          savedRouter.ipAddress,
+          savedRouter.username.trim().isEmpty ? 'root' : savedRouter.username,
+          savedRouter.password,
+          savedRouter.useHttps,
+          fromRouter: true,
+          saveCredentials: true,
+          context: context,
+        );
+        if (success && mounted) {
+          unawaited(Navigator.of(context).pushReplacementNamed('/'));
+          return;
+        }
       }
+
+      if (mounted) setState(() => _isCheckingAutoLogin = false);
       return;
     }
 

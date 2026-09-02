@@ -1206,6 +1206,7 @@ class NetifyFlow {
 
 class AppState extends ChangeNotifier {
   static AppState? _instance;
+  late final Future<void> _initializationFuture;
   static const String _openwrtShellPath =
       r'PATH=/usr/sbin:/usr/bin:/sbin:/bin:$PATH; ';
   static const String _wireGuardBinaryLookup =
@@ -1326,8 +1327,10 @@ class AppState extends ChangeNotifier {
   }
 
   AppState._() {
-    _initialize();
+    _initializationFuture = _initialize();
   }
+
+  Future<void> get initialized => _initializationFuture;
 
   static AppState get instance {
     return _instance ??= AppState._();
