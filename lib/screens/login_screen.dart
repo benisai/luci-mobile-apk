@@ -335,12 +335,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   InputDecoration _loginInputDecoration({
     required BuildContext context,
     required IconData icon,
+    String? hintText,
     String? helperText,
     Widget? suffixIcon,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     return InputDecoration(
       isDense: false,
+      hintText: hintText,
       helperText: helperText,
       helperMaxLines: 2,
       helperStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -377,7 +379,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   Widget _loginField({
     Key? key,
     required BuildContext context,
-    required String label,
+    String? label,
     required Widget child,
   }) {
     final textTheme = Theme.of(context).textTheme;
@@ -386,17 +388,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       key: key,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 22, bottom: 8),
-          child: Text(
-            label,
-            style: textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.86),
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0,
+        if (label != null) ...[
+          Padding(
+            padding: const EdgeInsets.only(left: 22, bottom: 6),
+            child: Text(
+              label,
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.86),
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0,
+              ),
             ),
           ),
-        ),
+        ],
         child,
       ],
     );
@@ -594,7 +598,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                         children: <Widget>[
                                           _loginField(
                                             context: context,
-                                            label: 'Router Address',
                                             child: Tooltip(
                                               message:
                                                   'Enter the IP address, hostname, or full URL of your router',
@@ -642,7 +645,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                               ),
                                             ),
                                           ),
-                                          const SizedBox(height: 22),
+                                          const SizedBox(height: 16),
                                           AnimatedSwitcher(
                                             duration: const Duration(
                                               milliseconds: 180,
@@ -688,10 +691,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                                 : const SizedBox.shrink(),
                                           ),
                                           if (_advancedLogin)
-                                            const SizedBox(height: 18),
+                                            const SizedBox(height: 14),
                                           _loginField(
                                             context: context,
-                                            label: 'Password',
                                             child: Tooltip(
                                               message:
                                                   'Enter your router password',
@@ -704,6 +706,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                                 decoration: _loginInputDecoration(
                                                   context: context,
                                                   icon: Icons.lock_outline,
+                                                  hintText: 'Password',
                                                   suffixIcon: IconButton(
                                                     icon: Icon(
                                                       _passwordVisible
