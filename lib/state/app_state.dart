@@ -1168,6 +1168,19 @@ class NetifyFlow {
 
 class AppState extends ChangeNotifier {
   static AppState? _instance;
+  static const String _openwrtShellPath =
+      r'PATH=/usr/sbin:/usr/bin:/sbin:/bin:$PATH; ';
+  static const String _wireGuardBinaryLookup =
+      r'WG_BIN="$(command -v wg 2>/dev/null || true)"; '
+      r'[ -x /usr/bin/wg ] && WG_BIN="/usr/bin/wg"; '
+      r'[ -x /usr/sbin/wg ] && WG_BIN="/usr/sbin/wg"; '
+      r'[ -x /sbin/wg ] && WG_BIN="/sbin/wg"; '
+      r'[ -x /bin/wg ] && WG_BIN="/bin/wg"; ';
+
+  String _withWireGuardBinaryLookup(String command) {
+    return '$_openwrtShellPath$_wireGuardBinaryLookup$command';
+  }
+
   static const List<({String name, String label, String category})>
   _managedServices = [
     (
@@ -1723,8 +1736,9 @@ class AppState extends ChangeNotifier {
 
   String _openwrtFeatureCheckCommand(OpenwrtFeature feature) {
     return switch (feature) {
-      OpenwrtFeature.wireguard =>
-        '(command -v wg >/dev/null 2>&1 || [ -x /usr/bin/wg ] || uci -q show network 2>/dev/null | grep -q "proto=.*wireguard") && echo OK',
+      OpenwrtFeature.wireguard => _withWireGuardBinaryLookup(
+        '([ -n "\$WG_BIN" ] || uci -q show network 2>/dev/null | grep -q "proto=.*wireguard" || opkg list-installed 2>/dev/null | grep -Eq "^(wireguard-tools|luci-proto-wireguard|luci-app-wireguard) ") && echo OK',
+      ),
       OpenwrtFeature.adblock =>
         r'([ -x /etc/init.d/adblock ] || command -v adblock >/dev/null 2>&1 || uci -q get adblock.global >/dev/null 2>&1 || opkg list-installed 2>/dev/null | grep -Eq "^(adblock|luci-app-adblock) ") && echo OK',
       OpenwrtFeature.sqm =>
@@ -6653,18 +6667,20 @@ class AppState extends ChangeNotifier {
           'command': '/bin/sh',
           'params': [
             '-c',
-            r'IFACE="owrt_wg_server"; '
-                r'installed=0; command -v wg >/dev/null 2>&1 && installed=1; '
-                r'configured=0; [ "$(uci -q get network.$IFACE.proto 2>/dev/null)" = "wireguard" ] && configured=1; '
-                r'enabled=1; [ "$(uci -q get network.$IFACE.disabled 2>/dev/null)" = "1" ] && enabled=0; '
-                r'port="$(uci -q get network.$IFACE.listen_port 2>/dev/null || echo 51820)"; '
-                r'addr="$(uci -q get network.$IFACE.addresses 2>/dev/null | awk "{print \$1}")"; [ -n "$addr" ] || addr="10.8.0.1/24"; '
-                r'wan_ip="$(ifstatus wan 2>/dev/null | jsonfilter -e "@[\"ipv4-address\"][0].address" 2>/dev/null || true)"; '
-                r'[ -n "$wan_ip" ] || wan_ip="$(uci -q get network.wan.ipaddr 2>/dev/null || true)"; '
-                r'internal_ip="$(uci -q get firewall.owrt_wg_server.dest_ip 2>/dev/null || true)"; [ -n "$internal_ip" ] || internal_ip="$wan_ip"; '
-                r'pub=""; priv="$(uci -q get network.$IFACE.private_key 2>/dev/null || true)"; '
-                r'if [ -n "$priv" ] && command -v wg >/dev/null 2>&1; then pub="$(printf "%s" "$priv" | wg pubkey 2>/dev/null || true)"; fi; '
-                r'printf "%s|%s|%s|%s|%s|%s|%s|%s\n" "$installed" "$configured" "$enabled" "$IFACE" "$port" "$addr" "$internal_ip" "$pub"',
+            _withWireGuardBinaryLookup(
+              r'IFACE="owrt_wg_server"; '
+              r'installed=0; [ -n "$WG_BIN" ] && installed=1; '
+              r'configured=0; [ "$(uci -q get network.$IFACE.proto 2>/dev/null)" = "wireguard" ] && configured=1; '
+              r'enabled=1; [ "$(uci -q get network.$IFACE.disabled 2>/dev/null)" = "1" ] && enabled=0; '
+              r'port="$(uci -q get network.$IFACE.listen_port 2>/dev/null || echo 51820)"; '
+              r'addr="$(uci -q get network.$IFACE.addresses 2>/dev/null | awk "{print \$1}")"; [ -n "$addr" ] || addr="10.8.0.1/24"; '
+              r'wan_ip="$(ifstatus wan 2>/dev/null | jsonfilter -e "@[\"ipv4-address\"][0].address" 2>/dev/null || true)"; '
+              r'[ -n "$wan_ip" ] || wan_ip="$(uci -q get network.wan.ipaddr 2>/dev/null || true)"; '
+              r'internal_ip="$(uci -q get firewall.owrt_wg_server.dest_ip 2>/dev/null || true)"; [ -n "$internal_ip" ] || internal_ip="$wan_ip"; '
+              r'pub=""; priv="$(uci -q get network.$IFACE.private_key 2>/dev/null || true)"; '
+              r'if [ -n "$priv" ] && [ -n "$WG_BIN" ]; then pub="$(printf "%s" "$priv" | "$WG_BIN" pubkey 2>/dev/null || true)"; fi; '
+              r'printf "%s|%s|%s|%s|%s|%s|%s|%s\n" "$installed" "$configured" "$enabled" "$IFACE" "$port" "$addr" "$internal_ip" "$pub"',
+            ),
           ],
         },
         context: context,
@@ -6704,37 +6720,38 @@ class AppState extends ChangeNotifier {
     final vpnAddress = _shellQuote(settings.vpnAddress.trim());
     final internalIp = _shellQuote(settings.internalIpAddress.trim());
     final disabled = settings.enabled ? '0' : '1';
-    final command =
-        'IFACE="owrt_wg_server"; '
-        'PORT="$port"; '
-        'VPN_ADDR=$vpnAddress; '
-        'INTERNAL_IP=$internalIp; '
-        'command -v wg >/dev/null 2>&1 || { echo "wireguard-tools is not installed"; exit 1; }; '
-        'mkdir -p /etc/wireguard; chmod 700 /etc/wireguard; '
-        'KEY_FILE="/etc/wireguard/openwalla_wg_server.key"; '
-        '[ -s "\$KEY_FILE" ] || wg genkey > "\$KEY_FILE"; chmod 600 "\$KEY_FILE"; '
-        'VPN_KEY="\$(cat "\$KEY_FILE")"; '
-        'uci -q delete network.\$IFACE; '
-        'uci set network.\$IFACE="interface"; '
-        'uci set network.\$IFACE.proto="wireguard"; '
-        'uci set network.\$IFACE.private_key="\$VPN_KEY"; '
-        'uci set network.\$IFACE.listen_port="\$PORT"; '
-        'uci set network.\$IFACE.disabled="$disabled"; '
-        'uci add_list network.\$IFACE.addresses="\$VPN_ADDR"; '
-        'uci commit network; '
-        'uci -q del_list firewall.lan.network="\$IFACE" 2>/dev/null || true; '
-        'uci add_list firewall.lan.network="\$IFACE"; '
-        'uci -q delete firewall.owrt_wg_server; '
-        'uci set firewall.owrt_wg_server="rule"; '
-        'uci set firewall.owrt_wg_server.name="owrt_wireguard_server"; '
-        'uci set firewall.owrt_wg_server.src="wan"; '
-        'uci set firewall.owrt_wg_server.proto="udp"; '
-        'uci set firewall.owrt_wg_server.dest_port="\$PORT"; '
-        'uci set firewall.owrt_wg_server.target="ACCEPT"; '
-        '[ -n "\$INTERNAL_IP" ] && uci set firewall.owrt_wg_server.dest_ip="\$INTERNAL_IP"; '
-        'uci commit firewall; '
-        '/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1 || true; '
-        'if [ "$disabled" = "0" ]; then ifup "\$IFACE" >/dev/null 2>&1 || /etc/init.d/network reload >/dev/null 2>&1 || true; else ifdown "\$IFACE" >/dev/null 2>&1 || true; fi';
+    final command = _withWireGuardBinaryLookup(
+      'IFACE="owrt_wg_server"; '
+      'PORT="$port"; '
+      'VPN_ADDR=$vpnAddress; '
+      'INTERNAL_IP=$internalIp; '
+      '[ -n "\$WG_BIN" ] || { echo "wireguard-tools is not installed"; exit 1; }; '
+      'mkdir -p /etc/wireguard; chmod 700 /etc/wireguard; '
+      'KEY_FILE="/etc/wireguard/openwalla_wg_server.key"; '
+      '[ -s "\$KEY_FILE" ] || "\$WG_BIN" genkey > "\$KEY_FILE"; chmod 600 "\$KEY_FILE"; '
+      'VPN_KEY="\$(cat "\$KEY_FILE")"; '
+      'uci -q delete network.\$IFACE; '
+      'uci set network.\$IFACE="interface"; '
+      'uci set network.\$IFACE.proto="wireguard"; '
+      'uci set network.\$IFACE.private_key="\$VPN_KEY"; '
+      'uci set network.\$IFACE.listen_port="\$PORT"; '
+      'uci set network.\$IFACE.disabled="$disabled"; '
+      'uci add_list network.\$IFACE.addresses="\$VPN_ADDR"; '
+      'uci commit network; '
+      'uci -q del_list firewall.lan.network="\$IFACE" 2>/dev/null || true; '
+      'uci add_list firewall.lan.network="\$IFACE"; '
+      'uci -q delete firewall.owrt_wg_server; '
+      'uci set firewall.owrt_wg_server="rule"; '
+      'uci set firewall.owrt_wg_server.name="owrt_wireguard_server"; '
+      'uci set firewall.owrt_wg_server.src="wan"; '
+      'uci set firewall.owrt_wg_server.proto="udp"; '
+      'uci set firewall.owrt_wg_server.dest_port="\$PORT"; '
+      'uci set firewall.owrt_wg_server.target="ACCEPT"; '
+      '[ -n "\$INTERNAL_IP" ] && uci set firewall.owrt_wg_server.dest_ip="\$INTERNAL_IP"; '
+      'uci commit firewall; '
+      '/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1 || true; '
+      'if [ "$disabled" = "0" ]; then ifup "\$IFACE" >/dev/null 2>&1 || /etc/init.d/network reload >/dev/null 2>&1 || true; else ifdown "\$IFACE" >/dev/null 2>&1 || true; fi',
+    );
 
     await _apiService!.call(
       router.ipAddress,
@@ -6790,31 +6807,33 @@ class AppState extends ChangeNotifier {
           'command': '/bin/sh',
           'params': [
             '-c',
-            r"""find_peer() { uci -q show network | sed -n "s/^network\.\([^=]*\)=['\"]\{0,1\}wireguard_$1['\"]\{0,1\}$/\1/p" | head -n1; }; """
-                r'IFACE="owrt_wg_client"; PEER="$(find_peer "$IFACE")"; '
-                r'if [ "$(uci -q get network.$IFACE.proto 2>/dev/null)" != "wireguard" ]; then '
-                r"""for cand in $(uci -q show network | sed -n "s/^network\.\([^.=]*\)\.proto=['\"]\{0,1\}wireguard['\"]\{0,1\}$/\1/p"); do """
-                r'[ "$cand" = "owrt_wg_server" ] && continue; '
-                r'[ -n "$(uci -q get network.$cand.listen_port 2>/dev/null)" ] && continue; '
-                r'cand_peer="$(find_peer "$cand")"; [ -n "$cand_peer" ] || continue; '
-                r'IFACE="$cand"; PEER="$cand_peer"; break; '
-                r'done; '
-                r'fi; '
-                r'[ -n "$PEER" ] || PEER="$(find_peer "$IFACE")"; '
-                r'installed=0; command -v wg >/dev/null 2>&1 && installed=1; '
-                r'configured=0; [ "$(uci -q get network.$IFACE.proto 2>/dev/null)" = "wireguard" ] && configured=1; '
-                r'enabled=1; [ "$(uci -q get network.$IFACE.disabled 2>/dev/null)" = "1" ] && enabled=0; '
-                r'addr="$(uci -q get network.$IFACE.addresses 2>/dev/null | sed "s/ /, /g")"; '
-                r'dns="$(uci -q get network.$IFACE.dns 2>/dev/null | sed "s/ /, /g")"; '
-                r'private_key="$(uci -q get network.$IFACE.private_key 2>/dev/null || true)"; '
-                r'public_key="$(uci -q get network.$PEER.public_key 2>/dev/null || true)"; '
-                r'preshared_key="$(uci -q get network.$PEER.preshared_key 2>/dev/null || true)"; '
-                r'endpoint_host="$(uci -q get network.$PEER.endpoint_host 2>/dev/null || true)"; '
-                r'endpoint_port="$(uci -q get network.$PEER.endpoint_port 2>/dev/null || echo 51820)"; '
-                r'allowed_ips="$(uci -q get network.$PEER.allowed_ips 2>/dev/null | sed "s/ /, /g")"; '
-                r'keepalive="$(uci -q get network.$PEER.persistent_keepalive 2>/dev/null || echo 25)"; '
-                r'route_allowed="$(uci -q get network.$PEER.route_allowed_ips 2>/dev/null || echo 1)"; '
-                r'printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n" "$installed" "$configured" "$enabled" "$IFACE" "$addr" "$dns" "$private_key" "$public_key" "$preshared_key" "$endpoint_host" "$endpoint_port" "$allowed_ips" "$keepalive" "$route_allowed"',
+            _withWireGuardBinaryLookup(
+              r"""find_peer() { uci -q show network | sed -n "s/^network\.\([^=]*\)=['\"]\{0,1\}wireguard_$1['\"]\{0,1\}$/\1/p" | head -n1; }; """
+              r'IFACE="owrt_wg_client"; PEER="$(find_peer "$IFACE")"; '
+              r'if [ "$(uci -q get network.$IFACE.proto 2>/dev/null)" != "wireguard" ]; then '
+              r"""for cand in $(uci -q show network | sed -n "s/^network\.\([^.=]*\)\.proto=['\"]\{0,1\}wireguard['\"]\{0,1\}$/\1/p"); do """
+              r'[ "$cand" = "owrt_wg_server" ] && continue; '
+              r'[ -n "$(uci -q get network.$cand.listen_port 2>/dev/null)" ] && continue; '
+              r'cand_peer="$(find_peer "$cand")"; [ -n "$cand_peer" ] || continue; '
+              r'IFACE="$cand"; PEER="$cand_peer"; break; '
+              r'done; '
+              r'fi; '
+              r'[ -n "$PEER" ] || PEER="$(find_peer "$IFACE")"; '
+              r'installed=0; [ -n "$WG_BIN" ] && installed=1; '
+              r'configured=0; [ "$(uci -q get network.$IFACE.proto 2>/dev/null)" = "wireguard" ] && configured=1; '
+              r'enabled=1; [ "$(uci -q get network.$IFACE.disabled 2>/dev/null)" = "1" ] && enabled=0; '
+              r'addr="$(uci -q get network.$IFACE.addresses 2>/dev/null | sed "s/ /, /g")"; '
+              r'dns="$(uci -q get network.$IFACE.dns 2>/dev/null | sed "s/ /, /g")"; '
+              r'private_key="$(uci -q get network.$IFACE.private_key 2>/dev/null || true)"; '
+              r'public_key="$(uci -q get network.$PEER.public_key 2>/dev/null || true)"; '
+              r'preshared_key="$(uci -q get network.$PEER.preshared_key 2>/dev/null || true)"; '
+              r'endpoint_host="$(uci -q get network.$PEER.endpoint_host 2>/dev/null || true)"; '
+              r'endpoint_port="$(uci -q get network.$PEER.endpoint_port 2>/dev/null || echo 51820)"; '
+              r'allowed_ips="$(uci -q get network.$PEER.allowed_ips 2>/dev/null | sed "s/ /, /g")"; '
+              r'keepalive="$(uci -q get network.$PEER.persistent_keepalive 2>/dev/null || echo 25)"; '
+              r'route_allowed="$(uci -q get network.$PEER.route_allowed_ips 2>/dev/null || echo 1)"; '
+              r'printf "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n" "$installed" "$configured" "$enabled" "$IFACE" "$addr" "$dns" "$private_key" "$public_key" "$preshared_key" "$endpoint_host" "$endpoint_port" "$allowed_ips" "$keepalive" "$route_allowed"',
+            ),
           ],
         },
         context: context,
@@ -6868,46 +6887,47 @@ class AppState extends ChangeNotifier {
     final keepalive = settings.persistentKeepalive.clamp(0, 65535);
     final routeAllowed = settings.routeAllowedIps ? '1' : '0';
 
-    final command =
-        'IFACE="owrt_wg_client"; '
-        'PEER="owrt_wg_client_peer"; '
-        'ADDRESSES=$address; '
-        'DNS_SERVERS=$dns; '
-        'PRIVATE_KEY=$privateKey; '
-        'PEER_PUBLIC_KEY=$peerPublicKey; '
-        'PRESHARED_KEY=$presharedKey; '
-        'ENDPOINT_HOST=$endpointHost; '
-        'ENDPOINT_PORT="$endpointPort"; '
-        'ALLOWED_IPS=$allowedIps; '
-        'KEEPALIVE="$keepalive"; '
-        'ROUTE_ALLOWED="$routeAllowed"; '
-        'command -v wg >/dev/null 2>&1 || { echo "wireguard-tools is not installed"; exit 1; }; '
-        '[ -n "\$PRIVATE_KEY" ] || { echo "WireGuard client private key is required"; exit 1; }; '
-        '[ -n "\$PEER_PUBLIC_KEY" ] || { echo "WireGuard peer public key is required"; exit 1; }; '
-        '[ -n "\$ENDPOINT_HOST" ] || { echo "WireGuard endpoint host is required"; exit 1; }; '
-        '[ -n "\$ADDRESSES" ] || { echo "WireGuard address is required"; exit 1; }; '
-        'uci -q delete network.\$IFACE; '
-        'uci -q delete network.\$PEER; '
-        'uci set network.\$IFACE="interface"; '
-        'uci set network.\$IFACE.proto="wireguard"; '
-        'uci set network.\$IFACE.private_key="\$PRIVATE_KEY"; '
-        'uci set network.\$IFACE.disabled="$disabled"; '
-        'for value in \$(printf "%s" "\$ADDRESSES" | tr "," " "); do [ -n "\$value" ] && uci add_list network.\$IFACE.addresses="\$value"; done; '
-        'if [ -n "\$DNS_SERVERS" ]; then uci set network.\$IFACE.peerdns="0"; for value in \$(printf "%s" "\$DNS_SERVERS" | tr "," " "); do [ -n "\$value" ] && uci add_list network.\$IFACE.dns="\$value"; done; fi; '
-        'uci set network.\$PEER="wireguard_\$IFACE"; '
-        'uci set network.\$PEER.public_key="\$PEER_PUBLIC_KEY"; '
-        '[ -n "\$PRESHARED_KEY" ] && uci set network.\$PEER.preshared_key="\$PRESHARED_KEY"; '
-        'uci set network.\$PEER.endpoint_host="\$ENDPOINT_HOST"; '
-        'uci set network.\$PEER.endpoint_port="\$ENDPOINT_PORT"; '
-        'uci set network.\$PEER.persistent_keepalive="\$KEEPALIVE"; '
-        'uci set network.\$PEER.route_allowed_ips="\$ROUTE_ALLOWED"; '
-        'for value in \$(printf "%s" "\$ALLOWED_IPS" | tr "," " "); do [ -n "\$value" ] && uci add_list network.\$PEER.allowed_ips="\$value"; done; '
-        'uci commit network; '
-        'uci -q del_list firewall.wan.network="\$IFACE" 2>/dev/null || true; '
-        'uci add_list firewall.wan.network="\$IFACE"; '
-        'uci commit firewall; '
-        '/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1 || true; '
-        'if [ "$disabled" = "0" ]; then ifdown "\$IFACE" >/dev/null 2>&1 || true; ifup "\$IFACE" >/dev/null 2>&1 || /etc/init.d/network reload >/dev/null 2>&1 || true; else ifdown "\$IFACE" >/dev/null 2>&1 || /etc/init.d/network reload >/dev/null 2>&1 || true; fi';
+    final command = _withWireGuardBinaryLookup(
+      'IFACE="owrt_wg_client"; '
+      'PEER="owrt_wg_client_peer"; '
+      'ADDRESSES=$address; '
+      'DNS_SERVERS=$dns; '
+      'PRIVATE_KEY=$privateKey; '
+      'PEER_PUBLIC_KEY=$peerPublicKey; '
+      'PRESHARED_KEY=$presharedKey; '
+      'ENDPOINT_HOST=$endpointHost; '
+      'ENDPOINT_PORT="$endpointPort"; '
+      'ALLOWED_IPS=$allowedIps; '
+      'KEEPALIVE="$keepalive"; '
+      'ROUTE_ALLOWED="$routeAllowed"; '
+      '[ -n "\$WG_BIN" ] || { echo "wireguard-tools is not installed"; exit 1; }; '
+      '[ -n "\$PRIVATE_KEY" ] || { echo "WireGuard client private key is required"; exit 1; }; '
+      '[ -n "\$PEER_PUBLIC_KEY" ] || { echo "WireGuard peer public key is required"; exit 1; }; '
+      '[ -n "\$ENDPOINT_HOST" ] || { echo "WireGuard endpoint host is required"; exit 1; }; '
+      '[ -n "\$ADDRESSES" ] || { echo "WireGuard address is required"; exit 1; }; '
+      'uci -q delete network.\$IFACE; '
+      'uci -q delete network.\$PEER; '
+      'uci set network.\$IFACE="interface"; '
+      'uci set network.\$IFACE.proto="wireguard"; '
+      'uci set network.\$IFACE.private_key="\$PRIVATE_KEY"; '
+      'uci set network.\$IFACE.disabled="$disabled"; '
+      'for value in \$(printf "%s" "\$ADDRESSES" | tr "," " "); do [ -n "\$value" ] && uci add_list network.\$IFACE.addresses="\$value"; done; '
+      'if [ -n "\$DNS_SERVERS" ]; then uci set network.\$IFACE.peerdns="0"; for value in \$(printf "%s" "\$DNS_SERVERS" | tr "," " "); do [ -n "\$value" ] && uci add_list network.\$IFACE.dns="\$value"; done; fi; '
+      'uci set network.\$PEER="wireguard_\$IFACE"; '
+      'uci set network.\$PEER.public_key="\$PEER_PUBLIC_KEY"; '
+      '[ -n "\$PRESHARED_KEY" ] && uci set network.\$PEER.preshared_key="\$PRESHARED_KEY"; '
+      'uci set network.\$PEER.endpoint_host="\$ENDPOINT_HOST"; '
+      'uci set network.\$PEER.endpoint_port="\$ENDPOINT_PORT"; '
+      'uci set network.\$PEER.persistent_keepalive="\$KEEPALIVE"; '
+      'uci set network.\$PEER.route_allowed_ips="\$ROUTE_ALLOWED"; '
+      'for value in \$(printf "%s" "\$ALLOWED_IPS" | tr "," " "); do [ -n "\$value" ] && uci add_list network.\$PEER.allowed_ips="\$value"; done; '
+      'uci commit network; '
+      'uci -q del_list firewall.wan.network="\$IFACE" 2>/dev/null || true; '
+      'uci add_list firewall.wan.network="\$IFACE"; '
+      'uci commit firewall; '
+      '/etc/init.d/firewall reload >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1 || true; '
+      'if [ "$disabled" = "0" ]; then ifdown "\$IFACE" >/dev/null 2>&1 || true; ifup "\$IFACE" >/dev/null 2>&1 || /etc/init.d/network reload >/dev/null 2>&1 || true; else ifdown "\$IFACE" >/dev/null 2>&1 || /etc/init.d/network reload >/dev/null 2>&1 || true; fi',
+    );
 
     await _apiService!.call(
       router.ipAddress,
