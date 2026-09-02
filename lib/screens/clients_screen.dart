@@ -945,19 +945,24 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
                   ),
                   const SizedBox(width: 14),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.client.macAddress,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w900,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                    child: TextField(
+                      controller: _nameController,
+                      enabled: !_isSaving,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: colorScheme.onSurface,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                        isDense: true,
+                        hintText: 'Device name',
+                        suffixIcon: Icon(Icons.edit_rounded),
+                        suffixIconConstraints: BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
                         ),
-                      ],
+                      ),
                     ),
                   ),
                   IconButton(
@@ -973,19 +978,19 @@ class _DeviceSettingsSheetState extends ConsumerState<_DeviceSettingsSheet> {
               _DeviceUsagePanel(client: widget.client),
               const SizedBox(height: 22),
               Text(
-                'Device Name',
+                'MAC Address',
                 style: theme.textTheme.labelLarge?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 8),
-              TextField(
-                controller: _nameController,
-                enabled: !_isSaving,
+              TextFormField(
+                initialValue: widget.client.macAddress,
+                enabled: false,
                 decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.edit_rounded),
-                  hintText: 'Device name',
+                  prefixIcon: Icon(Icons.memory_rounded),
+                  hintText: 'MAC address',
                 ),
               ),
               const SizedBox(height: 18),
