@@ -31,8 +31,10 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
   bool _installBanip = false;
   bool _installPbr = false;
   bool _isInstalling = false;
+  bool _isUninstalling = false;
   bool _showDetails = false;
   String? _lastOutput;
+  final Set<String> _uninstallFeatures = {};
 
   List<String> get _extraFeatures {
     if (widget.netifyOnly) return const ['netify'];
@@ -63,6 +65,22 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
       'fetch "\$OPENWALLA_RAW_BASE/setup-openwrt-router.sh" "setup-openwrt-router.sh"',
       'chmod 0755 setup-openwrt-router.sh',
       'sh ./setup-openwrt-router.sh $features',
+    ].join(' && ');
+  }
+
+  String get _uninstallCommand {
+    final features = _uninstallFeatures.join(' ');
+    if (features.trim().isEmpty) return '';
+    return [
+      'export OPENWALLA_RAW_BASE=$_rawSetupBase',
+      'export OPENWALLA_ROOT=/tmp/openwalla-app-setup',
+      'fetch() { if command -v wget >/dev/null 2>&1; then wget -qO "\$2" "\$1"; else curl -fsSL "\$1" -o "\$2"; fi; }',
+      'cd /tmp',
+      'rm -rf "\$OPENWALLA_ROOT"',
+      'rm -f setup-openwrt-router.sh',
+      'fetch "\$OPENWALLA_RAW_BASE/setup-openwrt-router.sh" "setup-openwrt-router.sh"',
+      'chmod 0755 setup-openwrt-router.sh',
+      'sh ./setup-openwrt-router.sh uninstall $features',
     ].join(' && ');
   }
 
@@ -140,6 +158,69 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
     } finally {
       console.complete();
       if (mounted) setState(() => _isInstalling = false);
+    }
+  }
+
+  Future<void> _runUninstall() async {
+    final command = _uninstallCommand;
+    if (command.isEmpty) {
+      _showSnack('Choose at least one component to remove.');
+      return;
+    }
+
+    setState(() {
+      _isUninstalling = true;
+      _lastOutput =
+          'Connecting to router over SSH...\nRemoving selected Openwalla components...\n\nConsole output will appear here as the uninstall runs.';
+    });
+    final console = SshConsoleController(
+      initialOutput: _lastOutput!,
+      running: true,
+    );
+    if (mounted) {
+      unawaited(
+        showSshConsoleSheet(
+          context: context,
+          controller: console,
+          title: 'Remove Openwalla Components',
+        ).whenComplete(console.dispose),
+      );
+    }
+
+    try {
+      final outputBuffer = StringBuffer();
+      final output = await ref
+          .read(appStateProvider)
+          .runRouterSetupCommandViaSsh(
+            command,
+            onOutput: (chunk) {
+              outputBuffer.write(chunk);
+              console.setOutput(outputBuffer.toString().trimRight());
+              if (!mounted) return;
+              setState(() {
+                _lastOutput = outputBuffer.toString().trimRight();
+              });
+            },
+          );
+      if (!mounted) return;
+      setState(() {
+        _lastOutput = output.trim().isEmpty
+            ? 'Uninstall finished. The router did not return console output.'
+            : output.trim();
+      });
+      console.setOutput(_lastOutput!);
+      _showSnack('Selected components removed.');
+    } catch (e) {
+      if (!mounted) return;
+      console.setOutput('SSH uninstall failed.\n\n$e');
+      setState(() {
+        _lastOutput = 'SSH uninstall failed.\n\n$e';
+        _showDetails = true;
+      });
+      _showSnack('Could not remove selected components.');
+    } finally {
+      console.complete();
+      if (mounted) setState(() => _isUninstalling = false);
     }
   }
 
@@ -276,9 +357,26 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
                 const SizedBox(height: 16),
                 SshConsolePreview(
                   output: _lastOutput!,
-                  isRunning: _isInstalling,
+                  isRunning: _isInstalling || _isUninstalling,
                 ),
               ],
+            ],
+            if (!widget.netifyOnly) ...[
+              const SizedBox(height: 20),
+              _UninstallComponentsCard(
+                selectedFeatures: _uninstallFeatures,
+                enabled: !_isInstalling && !_isUninstalling,
+                onChanged: (feature, selected) {
+                  setState(() {
+                    if (selected) {
+                      _uninstallFeatures.add(feature);
+                    } else {
+                      _uninstallFeatures.remove(feature);
+                    }
+                  });
+                },
+                onRun: _runUninstall,
+              ),
             ],
           ],
         ),
@@ -292,7 +390,7 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
           ? _WizardIntroCard(
               title: 'Install Detailed Flow Support',
               subtitle:
-                  'This focused setup installs Netify, sqlite support, the Openwalla Netify collector, and the helper service needed for Detailed Flow data.',
+                  'This focused setup installs Netify, sqlite support, the Openwalla Netify collector, and the helper service needed for Detailed Flow data. For best results, use a router with at least 512 MB RAM and a 4-core CPU.',
               icon: Icons.account_tree_rounded,
             )
           : _SetupPermissionCard(
@@ -316,12 +414,12 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
           icon: Icons.inventory_2_outlined,
           title: 'Installing standard OpenWrt applications',
           subtitle:
-              'uhttpd-mod-ubus, nlbwmon, vnstat2, sqlite3-cli, conntrack, and qrencode.',
+              'uhttpd-mod-ubus, nlbwmon, vnstat2 when available, vnstat as a fallback, sqlite3-cli, conntrack, and qrencode.',
           child: const _InstallerList(
             items: [
               'uhttpd-mod-ubus',
               'Nlbwmon',
-              'Vnstat2',
+              'Vnstat2 or Vnstat',
               'sqlite3-cli',
               'conntrack',
               'qrencode',
@@ -368,7 +466,8 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
             _ExtraSoftwareTile(
               icon: Icons.account_tree_rounded,
               title: 'netify',
-              subtitle: 'Detailed flow data when the router supports it.',
+              subtitle:
+                  'Detailed flow data for stronger routers. 512 MB RAM and a 4-core CPU are recommended.',
               value: _installNetify,
               enabled: !_isInstalling,
               onChanged: (value) => setState(() => _installNetify = value),
@@ -377,11 +476,13 @@ class _RouterSetupScreenState extends ConsumerState<RouterSetupScreen> {
               icon: Icons.route_rounded,
               title: 'Simple Flows',
               subtitle:
-                  'Conntrack event flow history. Leave off for lower-end routers.',
+                  'Conntrack event flow history. 512 MB RAM and a 4-core CPU are recommended.',
               value: _installSimpleFlows,
               enabled: !_isInstalling,
               onChanged: (value) => setState(() => _installSimpleFlows = value),
             ),
+            if (_installNetify || _installSimpleFlows)
+              const _FlowInstallWarningCard(),
             _ExtraSoftwareTile(
               icon: Icons.shield_outlined,
               title: 'banip',
@@ -723,6 +824,186 @@ class _ExtraSoftwareTile extends StatelessWidget {
             fontWeight: FontWeight.w700,
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _FlowInstallWarningCard extends StatelessWidget {
+  const _FlowInstallWarningCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Card(
+      color: colorScheme.errorContainer.withValues(alpha: 0.18),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.warning_amber_rounded, color: colorScheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Flow collectors can be heavy. Routers with less than 512 MB RAM or fewer than 4 CPU cores may slow down or crash.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w800,
+                  height: 1.35,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UninstallComponentsCard extends StatelessWidget {
+  final Set<String> selectedFeatures;
+  final bool enabled;
+  final void Function(String feature, bool selected) onChanged;
+  final VoidCallback onRun;
+
+  static const _items = [
+    (
+      feature: 'usage',
+      title: 'Statistics',
+      subtitle: 'vnstat/vnstat2 and nlbwmon packages.',
+      icon: Icons.bar_chart_rounded,
+    ),
+    (
+      feature: 'ping',
+      title: 'Ping Monitor',
+      subtitle: 'Latency helper and service.',
+      icon: Icons.monitor_heart_outlined,
+    ),
+    (
+      feature: 'dns',
+      title: 'DNS Test',
+      subtitle: 'DNS monitor helper and service.',
+      icon: Icons.dns_rounded,
+    ),
+    (
+      feature: 'speedtest',
+      title: 'Speed Test',
+      subtitle: 'Speedtest helper and cron job.',
+      icon: Icons.speed_rounded,
+    ),
+    (
+      feature: 'devices',
+      title: 'Devices',
+      subtitle: 'Device inventory collector.',
+      icon: Icons.devices_rounded,
+    ),
+    (
+      feature: 'bandwidth',
+      title: 'Device Bandwidth',
+      subtitle: 'Per-device usage collector.',
+      icon: Icons.swap_vert_rounded,
+    ),
+    (
+      feature: 'scheduler',
+      title: 'Scheduler',
+      subtitle: 'Scheduled device blocking helper.',
+      icon: Icons.schedule_rounded,
+    ),
+    (
+      feature: 'blocking',
+      title: 'Internet Blocking',
+      subtitle: 'Manual parental block helper.',
+      icon: Icons.block_rounded,
+    ),
+    (
+      feature: 'notifications',
+      title: 'Notifications',
+      subtitle: 'Notification database helper.',
+      icon: Icons.notifications_rounded,
+    ),
+    (
+      feature: 'netify',
+      title: 'Detailed Flow',
+      subtitle: 'Netify package and collector.',
+      icon: Icons.account_tree_rounded,
+    ),
+    (
+      feature: 'conntrack',
+      title: 'Simple Flow',
+      subtitle: 'Conntrack flow collector.',
+      icon: Icons.route_rounded,
+    ),
+    (
+      feature: 'adblock',
+      title: 'AdBlock',
+      subtitle: 'OpenWrt adblock package.',
+      icon: Icons.shield_rounded,
+    ),
+    (
+      feature: 'qos',
+      title: 'Smart Queue',
+      subtitle: 'SQM package support.',
+      icon: Icons.tune_rounded,
+    ),
+    (
+      feature: 'wireguard',
+      title: 'WireGuard',
+      subtitle: 'WireGuard package support.',
+      icon: Icons.vpn_key_rounded,
+    ),
+  ];
+
+  const _UninstallComponentsCard({
+    required this.selectedFeatures,
+    required this.enabled,
+    required this.onChanged,
+    required this.onRun,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Card(
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+        leading: Icon(Icons.delete_sweep_outlined, color: colorScheme.primary),
+        title: Text(
+          'Remove Installed Components',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0,
+          ),
+        ),
+        subtitle: Text(
+          'Select Openwalla sub-apps to remove from this router.',
+          style: TextStyle(color: colorScheme.onSurfaceVariant),
+        ),
+        children: [
+          ..._items.map(
+            (item) => CheckboxListTile(
+              value: selectedFeatures.contains(item.feature),
+              onChanged: enabled
+                  ? (value) => onChanged(item.feature, value ?? false)
+                  : null,
+              controlAffinity: ListTileControlAffinity.trailing,
+              secondary: Icon(item.icon, color: colorScheme.primary),
+              title: Text(item.title),
+              subtitle: Text(item.subtitle),
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: enabled && selectedFeatures.isNotEmpty ? onRun : null,
+            icon: const Icon(Icons.delete_outline_rounded),
+            label: Text(
+              selectedFeatures.isEmpty
+                  ? 'Select Components'
+                  : 'Remove Selected',
+            ),
+          ),
+        ],
       ),
     );
   }

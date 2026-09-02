@@ -16,7 +16,7 @@ require_file "$RPCD_ACL"
 update_package_feeds
 install_pkg_if_available "uhttpd-mod-ubus"
 install_pkg_if_available "nlbwmon"
-install_pkg_if_available "vnstat2"
+install_first_available_pkg "vnstat" vnstat2 vnstat
 install_first_available_pkg "sqlite-cli" sqlite3-cli sqlite3
 install_pkg_if_available "conntrack"
 install_pkg_if_available "qrencode"

@@ -28,11 +28,13 @@ USED_FEATURE_ARGS=0
 WITH_ADBLOCK=""
 WITH_PBR=""
 WITH_NETIFY=""
+ACTION="install"
 
 usage() {
 	cat <<'EOF'
 Usage:
   sh setup-openwrt-router.sh [feature ...] [options]
+  sh setup-openwrt-router.sh uninstall [feature ...]
 
 Examples:
   sh setup-openwrt-router.sh netify
@@ -41,6 +43,8 @@ Examples:
   sh setup-openwrt-router.sh monitoring
   sh setup-openwrt-router.sh stack --with-netify
   sh setup-openwrt-router.sh --profile=3
+  sh setup-openwrt-router.sh uninstall ping dns speedtest
+  sh setup-openwrt-router.sh uninstall usage adblock netify
 
 Feature groups:
   stack        Standard Openwrt apps plus Openwalla monitoring, usage,
@@ -51,7 +55,7 @@ Feature groups:
   all          Everything in stack plus AdBlock, PBR, Netify, banIP, and SQM.
 
 Individual features:
-  standard          uhttpd-mod-ubus, nlbwmon, vnstat2, sqlite, conntrack, qrencode
+  standard          uhttpd-mod-ubus, nlbwmon, vnstat2/vnstat, sqlite, conntrack, qrencode
   usage            vnstat/nlbwmon usage support
   ping             ping monitor script and init service
   dns              DNS monitor script and init service
@@ -350,8 +354,189 @@ run_installers() {
 	done
 }
 
+pkg_installed() {
+	pkg="$1"
+	pkg_mgr="$(detect_package_manager)"
+	case "$pkg_mgr" in
+	opkg) opkg list-installed | grep -q "^$pkg -" ;;
+	apk) apk info -e "$pkg" >/dev/null 2>&1 ;;
+	*) return 1 ;;
+	esac
+}
+
+remove_pkg_if_installed() {
+	pkg="$1"
+	pkg_mgr="$(detect_package_manager)"
+	if ! pkg_installed "$pkg"; then
+		log "Package not installed, skipping remove: $pkg"
+		return 0
+	fi
+	case "$pkg_mgr" in
+	opkg) opkg remove "$pkg" || true ;;
+	apk) apk del "$pkg" || true ;;
+	esac
+	log "Removed package if unused: $pkg"
+}
+
+stop_disable_service() {
+	svc="$1"
+	if [ -x "/etc/init.d/$svc" ]; then
+		/etc/init.d/"$svc" stop >/dev/null 2>&1 || true
+		/etc/init.d/"$svc" disable >/dev/null 2>&1 || true
+		log "Stopped service: $svc"
+	fi
+}
+
+remove_cron_marker() {
+	marker="$1"
+	cron_path="/etc/crontabs/root"
+	tmp_cron="/tmp/.openwalla_uninstall_cron.$$"
+	[ -f "$cron_path" ] || return 0
+	grep -v "$marker" "$cron_path" >"$tmp_cron" 2>/dev/null || : >"$tmp_cron"
+	cp "$tmp_cron" "$cron_path"
+	rm -f "$tmp_cron"
+	/bin/sh -c '/etc/init.d/cron reload 2>/dev/null || /etc/init.d/cron restart 2>/dev/null || /etc/init.d/crond reload 2>/dev/null || /etc/init.d/crond restart 2>/dev/null || killall -HUP crond 2>/dev/null || true'
+}
+
+clear_openwalla_section() {
+	section="$1"
+	uci -q delete "openwalla.$section" >/dev/null 2>&1 || true
+}
+
+uninstall_feature() {
+	feature="$1"
+	log "Uninstalling feature: $feature"
+	case "$feature" in
+	standard)
+		remove_pkg_if_installed uhttpd-mod-ubus
+		remove_pkg_if_installed qrencode
+		;;
+	usage)
+		stop_disable_service vnstat
+		stop_disable_service nlbwmon
+		remove_pkg_if_installed luci-app-nlbwmon
+		remove_pkg_if_installed nlbwmon
+		remove_pkg_if_installed luci-app-vnstat2
+		remove_pkg_if_installed luci-app-vnstat
+		remove_pkg_if_installed vnstati2
+		remove_pkg_if_installed vnstati
+		remove_pkg_if_installed vnstat2
+		remove_pkg_if_installed vnstat
+		clear_openwalla_section dashboard
+		;;
+	ping)
+		stop_disable_service openwalla-ping-monitor
+		rm -f /usr/bin/openwalla-ping-monitor /etc/init.d/openwalla-ping-monitor
+		clear_openwalla_section ping_monitor
+		;;
+	dns)
+		stop_disable_service openwalla-dns-monitor
+		rm -f /usr/bin/openwalla-dns-monitor /etc/init.d/openwalla-dns-monitor
+		clear_openwalla_section dns_monitor
+		;;
+	speedtest)
+		remove_cron_marker "OPENWALLA_SPEEDTEST_MONITOR"
+		rm -f /usr/bin/openwalla-speedtest-monitor
+		clear_openwalla_section speedtest_monitor
+		;;
+	notifications)
+		rm -f /usr/bin/openwalla-notifications-db
+		clear_openwalla_section notifications
+		;;
+	devices)
+		stop_disable_service openwalla-devices-collector
+		rm -f /usr/bin/openwalla-devices-collector /etc/init.d/openwalla-devices-collector
+		clear_openwalla_section devices
+		;;
+	bandwidth)
+		stop_disable_service openwalla-device-bandwidth-collector
+		rm -f /usr/bin/openwalla-device-bandwidth-collector /usr/bin/openwalla-device-traffic-summary /etc/init.d/openwalla-device-bandwidth-collector
+		clear_openwalla_section device_bandwidth
+		;;
+	blocking)
+		remove_cron_marker "OPENWALLA_PATERNAL_PAUSE"
+		rm -f /usr/bin/openwalla-paternal-pause
+		uci -q delete openwalla.features.quarantine >/dev/null 2>&1 || true
+		;;
+	scheduler)
+		remove_cron_marker "OPENWALLA_SCHEDULER"
+		rm -f /usr/bin/openwalla-scheduler
+		clear_openwalla_section scheduler
+		uci -q delete openwalla.features.scheduler >/dev/null 2>&1 || true
+		;;
+	conntrack)
+		stop_disable_service openwalla-connection-flows-collector
+		rm -f /usr/bin/openwalla-connection-flow-collector /etc/init.d/openwalla-connection-flows-collector
+		clear_openwalla_section connection_flows
+		;;
+	netify)
+		stop_disable_service openwalla-netify-collector
+		rm -f /usr/bin/openwalla-netify-collector /etc/init.d/openwalla-netify-collector
+		clear_openwalla_section collector
+		uci -q delete openwalla.features.netify >/dev/null 2>&1 || true
+		remove_pkg_if_installed netifyd
+		;;
+	quarantine)
+		stop_disable_service openwalla-device-quarantine
+		rm -f /usr/bin/openwalla-device-quarantine /etc/init.d/openwalla-device-quarantine
+		clear_openwalla_section quarantine
+		;;
+	state-sync)
+		stop_disable_service openwalla-state-sync
+		rm -f /usr/bin/openwalla-state-sync /etc/init.d/openwalla-state-sync
+		clear_openwalla_section state_backup
+		;;
+	wireguard)
+		uci -q delete openwalla.features.wireguard >/dev/null 2>&1 || true
+		remove_pkg_if_installed luci-app-wireguard
+		remove_pkg_if_installed luci-proto-wireguard
+		remove_pkg_if_installed wireguard-tools
+		;;
+	adblock)
+		stop_disable_service adblock
+		uci -q delete openwalla.features.adblock >/dev/null 2>&1 || true
+		remove_pkg_if_installed luci-app-adblock
+		remove_pkg_if_installed adblock
+		;;
+	banip)
+		stop_disable_service banip
+		uci -q delete openwalla.features.banip >/dev/null 2>&1 || true
+		remove_pkg_if_installed luci-app-banip
+		remove_pkg_if_installed banip
+		;;
+	pbr)
+		stop_disable_service pbr
+		uci -q delete openwalla.features.pbr >/dev/null 2>&1 || true
+		remove_pkg_if_installed luci-app-pbr
+		remove_pkg_if_installed pbr
+		;;
+	qos)
+		stop_disable_service sqm
+		uci -q delete openwalla.features.qosify >/dev/null 2>&1 || true
+		uci -q delete openwalla.features.sqm >/dev/null 2>&1 || true
+		remove_pkg_if_installed luci-app-sqm
+		remove_pkg_if_installed sqm-scripts
+		;;
+	*)
+		echo "Unknown uninstall feature: $feature" >&2
+		return 1
+		;;
+	esac
+	uci commit openwalla >/dev/null 2>&1 || true
+}
+
+run_uninstallers() {
+	for feature in $FEATURES; do
+		uninstall_feature "$feature"
+	done
+	log "Uninstall complete."
+}
+
 while [ "$#" -gt 0 ]; do
 	case "$1" in
+	uninstall|remove)
+		ACTION="uninstall"
+		;;
 	--profile=*)
 		INSTALL_PROFILE="${1#*=}"
 		;;
@@ -393,7 +578,9 @@ while [ "$#" -gt 0 ]; do
 	shift
 done
 
-if [ -n "$INSTALL_PROFILE" ]; then
+if [ "$ACTION" = "uninstall" ]; then
+	:
+elif [ -n "$INSTALL_PROFILE" ]; then
 	append_profile_features "$INSTALL_PROFILE"
 elif [ "$USED_FEATURE_ARGS" = "0" ]; then
 	if [ -t 0 ]; then
@@ -412,15 +599,29 @@ fi
 [ "$WITH_PBR" = "0" ] && remove_feature pbr
 
 if [ -z "$FEATURES" ]; then
-	echo "No features selected."
+	if [ "$ACTION" = "uninstall" ]; then
+		echo "Choose at least one feature to uninstall."
+	else
+		echo "No features selected."
+	fi
 	usage
 	exit 1
 fi
 
-resolve_installers
+if [ "$ACTION" = "install" ]; then
+	resolve_installers
+fi
 
+log "Selected action: $ACTION"
 log "Selected features:$FEATURES"
-log "Installer order:$INSTALLERS"
+if [ "$ACTION" = "install" ]; then
+	log "Installer order:$INSTALLERS"
+	case " $FEATURES " in
+	*" netify "*|*" conntrack "*)
+		log "WARNING: Flow collectors can be heavy. Routers with less than 512 MB RAM or fewer than 4 CPU cores may slow down or crash."
+		;;
+	esac
+fi
 
 if [ "$DRY_RUN" = "1" ]; then
 	exit 0
@@ -429,6 +630,11 @@ fi
 if [ "$(id -u)" != "0" ]; then
 	echo "Run as root."
 	exit 1
+fi
+
+if [ "$ACTION" = "uninstall" ]; then
+	run_uninstallers
+	exit 0
 fi
 
 update_package_feeds_once

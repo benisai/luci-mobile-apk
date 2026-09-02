@@ -14,9 +14,9 @@ require_file "$FILES_DIR/openwalla.config"
 require_file "$RPCD_ACL"
 
 update_package_feeds
-install_pkg_if_available "vnstat2"
-install_pkg_if_available "vnstati2"
-install_pkg_if_available "luci-app-vnstat2"
+install_first_available_pkg "vnstat" vnstat2 vnstat
+install_first_available_pkg "vnstati" vnstati2 vnstati
+install_first_available_pkg "luci-vnstat" luci-app-vnstat2 luci-app-vnstat
 install_pkg_if_available "nlbwmon"
 install_pkg_if_available "luci-app-nlbwmon"
 
