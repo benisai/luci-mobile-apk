@@ -1,0 +1,263 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:luci_mobile/main.dart';
+import 'package:luci_mobile/state/app_state.dart';
+import 'package:luci_mobile/widgets/luci_app_bar.dart';
+
+class RecentEventsScreen extends ConsumerStatefulWidget {
+  const RecentEventsScreen({super.key});
+
+  @override
+  ConsumerState<RecentEventsScreen> createState() => _RecentEventsScreenState();
+}
+
+class _RecentEventsScreenState extends ConsumerState<RecentEventsScreen> {
+  List<OpenwallaNotification> _events = const [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadEvents());
+  }
+
+  Future<void> _loadEvents() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    final events = await ref
+        .read(appStateProvider)
+        .fetchNotifications(
+          limit: 100,
+          includeArchived: true,
+          context: context,
+        );
+    if (!mounted) return;
+    setState(() {
+      _events = events;
+      _isLoading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      appBar: const LuciAppBar(title: 'Recent Events', showBack: true),
+      body: SafeArea(
+        top: false,
+        child: RefreshIndicator(
+          onRefresh: _loadEvents,
+          child: _isLoading
+              ? ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+                  children: const [
+                    SizedBox(height: 180),
+                    Center(child: CircularProgressIndicator()),
+                  ],
+                )
+              : _events.isEmpty
+              ? ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+                  children: [
+                    SizedBox(
+                      height: 260,
+                      child: Center(
+                        child: Text(
+                          'No recent events',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+                  itemCount: _events.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    return _RecentEventTile(
+                      event: _events[index],
+                      isLast: index == _events.length - 1,
+                    );
+                  },
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RecentEventTile extends StatelessWidget {
+  final OpenwallaNotification event;
+  final bool isLast;
+
+  const _RecentEventTile({required this.event, required this.isLast});
+
+  Color _eventColor() {
+    final app = event.app.toLowerCase();
+    final message = event.message.toLowerCase();
+    if (message.contains('restored') ||
+        message.contains('connected') ||
+        message.contains('ok')) {
+      return const Color(0xFF20CF70);
+    }
+    if (message.contains('threshold') ||
+        message.contains('latency') ||
+        message.contains('dropped')) {
+      return const Color(0xFFEAB308);
+    }
+    if (message.contains('disconnect') ||
+        message.contains('failed') ||
+        message.contains('outage') ||
+        message.contains('blocked') ||
+        app.contains('quarantine')) {
+      return const Color(0xFFFF4D4F);
+    }
+    return const Color(0xFF18AEEA);
+  }
+
+  String _formatTimestamp(DateTime timestamp) {
+    final local = timestamp.toLocal();
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final month = months[(local.month - 1).clamp(0, 11)];
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final suffix = local.hour >= 12 ? 'PM' : 'AM';
+    return '$month ${local.day}, ${local.year} $hour:$minute $suffix';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final eventColor = _eventColor();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+        ),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: eventColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              if (!isLast)
+                Container(
+                  width: 1,
+                  height: 42,
+                  margin: const EdgeInsets.only(top: 4),
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.42),
+                ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        event.message,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0,
+                          height: 1.25,
+                        ),
+                      ),
+                    ),
+                    if (event.archived) ...[
+                      const SizedBox(width: 8),
+                      _StatusPill(label: 'Archived', color: colorScheme),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  _formatTimestamp(event.timestamp),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.86),
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0,
+                  ),
+                ),
+                if (event.app.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    event.app,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.68,
+                      ),
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  final String label;
+  final ColorScheme color;
+
+  const _StatusPill({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.surfaceContainerHighest.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color.onSurfaceVariant,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0,
+        ),
+      ),
+    );
+  }
+}

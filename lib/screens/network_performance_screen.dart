@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:luci_mobile/main.dart';
 import 'package:luci_mobile/screens/network_performance_settings_screen.dart';
+import 'package:luci_mobile/screens/recent_events_screen.dart';
 import 'package:luci_mobile/screens/router_setup_screen.dart';
 import 'package:luci_mobile/state/app_state.dart';
 import 'package:luci_mobile/widgets/luci_app_bar.dart';
@@ -109,7 +110,11 @@ class _NetworkPerformanceScreenState
         limit: 30,
         context: mounted ? context : null,
       ),
-      appState.fetchNotifications(limit: 8, context: mounted ? context : null),
+      appState.fetchNotifications(
+        limit: 3,
+        includeArchived: true,
+        context: mounted ? context : null,
+      ),
     ]);
     if (!mounted) return;
     setState(() {
@@ -168,6 +173,7 @@ class _NetworkPerformanceScreenState
                       const SizedBox(height: 14),
                       _RecentEventsCard(
                         notifications: _recentNotifications ?? const [],
+                        onViewAll: _openRecentEvents,
                       ),
                       const SizedBox(height: 14),
                       _PingTestCard(samples: samples),
@@ -260,6 +266,12 @@ class _NetworkPerformanceScreenState
         builder: (context) => const NetworkPerformanceSettingsScreen(),
       ),
     );
+  }
+
+  void _openRecentEvents() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const RecentEventsScreen()));
   }
 }
 
@@ -541,8 +553,12 @@ class _PingHourBucket {
 
 class _RecentEventsCard extends StatelessWidget {
   final List<OpenwallaNotification> notifications;
+  final VoidCallback onViewAll;
 
-  const _RecentEventsCard({required this.notifications});
+  const _RecentEventsCard({
+    required this.notifications,
+    required this.onViewAll,
+  });
 
   Color _eventColor(OpenwallaNotification notification) {
     final app = notification.app.toLowerCase();
@@ -593,13 +609,29 @@ class _RecentEventsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final events = notifications.take(8).toList();
+    final events = notifications.take(3).toList();
 
     return _OpenwallaPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _SectionTitle('Recent Events'),
+          InkWell(
+            onTap: onViewAll,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  const Expanded(child: _SectionTitle('Recent Events')),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.72),
+                    size: 28,
+                  ),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
           if (events.isEmpty)
             Text(

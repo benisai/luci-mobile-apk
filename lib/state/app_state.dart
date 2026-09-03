@@ -5155,6 +5155,7 @@ class AppState extends ChangeNotifier {
 
   Future<List<OpenwallaNotification>> fetchNotifications({
     int limit = 200,
+    bool includeArchived = false,
     BuildContext? context,
   }) async {
     if (_reviewerModeEnabled) {
@@ -5173,7 +5174,7 @@ class AppState extends ChangeNotifier {
           timestamp: now.subtract(const Duration(minutes: 12)),
           app: 'device-quarantine',
           message: 'New device quarantined mac=AA:BB:CC:DD:EE:FF',
-          archived: false,
+          archived: includeArchived,
           deleted: false,
         ),
       ];
@@ -5181,10 +5182,11 @@ class AppState extends ChangeNotifier {
 
     try {
       final safeLimit = limit.clamp(1, 500).toInt();
+      final archivedFilter = includeArchived ? '' : ' AND archived = 0';
       final output = await _sqliteQueryOutput(
         dbExpression: _notificationsDbExpression(),
         sql:
-            'SELECT id, timestamp, app, msg, archived, "delete" FROM notifications WHERE "delete" = 0 AND archived = 0 ORDER BY timestamp DESC LIMIT $safeLimit;',
+            'SELECT id, timestamp, app, msg, archived, "delete" FROM notifications WHERE "delete" = 0$archivedFilter ORDER BY timestamp DESC LIMIT $safeLimit;',
         context: context,
       );
       return output
