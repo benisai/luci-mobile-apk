@@ -2509,39 +2509,136 @@ class _NetworkInterfaceEditSheetState
     _ipController.text = config.ipAddress;
     _netmaskController.text = config.netmask;
     _dnsController.text = config.dnsText;
-    _startIpController.text = _offsetToIp(config.ipAddress, config.dhcpStart);
+    _startIpController.text = _offsetToIp(
+      config.ipAddress,
+      config.netmask,
+      config.dhcpStart,
+    );
     _endIpController.text = _offsetToIp(
       config.ipAddress,
+      config.netmask,
       config.dhcpStart + config.dhcpLimit - 1,
     );
     _leaseTimeController.text = config.leaseTime;
     setState(() => _isLoading = false);
   }
 
-  String _offsetToIp(String routerIp, int offset) {
-    final parts = routerIp.split('.');
-    if (parts.length != 4 || offset <= 0) return offset.toString();
-    return '${parts[0]}.${parts[1]}.${parts[2]}.$offset';
+  String _offsetToIp(String routerIp, String netmask, int offset) {
+    final router = _ipv4ToInt(routerIp);
+    final mask = _ipv4ToInt(netmask);
+    if (router == null || mask == null || offset <= 0) {
+      return offset.toString();
+    }
+    return _intToIpv4((router & mask) + offset);
   }
 
-  int _lastOctetOrNumber(String value, int fallback) {
+  int _dhcpOffsetOrNumber(
+    String value,
+    int fallback,
+    int routerIp,
+    int netmask,
+  ) {
     final trimmed = value.trim();
-    final parts = trimmed.split('.');
-    if (parts.length == 4) return int.tryParse(parts.last) ?? fallback;
+    final ip = _ipv4ToInt(trimmed);
+    if (ip != null) return ip - (routerIp & netmask);
     return int.tryParse(trimmed) ?? fallback;
+  }
+
+  int? _ipv4ToInt(String value) {
+    final parts = value.trim().split('.');
+    if (parts.length != 4) return null;
+    var result = 0;
+    for (final part in parts) {
+      final octet = int.tryParse(part);
+      if (octet == null || octet < 0 || octet > 255) return null;
+      result = (result << 8) + octet;
+    }
+    return result;
+  }
+
+  String _intToIpv4(int value) {
+    return [
+      (value >> 24) & 0xff,
+      (value >> 16) & 0xff,
+      (value >> 8) & 0xff,
+      value & 0xff,
+    ].join('.');
+  }
+
+  bool _isContiguousNetmask(int mask) {
+    final inverted = (~mask) & 0xffffffff;
+    return mask != 0 && (inverted & (inverted + 1)) == 0;
+  }
+
+  String? _validateLanConfig({
+    required String ipAddress,
+    required String netmask,
+    required int dhcpStart,
+    required int dhcpEnd,
+  }) {
+    final routerIp = _ipv4ToInt(ipAddress);
+    if (routerIp == null) return 'Enter a valid LAN IPv4 address.';
+
+    final mask = _ipv4ToInt(netmask);
+    if (mask == null || !_isContiguousNetmask(mask)) {
+      return 'Enter a valid contiguous subnet mask.';
+    }
+
+    if (!_dhcpEnabled) return null;
+
+    final network = routerIp & mask;
+    final broadcast = network | ((~mask) & 0xffffffff);
+    final startIp = network + dhcpStart;
+    final endIp = network + dhcpEnd;
+
+    if (dhcpStart <= 0 || dhcpEnd <= 0 || startIp > endIp) {
+      return 'Enter a valid DHCP start and end IP range.';
+    }
+    if (startIp <= network || endIp >= broadcast) {
+      return 'DHCP range must stay inside the LAN subnet and cannot use the network or broadcast address.';
+    }
+    if (routerIp >= startIp && routerIp <= endIp) {
+      return 'DHCP range cannot include the router LAN IP address.';
+    }
+    return null;
   }
 
   Future<void> _save() async {
     final current = _config;
     if (current == null) return;
-    final start = _lastOctetOrNumber(
-      _startIpController.text,
-      current.dhcpStart,
-    ).clamp(1, 254);
-    final end = _lastOctetOrNumber(
-      _endIpController.text,
-      current.dhcpStart + current.dhcpLimit - 1,
-    ).clamp(start, 254);
+    final ipAddress = _ipController.text.trim();
+    final netmask = _netmaskController.text.trim();
+    final routerIp = _ipv4ToInt(ipAddress);
+    final mask = _ipv4ToInt(netmask);
+    final start = routerIp == null || mask == null
+        ? current.dhcpStart
+        : _dhcpOffsetOrNumber(
+            _startIpController.text,
+            current.dhcpStart,
+            routerIp,
+            mask,
+          ).clamp(1, 65534);
+    final end = routerIp == null || mask == null
+        ? current.dhcpStart + current.dhcpLimit - 1
+        : _dhcpOffsetOrNumber(
+            _endIpController.text,
+            current.dhcpStart + current.dhcpLimit - 1,
+            routerIp,
+            mask,
+          ).clamp(1, 65534);
+    final validationError = _validateLanConfig(
+      ipAddress: ipAddress,
+      netmask: netmask,
+      dhcpStart: start,
+      dhcpEnd: end,
+    );
+    if (validationError != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(validationError)));
+      return;
+    }
+
     final dnsServers = _dnsController.text
         .split(RegExp(r'[\s,]+'))
         .map((entry) => entry.trim())
@@ -2550,8 +2647,8 @@ class _NetworkInterfaceEditSheetState
 
     final next = current.copyWith(
       protocol: _protocol,
-      ipAddress: _ipController.text.trim(),
-      netmask: _netmaskController.text.trim(),
+      ipAddress: ipAddress,
+      netmask: netmask,
       dnsServers: dnsServers,
       dhcpEnabled: _dhcpEnabled,
       dhcpStart: start,
@@ -2567,6 +2664,27 @@ class _NetworkInterfaceEditSheetState
           .read(appStateProvider)
           .saveNetworkInterfaceConfig(next, context: context);
       if (!mounted) return;
+      final changedLanAddress =
+          current.ipAddress.trim() != next.ipAddress.trim() ||
+          current.netmask.trim() != next.netmask.trim();
+      if (changedLanAddress) {
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('LAN address updated'),
+            content: Text(
+              'The router may now be reachable at ${next.ipAddress}. Log out and log back in with the new IP address if the app disconnects.',
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Got it'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted) return;
+      }
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
