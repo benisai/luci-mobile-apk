@@ -75,6 +75,7 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen> {
   String? _activeClientCacheKey;
   List<Client> _visibleClients = const [];
   final Set<String> _blockingMacs = {};
+  bool _isRefreshingClients = false;
   static final Map<String, List<Client>> _clientCache = {};
 
   @override
@@ -122,6 +123,23 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen> {
     return clients;
   }
 
+  Future<void> _refreshClients() async {
+    if (_isRefreshingClients) return;
+    setState(() => _isRefreshingClients = true);
+    try {
+      await ref.read(appStateProvider).fetchDashboardData();
+      if (!mounted) return;
+      setState(() {
+        _computeClientsFuture();
+      });
+      await _clientsFuture;
+    } finally {
+      if (mounted) {
+        setState(() => _isRefreshingClients = false);
+      }
+    }
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -144,17 +162,30 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen> {
       builder: (context, snapshot) {
         final aggregatedClients = snapshot.data ?? _visibleClients;
         return Scaffold(
-          appBar: const LuciAppBar(title: 'Devices', showBack: true),
+          appBar: LuciAppBar(
+            title: 'Devices',
+            showBack: true,
+            actions: [
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: IconButton(
+                  tooltip: 'Refresh devices',
+                  onPressed: _isRefreshingClients ? null : _refreshClients,
+                  icon: _isRefreshingClients
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh_rounded),
+                ),
+              ),
+            ],
+          ),
           body: Stack(
             children: [
               LuciPullToRefresh(
-                onRefresh: () async {
-                  // Trigger a refresh by re-fetching dashboard data for selected router
-                  await ref.read(appStateProvider).fetchDashboardData();
-                  setState(() {
-                    _computeClientsFuture();
-                  });
-                },
+                onRefresh: _refreshClients,
                 child: Builder(
                   builder: (context) {
                     final appState = ref.watch(appStateProvider);
