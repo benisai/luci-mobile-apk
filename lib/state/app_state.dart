@@ -3223,11 +3223,45 @@ class AppState extends ChangeNotifier {
         scheduledBlock: scheduledBlock || status == 'block-scheduled',
         scheduleUntil: scheduleUntil,
       );
-      if (mac.isNotEmpty && mac != 'N/A') byMac[mac] = record;
-      if (ip.isNotEmpty) byIp[ip] = record;
+      if (mac.isNotEmpty && mac != 'N/A') {
+        byMac[mac] = _mergeDuplicateDeviceRecord(byMac[mac], record);
+      }
+      if (ip.isNotEmpty) {
+        byIp[ip] = _mergeDuplicateDeviceRecord(byIp[ip], record);
+      }
     }
 
     return (byMac, byIp);
+  }
+
+  OpenwallaDeviceRecord _mergeDuplicateDeviceRecord(
+    OpenwallaDeviceRecord? existing,
+    OpenwallaDeviceRecord incoming,
+  ) {
+    if (existing == null) return incoming;
+
+    final existingLive = existing.status != 'offline' || existing.quarantined;
+    final incomingLive = incoming.status != 'offline' || incoming.quarantined;
+    final live = incomingLive && !existingLive ? incoming : existing;
+    final custom = incomingLive && !existingLive ? existing : incoming;
+
+    return OpenwallaDeviceRecord(
+      mac: live.mac,
+      ip: live.ip.isNotEmpty ? live.ip : custom.ip,
+      hostname: custom.hostname.isNotEmpty ? custom.hostname : live.hostname,
+      totalUploadBytes: live.totalUploadBytes,
+      totalDownloadBytes: live.totalDownloadBytes,
+      staticIpAddress: custom.staticIpAddress.isNotEmpty
+          ? custom.staticIpAddress
+          : live.staticIpAddress,
+      status: live.status,
+      quarantined: live.quarantined || custom.quarantined,
+      icon: custom.icon.isNotEmpty ? custom.icon : live.icon,
+      scheduledBlock: live.scheduledBlock || custom.scheduledBlock,
+      scheduleUntil: custom.scheduleUntil.isNotEmpty
+          ? custom.scheduleUntil
+          : live.scheduleUntil,
+    );
   }
 
   Future<
@@ -8637,7 +8671,7 @@ class AppState extends ChangeNotifier {
     required String staticIpAddress,
     required String deviceIcon,
   }) {
-    final escMac = mac.replaceAll("'", "''");
+    final escMac = mac.toLowerCase().replaceAll("'", "''");
     final escIp = ip.replaceAll("'", "''");
     final escHostname = hostname.replaceAll("'", "''");
     final escStaticIp = staticIpAddress.replaceAll("'", "''");
@@ -8645,7 +8679,7 @@ class AppState extends ChangeNotifier {
     const createSql =
         "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline', static_ip TEXT NOT NULL DEFAULT '', icon TEXT NOT NULL DEFAULT '', scheduled_block INTEGER NOT NULL DEFAULT 0, schedule_until TEXT NOT NULL DEFAULT '');";
     final upsertSql =
-        "INSERT INTO devices (mac, ip, hostname, static_ip, icon, last_seen, status) VALUES ('$escMac', '$escIp', '$escHostname', '$escStaticIp', '$escDeviceIcon', strftime('%s','now'), 'online') ON CONFLICT(mac) DO UPDATE SET hostname=excluded.hostname, ip=CASE WHEN excluded.ip != '' THEN excluded.ip ELSE devices.ip END, static_ip=excluded.static_ip, icon=excluded.icon, last_seen=excluded.last_seen;";
+        "DELETE FROM devices WHERE lower(mac) = '$escMac' AND mac != '$escMac'; INSERT INTO devices (mac, ip, hostname, static_ip, icon, last_seen, status) VALUES ('$escMac', '$escIp', '$escHostname', '$escStaticIp', '$escDeviceIcon', strftime('%s','now'), 'online') ON CONFLICT(mac) DO UPDATE SET hostname=excluded.hostname, ip=CASE WHEN excluded.ip != '' THEN excluded.ip ELSE devices.ip END, static_ip=excluded.static_ip, icon=excluded.icon, last_seen=excluded.last_seen, status=CASE WHEN devices.quarantined=1 THEN 'blocked' WHEN devices.scheduled_block=1 THEN 'block-scheduled' ELSE 'online' END;";
     return 'db="${_devicesDbExpression()}"; '
         'if command -v sqlite3 >/dev/null 2>&1; then sqlite=sqlite3; '
         'elif command -v sqlite3-cli >/dev/null 2>&1; then sqlite=sqlite3-cli; '
@@ -8785,12 +8819,12 @@ class AppState extends ChangeNotifier {
     required bool blocked,
     BuildContext? context,
   }) async {
-    final escMac = mac.replaceAll("'", "''");
+    final escMac = mac.toLowerCase().replaceAll("'", "''");
     const createSql =
         "CREATE TABLE IF NOT EXISTS devices (mac TEXT PRIMARY KEY, ip TEXT NOT NULL DEFAULT '', hostname TEXT NOT NULL DEFAULT '', vendor TEXT NOT NULL DEFAULT '', quarantined INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0, total_up INTEGER NOT NULL DEFAULT 0, total_down INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'offline');";
     final sql = blocked
-        ? "$createSql INSERT INTO devices (mac, last_seen, status, quarantined) VALUES ('$escMac', strftime('%s','now'), 'blocked', 1) ON CONFLICT(mac) DO UPDATE SET status='blocked', quarantined=1, last_seen=strftime('%s','now');"
-        : "$createSql UPDATE devices SET quarantined = 0, status = 'online', last_seen=strftime('%s','now') WHERE upper(mac) = upper('$escMac');";
+        ? "$createSql DELETE FROM devices WHERE lower(mac) = '$escMac' AND mac != '$escMac'; INSERT INTO devices (mac, last_seen, status, quarantined) VALUES ('$escMac', strftime('%s','now'), 'blocked', 1) ON CONFLICT(mac) DO UPDATE SET status='blocked', quarantined=1, last_seen=strftime('%s','now');"
+        : "$createSql DELETE FROM devices WHERE lower(mac) = '$escMac' AND mac != '$escMac'; UPDATE devices SET quarantined = 0, status = 'online', last_seen=strftime('%s','now') WHERE mac = '$escMac';";
     try {
       await _sqliteQueryOutputForRouter(
         router: router,
